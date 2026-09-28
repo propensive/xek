@@ -186,7 +186,7 @@ pub fn download(preferred: u16, bundle: &str, name: &str) -> Option<PathBuf> {
 
 fn make_temp_dir(root: &Path) -> Option<PathBuf> {
     for _ in 0..6 {
-        let nonce: u64 = (crate::now_ms() as u64) ^ std::process::id() as u64;
+        let nonce: u64 = crate::now_ms() ^ std::process::id() as u64;
         let candidate = root.join(format!("eth-{}", nonce));
         if std::fs::create_dir(&candidate).is_ok() { return Some(candidate); }
     }

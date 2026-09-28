@@ -617,8 +617,8 @@ pub mod user_info {
     }
 }
 
-pub fn now_ms() -> u128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|elapsed| elapsed.as_millis()).unwrap_or(0)
+pub fn now_ms() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|elapsed| elapsed.as_millis() as u64).unwrap_or(0)
 }
 
 fn debug_log(message: impl AsRef<str>) {

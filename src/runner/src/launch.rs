@@ -123,8 +123,9 @@ pub fn launch(
     }
 
     if shown {
-        let secs = start.elapsed().as_secs_f64();
-        crate::xeq::done(name, &format!("Started in {secs:.1}s"));
+        let elapsed = start.elapsed();
+        let tenths = elapsed.as_secs() * 10 + u64::from(elapsed.subsec_millis() / 100);
+        crate::xeq::done(name, &format!("Started in {}.{}s", tenths / 10, tenths % 10));
     }
 
     // The daemon writes the build file (recording the launcher's size, mtime and hash)

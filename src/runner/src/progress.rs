@@ -44,8 +44,12 @@ pub fn reason(progress: &Progress, idle: Duration) -> String {
 }
 
 fn size(bytes: u64) -> String {
-    if bytes >= 1_000_000 { format!("{:.1} MB", bytes as f64 / 1_000_000.0) }
-    else if bytes >= 1_000 { format!("{:.0} kB", bytes as f64 / 1_000.0) }
+    // Integer arithmetic on purpose: formatting an f64 links ~10 kB of float-printing code.
+    if bytes >= 1_000_000 {
+        let tenths = (bytes + 50_000) / 100_000;
+        format!("{}.{} MB", tenths / 10, tenths % 10)
+    }
+    else if bytes >= 1_000 { format!("{} kB", (bytes + 500) / 1_000) }
     else { format!("{bytes} B") }
 }
 
