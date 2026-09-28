@@ -63,7 +63,7 @@ pub fn check_updates(script: &Path, args: &[OsString], name: &str) {
         let _ = std::fs::set_permissions(&pending, perm);
     }
 
-    crate::xeq::step(name, "Updating…");
+    crate::xeq::step("Updating…");
     let old = data_home.join(format!("{}.old", name));
     crate::debug!("update: removing prior old={}", old.display());
     let _ = std::fs::remove_file(&old);
@@ -78,7 +78,7 @@ pub fn check_updates(script: &Path, args: &[OsString], name: &str) {
         let _ = std::fs::rename(&old, script);
         return;
     }
-    crate::xeq::done(name, "Updated");
+    crate::xeq::clear();
     crate::debug!("update: swap complete; re-execing");
 
     // The arguments are re-execed as the bytes they arrived as, so a re-exec is invisible to

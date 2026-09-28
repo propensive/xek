@@ -154,6 +154,7 @@ const LOG_TAIL_LINES: usize = 20;
 // wrong sat unread in `daemon.log`. That is how a JAR the JVM would not open (#1680) presented
 // itself as a flake. An *empty* log is itself a diagnosis, so say so rather than staying quiet.
 pub fn report_failure(base_dir: &Path, name: &str, reason: &str) {
+    crate::xeq::clear();
     eprintln!("\nThe {name} daemon failed to start: {reason}.");
     eprintln!("Its state directory is {}", base_dir.display());
     let log = base_dir.join("daemon.log");
@@ -186,6 +187,7 @@ pub fn backout(fail_file: &Path, pid_file: &Path, name: &str) {
     if now.saturating_sub(modified) >= 2 {
         let _ = fs::remove_file(fail_file);
     } else if !file_has_content(pid_file) {
+        crate::xeq::clear();
         eprintln!("\nThe {} daemon process failed to start.", name);
         eprintln!("Remove the file {} before trying again.", fail_file.display());
         std::process::exit(1);

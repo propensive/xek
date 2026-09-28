@@ -101,7 +101,7 @@ fn signal_name(signal: libc::c_int) -> Option<&'static str> {
 // reports the conventional 128+signum status. Falls through only if the signal is blocked
 // or otherwise does not terminate, in which case the caller decides what to do.
 #[cfg(unix)]
-fn raise_default(signal: libc::c_int) {
+pub(crate) fn raise_default(signal: libc::c_int) {
     unsafe {
         libc::signal(signal, libc::SIG_DFL);
         libc::raise(signal);
