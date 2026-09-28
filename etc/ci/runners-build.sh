@@ -2,7 +2,7 @@
 #
 # Compile the reusable native runner stubs (one per platform) with `cargo zigbuild`.
 #
-# These are the small (~0.5 MB), generic, version-independent launchers. An application
+# These are the small (~0.2–0.3 MB), generic, version-independent launchers. An application
 # binary is built by concatenating a stub, an ETHRCFG record and the app's JAR; the stubs
 # themselves are reusable across applications and versions. This build is deliberately
 # *separate* from the Mill build, which never compiles Rust: the stubs are data to it, and are
@@ -16,6 +16,12 @@
 # - The macOS stubs are ad-hoc signed here, once. Building an executable never touches the
 #   stub's bytes, so that signature stays valid in every executable built from it — which is
 #   what lets a macOS executable be built on any host with no `codesign` at all.
+#
+# The stubs are built for size, and most of that comes from compiling the standard library
+# itself (`-Zbuild-std`) with the pinned nightly in rust-toolchain.toml, rather than linking the
+# precompiled one, which always carries the panic backtrace printer and its DWARF reader. The
+# flags below are unstable and have changed before; AGENTS.md records what each is for and how
+# to re-measure when a toolchain bump upsets them.
 #
 # Usage: ./etc/ci/runners-build.sh [output-dir]      (default: dist/runners)
 #
@@ -48,10 +54,25 @@ for entry in "${TARGETS[@]}"; do
   triple_args+=(--target "$triple")
 done
 
-echo "runners-build: cross-compiling ${#TARGETS[@]} runner stubs (release)…"
+# Flags for every target: abort on panic with no message or backtrace machinery, and no source
+# locations or `{:?}` bodies baked into the binary (only `debug!` output uses them).
+size_flags="-Zunstable-options -Cpanic=immediate-abort -Zlocation-detail=none -Zfmt-debug=none"
+# Linux only: no unwind tables. Nothing in the stub unwinds (panics abort), and `.eh_frame` was
+# a sixth of the Linux stubs. Windows refuses the flag; macOS gains nothing from it.
+linux_flags="$size_flags -Cforce-unwind-tables=no"
+# Per-target, not RUSTFLAGS — a plain RUSTFLAGS would override all of these.
+export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="$size_flags"
+export CARGO_TARGET_X86_64_APPLE_DARWIN_RUSTFLAGS="$size_flags"
+export CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS="$size_flags"
+export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="$linux_flags"
+export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="$linux_flags -Clinker=$PWD/etc/ci/zigcc-aarch64-linux.sh"
+
+echo "runners-build: cross-compiling ${#TARGETS[@]} runner stubs (release, $(rustc --version))…"
 cargo zigbuild --release \
   --manifest-path Cargo.toml \
   --target-dir "$target_dir" \
+  -Zbuild-std=std,panic_abort \
+  -Zbuild-std-features=optimize_for_size \
   "${triple_args[@]}"
 
 mkdir -p "$OUT"
