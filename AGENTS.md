@@ -48,6 +48,43 @@ version it declares for its next release. The build reads the file through the `
    new release, and only afterwards may `etc/refs` here move up to the Soundness release that
    followed.
 
+## The Rust toolchain is a pinned nightly
+
+`rust-toolchain.toml` pins a *nightly by date*, and `etc/ci/runners-build.sh` builds the stubs
+with unstable flags. This is deliberate: compiling the standard library for size
+(`-Zbuild-std`, `-Cpanic=immediate-abort`) is what takes a stub from ~0.5 MB to 0.2–0.3 MB,
+and nothing stable can reach that because the weight is inside stable's precompiled std (the
+panic backtrace printer and its DWARF reader). The stubs themselves are ordinary native
+binaries; nothing links against them, so the nightly costs users nothing. What it costs is
+that the *build recipe* can rot: a nightly promises nothing about its `-Z` flags, and the pin
+is what keeps `make runners-build` reproducible.
+
+### Rules
+
+1. **Keep the pin current.** Bump the date in `rust-toolchain.toml` as a matter of course when
+   touching the Rust source, and at the latest before each `make runners-release`, so the stubs
+   are not built by a nightly months behind the compiler's fixes. A bump is its own commit;
+   CI's `cargo test` runs on the pinned toolchain and validates it.
+2. **Expect a bump to disturb the flags**, and fix them in the same PR. Everything unstable
+   lives in `runners-build.sh`, each flag with its purpose in a comment, and in
+   `etc/ci/zigcc-aarch64-linux.sh`, a shim that drops a linker argument zig rejects. It has
+   already happened once: the `panic_immediate_abort` std feature became the
+   `-Cpanic=immediate-abort` strategy. When a flag is renamed, replace it; when one stops
+   helping, drop it; do not pile up alternatives.
+3. **Measure before and after any change to the flags or the profile**, on all five targets,
+   and put the numbers in the PR. The ready reckoner is `make runners-build` followed by
+   `ls -l dist/runners`; for what is inside a stub, `cargo install cargo-bloat` and run it with
+   `CARGO_PROFILE_RELEASE_STRIP=false` and the same `-Z` arguments. Compare gzipped sizes too:
+   that is what the embed-all polyglot pays. A change that does not save at least ~1% on most
+   targets is not worth its churn.
+4. **Know what the flags give up**, so a bug report is recognised for what it is. A panic in
+   the stub aborts with no message. `{:?}` formats to nothing, which only the `debug!` macro
+   uses. The Linux stubs have no unwind tables, so debuggers cannot walk their frames. All
+   three are traded for size on purpose; do not "fix" them without re-measuring.
+5. **Don't move the flags into `.cargo/config.toml` or `Cargo.toml`.** They belong to the
+   stub build only; the unit tests and `ethereal-sign` build without them, on the same nightly,
+   and `-Zbuild-std` under `cargo test` would need a different panic strategy.
+
 ### Tools are not dependencies
 
 What this repository *runs* — fume, to run its tests — is pinned in `etc/tools`, not in

@@ -24,7 +24,7 @@ mytool 1.0.0
 
 | Path | |
 |---|---|
-| `src/runner` | The runner stub, in Rust: platform detection, JVM discovery, the daemon handshake, terminal modes, signals, and signed self-upgrade. ~0.5 MB per platform |
+| `src/runner` | The runner stub, in Rust: platform detection, JVM discovery, the daemon handshake, terminal modes, signals, and signed self-upgrade. 0.2–0.3 MB per platform |
 | `src/sign` | `ethereal-sign` — keygen and signing for the self-upgrade path |
 | `src/script` | The `xeq` builder: a polyglot script (one file valid as `sh`, `.bat` and PowerShell) that joins a stub, a record and a JAR, and generates the polyglot launchers. Published with the runners |
 | `src/packager` | `Packager` — a thin front end that turns a `Packaging` into a distributable by invoking the `xeq` script |
@@ -68,8 +68,12 @@ a Soundness *release*, never a snapshot, because Soundness in turn pins an XEQ r
 
 ## Building
 
-Requires a JDK, and — to build stubs rather than download them — a Rust toolchain with
+Requires a JDK, and — to build stubs rather than download them — `rustup`, which installs the
+nightly pinned in `rust-toolchain.toml` on first use, with
 [`cargo-zigbuild`](https://github.com/rust-cross/cargo-zigbuild) and `zig` for cross-compiling.
+The stubs are built with a nightly because compiling the standard library for size
+(`-Zbuild-std`) is what keeps them small; the pin is bumped deliberately, as `AGENTS.md`
+describes.
 
 ```sh
 make xeq-script      # assemble dist/xeq, the builder
