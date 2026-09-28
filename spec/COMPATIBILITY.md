@@ -7,8 +7,9 @@ at the first message rather than misreading fields. Above the base, the schema m
 
 | Release | Protocol | Base signature (BLAKE3-256 + cadence) | `ETHRCFG` | Reference daemon |
 |---|---|---|---|---|
-| `xeq-0.8` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness: none released yet; see below |
-| `xeq-0.7` | `ethereal-launcher` BinTEL | `eeced165c15f73119cf7710812671924aa558722927d29f37538e7b3953296c2ce` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
+| `xeq-0.9` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
+| `xeq-0.8` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
+| `xeq-0.7` | `ethereal-launcher` BinTEL | `eeced165c15f73119cf7710812671924aa558722927d29f37538e7b3953296c2ce` | v3 | none: Soundness moved from `xeq-0.6` straight to `xeq-0.8` |
 | `xeq-0.6` | `ethereal-launcher` BinTEL | `4701ec19cd0fd3ecfc0e1b8a6525b4edc3a3b1deda370f681986db9aa39c1da692` | v3 | Soundness ≥ 0.65.0 (`ethereal-core`) |
 | `runners-0.5` | `ethereal-launcher` BinTEL | `4701ec19cd0fd3ecfc0e1b8a6525b4edc3a3b1deda370f681986db9aa39c1da692` | v2 | Soundness ≥ 0.65.0 (`ethereal-core`) |
 | `runners-0.4` | `ethereal-launcher` BinTEL | `4701ec19cd0fd3ecfc0e1b8a6525b4edc3a3b1deda370f681986db9aa39c1da692` | v2 | Soundness 0.65.0 (`ethereal-core`) |
@@ -44,6 +45,11 @@ variants are added at the end of `select Message`, `closed` (an output stream ha
 reader) and `shutdown` (a request that the daemon exit). `uid` becomes the platform's
 identifier — a SID on Windows — rather than a number. What each means is in
 [`launcher.md`](launcher.md) and [`layout.md`](layout.md).
+
+`xeq-0.9` leaves the base untouched — its signature is `xeq-0.8`'s — and adds the
+negotiation described under *Layers and acceptances* below: the launcher reads the daemon's
+acceptance before its first connection and writes under the richest composition both hold.
+Against a daemon that publishes no acceptance it behaves exactly as `xeq-0.8` does.
 
 ## Protocol versions
 
@@ -97,7 +103,7 @@ Under that discipline every longer prefix of the chain is a subtype of every sho
 check. The layers, their hashes and the signature of each prefix belong in the table above as
 they are released, pinned in the same three places as the base.
 
-No layer exists yet: `xeq-0.8`'s base is the whole schema, and the mechanism is exercised by
+No layer exists yet: `xeq-0.9`'s base is the whole schema, and the mechanism is exercised by
 the runner's tests against fixture hashes until the first feature that needs a layer arrives.
 
 ## Record versions
