@@ -1,6 +1,6 @@
 tel 1.0
 
-# Flair checks XEQ: every source, against Consequent Style, with the licence header every
+# Flair checks XEK: every source, against Consequent Style, with the licence header every
 # file begins with. The rules below are measured by `flair metrics` commit by commit; `cast` is
 # enforced too. `make check` runs the profile; CI runs the same command.
 

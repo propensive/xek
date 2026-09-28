@@ -21,7 +21,7 @@ mod uds;
 mod update;
 mod verify;
 mod wrapper;
-mod xeq;
+mod xek;
 
 // Debug-trace helper: when `ETHEREAL_DEBUG=1` is set, writes a timestamped
 // line to stderr from the launcher. Intentionally lazy — avoids any cost
@@ -55,12 +55,12 @@ const STARTUP_FAILURE_EXIT_CODE: i32 = 2;
 // JVM runs as a child of a process whose name matches the client (this binary *is* the
 // renamed launcher). A variable rather than an argument sentinel, so that no argument value
 // is reserved: the application may receive any argv at all.
-pub const WRAP_VARIABLE: &str = "XEQ_WRAP_JAVA";
+pub const WRAP_VARIABLE: &str = "XEK_WRAP_JAVA";
 
 // Asks the launcher to download a JVM when none suitable is found. Recognised as an
 // environment variable, or as `--download` when it is the *sole* argument; in any other
 // position `--download` belongs to the application. See `spec/launcher.md`.
-pub const DOWNLOAD_VARIABLE: &str = "XEQ_DOWNLOAD";
+pub const DOWNLOAD_VARIABLE: &str = "XEK_DOWNLOAD";
 const DOWNLOAD_FLAG: &str = "--download";
 
 // Argument values the daemon side reserves for its own internal invocations (shell
@@ -98,7 +98,7 @@ fn main() {
 
     let base_dir = state::base_dir(&name);
     if let Err(reason) = state::prepare_base_dir(&base_dir) {
-        xeq::clear();
+        xek::clear();
         eprintln!("\nThe {name} state directory {} cannot be used: {reason}.", base_dir.display());
         std::process::exit(STARTUP_FAILURE_EXIT_CODE);
     }
@@ -147,7 +147,7 @@ fn main() {
                 // Burdock cache being fetched by that daemon is progress here too.
                 debug!("main: another launcher holds the lock; awaiting socket");
                 let outcome = launch::await_startup(&socket_file, &fail_file, &progress_file, None);
-                xeq::clear();
+                xek::clear();
                 if !matches!(outcome, launch::Outcome::Bound) {
                     debug!("main: socket did not appear");
                     state::abort(&fail_file);
@@ -170,7 +170,7 @@ fn main() {
         std::process::exit(STARTUP_FAILURE_EXIT_CODE);
     }
     if let Err(reason) = state::socket_private(&socket_file) {
-        xeq::clear();
+        xek::clear();
         eprintln!("\nThe {name} daemon socket {} is not trusted: {reason}.", socket_file.display());
         std::process::exit(STARTUP_FAILURE_EXIT_CODE);
     }
@@ -296,7 +296,7 @@ fn parse_arguments(raw: Vec<OsString>) -> (PathBuf, Vec<OsString>, bool) {
 // The launcher's own arguments, separated from the application's. `--download` is a
 // launcher concern — it matters only when no JVM is present — so it is recognised only as
 // the sole argument, where it cannot be an application's option value or follow a `--`
-// separator. `XEQ_DOWNLOAD` in the environment asks for the same thing from a script.
+// separator. `XEK_DOWNLOAD` in the environment asks for the same thing from a script.
 fn intercept(args: &[OsString]) -> (Vec<OsString>, bool) {
     let requested = env::var_os(DOWNLOAD_VARIABLE).is_some_and(|v| !v.is_empty() && v != "0");
     if args.len() == 1 && args[0] == DOWNLOAD_FLAG { (Vec::new(), true) }
@@ -457,7 +457,7 @@ fn negotiate(acceptance_file: &Path, name: &str) -> bintel::Composition {
             composition
         }
         Err(mismatch) => {
-            xeq::clear();
+            xek::clear();
             eprintln!(
                 "\nThe {name} daemon speaks another launcher protocol: its schema is {}, this launcher's is {}.",
                 acceptance::hex(&mismatch.daemon_base), acceptance::hex(&bintel::BASE),
@@ -673,7 +673,7 @@ mod tests {
     // test needs to write a file or move the (process-wide) working directory to prove it.
     #[test]
     fn a_bare_name_never_resolves_against_the_working_directory() {
-        let exe = PathBuf::from("/opt/xeq/bin/flame");
+        let exe = PathBuf::from("/opt/xek/bin/flame");
         let neighbour = std::env::current_dir().unwrap().join("Cargo.toml");
         assert!(neighbour.is_file(), "expected the crate root as the test working directory");
 
@@ -687,7 +687,7 @@ mod tests {
 
     #[test]
     fn the_running_executable_wins_over_a_path_shaped_argv0() {
-        let exe = PathBuf::from("/opt/xeq/bin/flame");
+        let exe = PathBuf::from("/opt/xek/bin/flame");
         assert_eq!(resolve_script("./Cargo.toml", Some(exe.clone())), exe);
     }
 
@@ -707,7 +707,7 @@ mod tests {
 
     #[test]
     fn an_unresolvable_argv0_is_returned_unchanged() {
-        let missing = "xeq-no-such-command-9f3a1c";
+        let missing = "xek-no-such-command-9f3a1c";
         assert_eq!(resolve_script(missing, None), PathBuf::from(missing));
     }
 

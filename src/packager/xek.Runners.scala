@@ -1,21 +1,19 @@
                                                                                                   /*
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃                                                                                                  ┃
-┃                                 ╭───╮ ╭───╮╭────────╮╭─────────╮                                 ┃
-┃                                 │   ╰─╯   ││   ╭─╮  ││   ╭─╮   │                                 ┃
-┃                                 ╰──╮   ╭──╯│   ╰─╯  ││   │ │   │                                 ┃
-┃                                 ╭──╯   ╰──╮│   ╭────╯│   │ │   │                                 ┃
-┃                                 │   ╭─╮   ││   ╰────╮│   ╰─╯   │                                 ┃
-┃                                 ╰───╯ ╰───╯╰────────╯╰─────╮   │                                 ┃
-┃                                                            │   ╰╮                                ┃
-┃                                                            ╰────╯                                ┃
+┃                                 ╭───╮ ╭───╮╭────────╮╭───╮ ╭───╮                                 ┃
+┃                                 │   ╰─╯   ││   ╭─╮  ││   ╰─╯   │                                 ┃
+┃                                 ╰──╮   ╭──╯│   ╰─╯  ││      ╭──╯                                 ┃
+┃                                 ╭──╯   ╰──╮│   ╭────╯│      ╰──╮                                 ┃
+┃                                 │   ╭─╮   ││   ╰────╮│   ╭─╮   │                                 ┃
+┃                                 ╰───╯ ╰───╯╰────────╯╰───╯ ╰───╯                                 ┃
 ┃                                                                                                  ┃
-┃    Cross-build Executable Quickstart, version ${VERSION}.                                        ┃
+┃    Cross-platform Executable Kit, version ${VERSION}.                                            ┃
 ┃    © Copyright 2021-26 Jon Pretty, Propensive OÜ.                                                ┃
 ┃                                                                                                  ┃
 ┃    The primary distribution site is:                                                             ┃
 ┃                                                                                                  ┃
-┃        https://github.com/propensive/xeq/                                                        ┃
+┃        https://github.com/propensive/xek/                                                        ┃
 ┃                                                                                                  ┃
 ┃    Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file     ┃
 ┃    except in compliance with the License. You may obtain a copy of the License at                ┃
@@ -29,7 +27,7 @@
 ┃                                                                                                  ┃
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
                                                                                                   */
-package xeq
+package xek
 
 import anticipation.*
 import gossamer.*
@@ -54,16 +52,16 @@ import textSanitizers.skipSanitizer
 // are interchangeable, and `etc/ci/runners-fetch.sh` reads either.
 object Runners:
   // The published release these hashes came from.
-  lazy val version: Text = cp"/xeq/runners.version".read[Text].trim
+  lazy val version: Text = cp"/xek/runners.version".read[Text].trim
 
   // Where that release's assets are downloaded from, without a trailing slash. Held as data
   // rather than derived from `version`, so that a set of stubs can be republished — or
   // mirrored — without changing this code.
-  lazy val baseUrl: Text = cp"/xeq/runners.url".read[Text].trim
+  lazy val baseUrl: Text = cp"/xek/runners.url".read[Text].trim
 
   // Lowercase SHA-256 hex of each published stub, by platform label.
   lazy val hashes: Map[Text, Text] =
-    val lines = cp"/xeq/runners.tsv".read[Text].cut(t"\n").map(_.trim).filter: line =>
+    val lines = cp"/xek/runners.tsv".read[Text].cut(t"\n").map(_.trim).filter: line =>
       line != t"" && !line.starts(t"#")
 
     lines.map: line =>

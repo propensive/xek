@@ -26,18 +26,18 @@ $parts = $value.Split('|')
 $url = $parts[0]
 $hash = $parts[1]
 $t = "$s.tmp"
-xeq_msg 33 '████████' 0 'Downloading runner…'
+xek_msg 33 '████████' 0 'Downloading runner…'
 try { Invoke-WebRequest -Uri $url -OutFile $t -UseBasicParsing } catch {
     [Console]::Error.WriteLine("Download failed"); exit 1
 }
 $size = (Get-Item $t).Length
-xeq_msg 32 '████████' 1 "Downloaded $size bytes"
-xeq_msg 33 '████████' 0 'Verifying SHA-256…'
+xek_msg 32 '████████' 1 "Downloaded $size bytes"
+xek_msg 33 '████████' 0 'Verifying SHA-256…'
 $g = (Get-FileHash -Path $t -Algorithm SHA256).Hash
 if ($g -ine $hash) {
     [Console]::Error.WriteLine("Hash mismatch"); Remove-Item $t; exit 1
 }
-xeq_msg 32 '████████' 1 'Verified SHA-256'
+xek_msg 32 '████████' 1 'Verified SHA-256'
 
 # Locate the embedded application JAR (the `data` payload) and append it to the downloaded
 # stub, exactly as the offline installer does, forming the self-contained executable.
@@ -58,7 +58,7 @@ foreach ($entry in $indexContent.Split(',')) {
 if (-not $offsets.ContainsKey("data")) {
     [Console]::Error.WriteLine("No embedded data payload"); Remove-Item $t; exit 1
 }
-xeq_msg 33 '████████' 0 'Assembling…'
+xek_msg 33 '████████' 0 'Assembling…'
 if ($os -eq "windows") {
     $tmpDir = if ($env:TEMP) { $env:TEMP } else { "/tmp" }
     $tmp = Join-Path $tmpDir "~zig_$PID"
@@ -75,6 +75,6 @@ if ($os -eq "windows") {
     & bash -c "tail -n +$($dskip + 1) '$s' | sed -n '/^-----END/q; /^-----BEGIN/d; p' | $decode >> '$t'" 2>/dev/null
     & chmod +x $t
 }
-xeq_msg 32 '████████' 1 'Assembled'
+xek_msg 32 '████████' 1 'Assembled'
 Move-Item -Force $t $s
 & $s @args

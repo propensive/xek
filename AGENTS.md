@@ -1,13 +1,13 @@
-# Agent instructions for xeq
+# Agent instructions for xek
 
-Read `README.md` first for what xeq is and how it is built. This file adds the rules an
+Read `README.md` first for what xek is and how it is built. This file adds the rules an
 agent must follow when working in this repository.
 
 ## Dependencies are pinned in `etc/refs`
 
-XEQ's Scala modules compile against Soundness, pinned in `etc/refs`. Nothing in Soundness
-depends on XEQ's jars; Soundness and the applications consume the `xeq` *script*, pinned
-separately by version and SHA-256 in each of their `etc/xeq.tsv` files.
+XEK's Scala modules compile against Soundness, pinned in `etc/refs`. Nothing in Soundness
+depends on XEK's jars; Soundness and the applications consume the `xek` *script*, pinned
+separately by version and SHA-256 in each of their `etc/xek.tsv` files.
 
 `etc/refs` is tab-separated, one upstream per line: `repository`, `version`, and for a snapshot
 the `commit` it was built from. A version `X.Y.Z` is a GitHub Release. A version
@@ -38,13 +38,13 @@ version it declares for its next release. The build reads the file through the `
    `release-launcher.sh`, …) run here, and a bump is a deliberate one-line change. Set
    `PROPENSIVE_GITHUB=/path/to/a/.github/checkout` to test a change to the scripts themselves.
 6. **Never pin a Soundness snapshot here, even briefly.** Soundness pins *this* repository's
-   release in its `etc/xeq.tsv`, so a snapshot pin in `etc/refs` closes a cycle: neither side
+   release in its `etc/xek.tsv`, so a snapshot pin in `etc/refs` closes a cycle: neither side
    could be released before the other. The pin is always a Soundness release, and everything
    Scala here — `src/example`, the end-to-end fixture, included — uses only that release's API.
    When a protocol change needs new daemon behaviour, do not teach the fixture about it: the
-   assertion belongs in Soundness's `ethereal` suite, run with `XEQ` pointing at a script built
-   from this checkout (`make runners-build`, then `etc/ci/xeq-script-build.sh`). The order is
-   then fixed: this repository merges and releases first, Soundness bumps `etc/xeq.tsv` to the
+   assertion belongs in Soundness's `ethereal` suite, run with `XEK` pointing at a script built
+   from this checkout (`make runners-build`, then `etc/ci/xek-script-build.sh`). The order is
+   then fixed: this repository merges and releases first, Soundness bumps `etc/xek.tsv` to the
    new release, and only afterwards may `etc/refs` here move up to the Soundness release that
    followed.
 

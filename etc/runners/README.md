@@ -19,17 +19,17 @@ reusable across applications — they are republished only when the Rust runner 
 
 ## The manifest the packager reads
 
-`res/packager/xeq/runners.{tsv,version,url}` is the copy compiled into `xeq-packager`, and is
+`res/packager/xek/runners.{tsv,version,url}` is the copy compiled into `xek-packager`, and is
 what `Runners.standard` names. `runners-release.sh` rewrites all three, so publishing a release
 is a data change rather than a code change.
 
 ## Provenance
 
 Releases `runners-0.1` through `runners-0.5` were published from the Soundness repository,
-before this project was extracted, and `res/packager/xeq/runners.url` still points there. Those
+before this project was extracted, and `res/packager/xek/runners.url` still points there. Those
 stubs are byte-identical to what this repository builds from the same sources.
 
 The first release made from here supersedes that: build with `make runners-release
 RUNNERS_VERSION=0.6`, or — to keep the published bytes and their hashes exactly as they are —
-fetch `runners-0.5` from `propensive/soundness` and re-upload those files under a `propensive/xeq`
+fetch `runners-0.5` from `propensive/soundness` and re-upload those files under a `propensive/xek`
 release, then point `runners.url` at it.

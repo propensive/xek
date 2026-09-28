@@ -14,8 +14,7 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 VERSION="${1:-}"
-REPO="${2:-propensive/xeq}"
-TAG="xeq-$VERSION"
+REPO="${2:-propensive/xek}"
 MANIFEST="etc/runners/$VERSION.tsv"
 
 if [[ -z "$VERSION" ]]; then
@@ -27,6 +26,12 @@ fi
 
 OUT="dist/runners"
 mkdir -p "$OUT"
+# Releases from before the project was renamed (0.6 to 0.9) are tagged `xeq-<version>`; later
+# ones `xek-<version>`. Probe for the new name and fall back to the old.
+TAG="xek-$VERSION"
+if ! curl -fsIL "https://github.com/$REPO/releases/download/$TAG/$VERSION.SHA256SUMS" >/dev/null 2>&1; then
+  TAG="xeq-$VERSION"
+fi
 base="https://github.com/$REPO/releases/download/$TAG"
 
 while IFS=$'\t' read -r label hash; do

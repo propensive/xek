@@ -280,7 +280,7 @@ mod tests {
 
     #[test]
     fn a_file_is_read_and_its_absence_means_the_base() {
-        let dir = std::env::temp_dir().join(format!("xeq-acceptance-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("xek-acceptance-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("acceptance");
         assert_eq!(load(&file), Ok(Composition::base()));

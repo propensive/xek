@@ -13,7 +13,7 @@ case "$arch" in
 esac
 
 # Add $2 to a ZIP64 EOCD locator's physical offset in file $1, if present.
-xeq_rebase_zip64() {
+xek_rebase_zip64() {
   file=$1; delta=$2
   size=$(wc -c < "$file" | tr -d ' ')
   n=65557; [ "$size" -lt "$n" ] && n=$size
@@ -66,7 +66,7 @@ then
   exit 1
 fi
 
-xeq_msg 33 ████████ 0 "Unpacking…"
+xek_msg 33 ████████ 0 "Unpacking…"
 case "${os}-${arch}" in windows*) gz=0 ;; *) gz=1 ;; esac
 extract "$offset" "$gz" > "$tmpout"
 stubsize=$(wc -c < "$tmpout" | tr -d ' ')
@@ -84,10 +84,10 @@ fi
 
 # Rebase the JAR's ZIP64 locator, if any, by the bytes now in front of it.
 recsize=0; [ -n "$record_offset" ] && recsize=3764
-xeq_rebase_zip64 "$tmpout" $((stubsize + recsize))
+xek_rebase_zip64 "$tmpout" $((stubsize + recsize))
 
 size=$(wc -c < "$tmpout" | tr -d ' ')
-xeq_msg 32 ████████ 1 "Unpacked ($size bytes)"
+xek_msg 32 ████████ 1 "Unpacked ($size bytes)"
 chmod +x "$tmpout"
 mv "$tmpout" "$output"
 exec "$output" "$@"

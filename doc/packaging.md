@@ -6,7 +6,7 @@ Shipping a JVM application to someone who just wants to run it starts with distr
 becomes a self-contained executable — a native launcher per platform, or a single polyglot
 installer script that runs as shell script, batch file and PowerShell alike. Building one is
 joining a bare runner stub, a 3764-byte configuration record and the JAR (`stub ‖ record ‖
-jar`); the reference implementation is the `xeq` script published with each runner release.
+jar`); the reference implementation is the `xek` script published with each runner release.
 
 ### On distribution
 
@@ -18,10 +18,10 @@ the host application's: the oldest deployment problem on the JVM.
 
 A distributable described as a value in the build is direct style applied to packaging.
 
-Everything comes from the `xeq` package:
+Everything comes from the `xek` package:
 
 ```scala
-import xeq.*
+import xek.*
 ```
 
 ### Executables and installers
@@ -82,15 +82,15 @@ against its committed manifest; `Packaging.RunnerSource.Local` reads prebuilt st
 directory instead — the output of `make runners-build` or `make runners-fetch` — which is what
 the test suite and `make e2e` use.
 
-The stubs and the `xeq` builder script are not built by the Scala build and are never stored in a
+The stubs and the `xek` builder script are not built by the Scala build and are never stored in a
 jar. They are published together on their own cadence by `make runners-release`, which also
 rewrites the resources the packager reads, so adopting a new runner is a data change. `Packager`
-locates the script from the `XEQ` environment variable or `dist/xeq`, and shells out to it — the
+locates the script from the `XEK` environment variable or `dist/xek`, and shells out to it — the
 one implementation of the byte format, shared with anyone building from a plain shell.
 
 ### The other end
 
-An XEQ executable is only half of a running application: the launcher starts a *daemon*, and the
+An XEK executable is only half of a running application: the launcher starts a *daemon*, and the
 two speak the protocol in [`spec/`](../spec/README.md). An application being packaged here must
 therefore be one that implements that protocol — `ethereal`, in Soundness, is the reference
 implementation, and `src/example` is the smallest application that uses it.

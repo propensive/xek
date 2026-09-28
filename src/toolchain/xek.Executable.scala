@@ -1,19 +1,19 @@
                                                                                                   /*
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃                                                                                                  ┃
-┃                                 ╭───╮ ╭───╮╭────────╮╭─────────╮                                 ┃
-┃                                 │   ╰─╯   ││   ╭─╮  ││   ╭─╮   │                                 ┃
-┃                                 ╰───╮ ╭───╯│   ╰─╯  ││   │ │   │                                 ┃
-┃                                 ╭───╯ ╰───╮│   ╭────╯│   │ ╰─╮ │                                 ┃
-┃                                 │   ╭─╮   ││   ╰────╮│   ╰─╮ │ │                                 ┃
-┃                                 ╰───╯ ╰───╯╰────────╯╰─────╯ ╰─╯                                 ┃
+┃                                 ╭───╮ ╭───╮╭────────╮╭───╮ ╭───╮                                 ┃
+┃                                 │   ╰─╯   ││   ╭─╮  ││   ╰─╯   │                                 ┃
+┃                                 ╰──╮   ╭──╯│   ╰─╯  ││      ╭──╯                                 ┃
+┃                                 ╭──╯   ╰──╮│   ╭────╯│      ╰──╮                                 ┃
+┃                                 │   ╭─╮   ││   ╰────╮│   ╭─╮   │                                 ┃
+┃                                 ╰───╯ ╰───╯╰────────╯╰───╯ ╰───╯                                 ┃
 ┃                                                                                                  ┃
-┃    XEQ, version 0.1.0.                                                                      ┃
-┃    © Copyright 2021-25 Jon Pretty, Propensive OÜ.                                                ┃
+┃    Cross-platform Executable Kit, version ${VERSION}.                                            ┃
+┃    © Copyright 2021-26 Jon Pretty, Propensive OÜ.                                                ┃
 ┃                                                                                                  ┃
 ┃    The primary distribution site is:                                                             ┃
 ┃                                                                                                  ┃
-┃        https://github.com/propensive/xeq/                                                        ┃
+┃        https://github.com/propensive/xek/                                                        ┃
 ┃                                                                                                  ┃
 ┃    Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file     ┃
 ┃    except in compliance with the License. You may obtain a copy of the License at                ┃
@@ -27,13 +27,13 @@
 ┃                                                                                                  ┃
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
                                                                                                   */
-package xeq
+package xek
 
 import anticipation.*
 import anthology.*
 import gossamer.*
 
-// A command-line-runnable XEQ executable: an application JAR packaged for direct invocation
+// A command-line-runnable XEK executable: an application JAR packaged for direct invocation
 // from a shell, built on the reusable runner stubs and the polyglot scripts. The
 // delivery mode is part of the node's identity, since each is a different distributable: an
 // installer script embedding every platform's runner (`EmbedAll`), a launcher script that
@@ -41,6 +41,6 @@ import gossamer.*
 // one platform (`Native`).
 case class Executable(delivery: Packaging.Delivery) extends Format.Application:
   def id: Text = delivery match
-    case Packaging.Delivery.EmbedAll => t"xeq-embedall"
-    case Packaging.Delivery.Download => t"xeq-download"
-    case Packaging.Delivery.Native   => t"xeq-native"
+    case Packaging.Delivery.EmbedAll => t"xek-embedall"
+    case Packaging.Delivery.Download => t"xek-download"
+    case Packaging.Delivery.Native   => t"xek-native"

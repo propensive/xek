@@ -4,7 +4,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicI32, Ordering};
 
 // The wrapper mode: spawn java synchronously, forwarding TERM/INT/HUP to it.
-// The runner re-invokes itself in this mode (marked by `XEQ_WRAP_JAVA` in the
+// The runner re-invokes itself in this mode (marked by `XEK_WRAP_JAVA` in the
 // environment) so the daemon process appears in `ps` under the client's name
 // (since the launcher binary IS this runner with the JAR appended), making
 // `killall <client>` target only this daemon.

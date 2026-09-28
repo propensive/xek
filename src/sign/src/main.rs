@@ -8,7 +8,7 @@
 //
 //   ethereal-sign sign --key <seed-file> --in <binary> --out <signed>
 //                      [--allow-downgrade]
-//     Reads <binary> (a `stub ‖ record ‖ jar` file produced by `xeq build`),
+//     Reads <binary> (a `stub ‖ record ‖ jar` file produced by `xek build`),
 //     locates the ETHRCFG\x03 record, sets the per-upgrade flags byte and
 //     populates the ML-DSA-44 signature slot. Writes the result to <signed>,
 //     which is byte-for-byte the file that should be delivered as `.pending`

@@ -196,7 +196,7 @@ mod tests {
     }
 
     fn temp_file(name: &str, bytes: &[u8]) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!("xeq-config-test-{}-{}", std::process::id(), name));
+        let path = std::env::temp_dir().join(format!("xek-config-test-{}-{}", std::process::id(), name));
         std::fs::File::create(&path).unwrap().write_all(bytes).unwrap();
         path
     }

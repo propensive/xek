@@ -1,21 +1,19 @@
                                                                                                   /*
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃                                                                                                  ┃
-┃                                 ╭───╮ ╭───╮╭────────╮╭─────────╮                                 ┃
-┃                                 │   ╰─╯   ││   ╭─╮  ││   ╭─╮   │                                 ┃
-┃                                 ╰──╮   ╭──╯│   ╰─╯  ││   │ │   │                                 ┃
-┃                                 ╭──╯   ╰──╮│   ╭────╯│   │ │   │                                 ┃
-┃                                 │   ╭─╮   ││   ╰────╮│   ╰─╯   │                                 ┃
-┃                                 ╰───╯ ╰───╯╰────────╯╰─────╮   │                                 ┃
-┃                                                            │   ╰╮                                ┃
-┃                                                            ╰────╯                                ┃
+┃                                 ╭───╮ ╭───╮╭────────╮╭───╮ ╭───╮                                 ┃
+┃                                 │   ╰─╯   ││   ╭─╮  ││   ╰─╯   │                                 ┃
+┃                                 ╰──╮   ╭──╯│   ╰─╯  ││      ╭──╯                                 ┃
+┃                                 ╭──╯   ╰──╮│   ╭────╯│      ╰──╮                                 ┃
+┃                                 │   ╭─╮   ││   ╰────╮│   ╭─╮   │                                 ┃
+┃                                 ╰───╯ ╰───╯╰────────╯╰───╯ ╰───╯                                 ┃
 ┃                                                                                                  ┃
-┃    Cross-build Executable Quickstart, version ${VERSION}.                                        ┃
+┃    Cross-platform Executable Kit, version ${VERSION}.                                            ┃
 ┃    © Copyright 2021-26 Jon Pretty, Propensive OÜ.                                                ┃
 ┃                                                                                                  ┃
 ┃    The primary distribution site is:                                                             ┃
 ┃                                                                                                  ┃
-┃        https://github.com/propensive/xeq/                                                        ┃
+┃        https://github.com/propensive/xek/                                                        ┃
 ┃                                                                                                  ┃
 ┃    Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file     ┃
 ┃    except in compliance with the License. You may obtain a copy of the License at                ┃
@@ -29,7 +27,7 @@
 ┃                                                                                                  ┃
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
                                                                                                   */
-package xeq
+package xek
 
 import java.util.concurrent as juc
 
@@ -67,9 +65,9 @@ import threading.virtualThreading
 // `build.mill`, which is outside every aggregate.
 //
 // It uses only the API of the Soundness *release* pinned in `etc/refs`, never of an unreleased
-// daemon: Soundness pins this repository's release in its `etc/xeq.tsv`, so a fixture here
+// daemon: Soundness pins this repository's release in its `etc/xek.tsv`, so a fixture here
 // that needed the daemon's next release would make the two unable to release at all. What a
-// new protocol field actually does (say, the per-stream terminal flags of `xeq-0.7`) is
+// new protocol field actually does (say, the per-stream terminal flags of `xek-0.7`) is
 // asserted in Soundness's `ethereal` suite, which runs against a locally built stub; this
 // fixture only has to say hello.
 @main

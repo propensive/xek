@@ -1,21 +1,19 @@
                                                                                                   /*
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃                                                                                                  ┃
-┃                                 ╭───╮ ╭───╮╭────────╮╭─────────╮                                 ┃
-┃                                 │   ╰─╯   ││   ╭─╮  ││   ╭─╮   │                                 ┃
-┃                                 ╰──╮   ╭──╯│   ╰─╯  ││   │ │   │                                 ┃
-┃                                 ╭──╯   ╰──╮│   ╭────╯│   │ │   │                                 ┃
-┃                                 │   ╭─╮   ││   ╰────╮│   ╰─╯   │                                 ┃
-┃                                 ╰───╯ ╰───╯╰────────╯╰─────╮   │                                 ┃
-┃                                                            │   ╰╮                                ┃
-┃                                                            ╰────╯                                ┃
+┃                                 ╭───╮ ╭───╮╭────────╮╭───╮ ╭───╮                                 ┃
+┃                                 │   ╰─╯   ││   ╭─╮  ││   ╰─╯   │                                 ┃
+┃                                 ╰──╮   ╭──╯│   ╰─╯  ││      ╭──╯                                 ┃
+┃                                 ╭──╯   ╰──╮│   ╭────╯│      ╰──╮                                 ┃
+┃                                 │   ╭─╮   ││   ╰────╮│   ╭─╮   │                                 ┃
+┃                                 ╰───╯ ╰───╯╰────────╯╰───╯ ╰───╯                                 ┃
 ┃                                                                                                  ┃
-┃    Cross-build Executable Quickstart, version ${VERSION}.                                        ┃
+┃    Cross-platform Executable Kit, version ${VERSION}.                                            ┃
 ┃    © Copyright 2021-26 Jon Pretty, Propensive OÜ.                                                ┃
 ┃                                                                                                  ┃
 ┃    The primary distribution site is:                                                             ┃
 ┃                                                                                                  ┃
-┃        https://github.com/propensive/xeq/                                                        ┃
+┃        https://github.com/propensive/xek/                                                        ┃
 ┃                                                                                                  ┃
 ┃    Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file     ┃
 ┃    except in compliance with the License. You may obtain a copy of the License at                ┃
@@ -29,7 +27,7 @@
 ┃                                                                                                  ┃
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
                                                                                                   */
-package xeq
+package xek
 
 import ambience.*
 import anticipation.*
@@ -61,11 +59,11 @@ import filesystemOptions.overwritePreexisting
 
 import filesystemBackends.javaBaseFilesystem
 
-// Turns a `Packaging` into a distributable by invoking the published `xeq` builder script —
+// Turns a `Packaging` into a distributable by invoking the published `xek` builder script —
 // the single implementation of the ETHRCFG v3 format and the polyglot launchers
-// (`src/script`, `spec/ethrcfg.md`). The script is located from the `XEQ` environment
-// variable, else `dist/xeq` under the working directory. `Native` runs `xeq build`, `EmbedAll`
-// runs `xeq embed-all`, `Download` runs `xeq download`; each delivery's flags come straight
+// (`src/script`, `spec/ethrcfg.md`). The script is located from the `XEK` environment
+// variable, else `dist/xek` under the working directory. `Native` runs `xek build`, `EmbedAll`
+// runs `xek embed-all`, `Download` runs `xek download`; each delivery's flags come straight
 // from the `Packaging` fields.
 //
 // Nothing here reimplements the byte format: the split's whole point is that one script,
@@ -120,24 +118,24 @@ object Packager:
 
     val exit: Exit =
       mitigate:
-        case Exec.Error(_, _, _) => Packager.Error(m"Could not run the xeq builder script")
+        case Exec.Error(_, _, _) => Packager.Error(m"Could not run the xek builder script")
       . protect:
           Command(args.toList*).exec[Exit]()
 
     exit match
       case Exit.Ok         => config.output
       case Exit.Fail(code) =>
-        abort(Packager.Error(m"The xeq builder exited with status $code (see its output above)"))
+        abort(Packager.Error(m"The xek builder exited with status $code (see its output above)"))
 
-  // Locate the builder script: `$XEQ`, else `dist/xeq` under the working directory. Absent, a
+  // Locate the builder script: `$XEK`, else `dist/xek` under the working directory. Absent, a
   // clear instruction rather than a download — every in-repo caller (tests, `make e2e`) has run
-  // `make xeq-script`, and a downstream build sets `XEQ` to the release asset it fetched.
+  // `make xek-script`, and a downstream build sets `XEK` to the release asset it fetched.
   private def resolveScript(using WorkingDirectory): Path on Linux raises Packager.Error =
-    safely(Environment.xeq[Text].as[Path on Linux]).or:
+    safely(Environment.xek[Text].as[Path on Linux]).or:
       val work: Path on Linux = workingDirectory
-      val candidate: Path on Linux = unsafely(t"${work.encode}/dist/xeq".as[Path on Linux])
+      val candidate: Path on Linux = unsafely(t"${work.encode}/dist/xek".as[Path on Linux])
       if candidate.existent() then candidate
-      else abort(Packager.Error(m"No xeq builder found: set XEQ or run `make xeq-script` to write dist/xeq"))
+      else abort(Packager.Error(m"No xek builder found: set XEK or run `make xek-script` to write dist/xek"))
 
   // A temporary manifest for the script, beside the output so it shares its writable directory.
   private def temporaryManifest(hashes: Map[Text, Text], output: Path on Linux)
@@ -148,7 +146,7 @@ object Packager:
     . protect:
         val body: Text = hashes.to[List].map((label, hash) => t"$label\t$hash").join(t"\n")
         val dir: Path on Linux = unsafely(output.parent.assume)
-        val path: Path on Linux = unsafely(t"${dir.encode}/.xeq-manifest.tsv".as[Path on Linux])
+        val path: Path on Linux = unsafely(t"${dir.encode}/.xek-manifest.tsv".as[Path on Linux])
         path.open[File](Write, OpenFlag.Create, OpenFlag.Truncate):
           file.write(Chain(body.in[Data](using codepages.utf8Codepage)))
         path

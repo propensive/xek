@@ -1,4 +1,4 @@
-# XEQ — see README.md
+# XEK — see README.md
 #
 # The Scala modules are built by Mill; the runner stubs are built by Cargo. The two are
 # deliberately separate: Mill never compiles Rust, and the stubs are published on their own
@@ -6,18 +6,18 @@
 
 MILL = ./mill
 
-.PHONY: check build test cargo-test runners-build runners-fetch runners-release xeq-script publishLocal sync-deps tools e2e clean
+.PHONY: check build test cargo-test runners-build runners-fetch runners-release xek-script publishLocal sync-deps tools e2e clean
 
 # Everything published from this repository. `example` is deliberately excluded: it is the
 # end-to-end fixture, and the only module that depends on a daemon implementation.
 build:
-	$(MILL) xeq.all
+	$(MILL) xek.all
 
 # Suites carry no `main`; a host runner discovers them from the `META-INF/services/probably.Suite`
 # index and drives them over the test-event protocol. `$(TESTS)` are fume selection terms.
-test: xeq-script
-	$(MILL) xeq.test.assembly
-	XEQ=$(PWD)/dist/xeq fume run -c out/xeq/test/assembly.dest/out.jar $(TESTS)
+test: xek-script
+	$(MILL) xek.test.assembly
+	XEK=$(PWD)/dist/xek fume run -c out/xek/test/assembly.dest/out.jar $(TESTS)
 
 # The runner's own unit tests — the BinTEL codec, the ETHRCFG verifier, the state machine.
 cargo-test:
@@ -34,7 +34,7 @@ runners-fetch:
 	@if [ -z "$(RUNNERS_VERSION)" ]; then echo "Usage: make runners-fetch RUNNERS_VERSION=X [REPO=owner/repo]" >&2; exit 1; fi
 	./etc/ci/runners-fetch.sh "$(RUNNERS_VERSION)" "$(REPO)"
 
-# Build, publish and record a new set of stubs. Also rewrites res/packager/xeq/runners.{tsv,
+# Build, publish and record a new set of stubs. Also rewrites res/packager/xek/runners.{tsv,
 # version,url}, which is how the packager learns about the release — commit those.
 runners-release:
 	@if [ -z "$(RUNNERS_VERSION)" ]; then echo "Usage: make runners-release RUNNERS_VERSION=X [REPO=owner/repo]" >&2; exit 1; fi
@@ -55,27 +55,27 @@ check:
 tools:
 	./etc/shared tools.sh
 
-# Assemble the polyglot `xeq` builder script (dist/xeq and dist/xeq.cmd) from its three shell
+# Assemble the polyglot `xek` builder script (dist/xek and dist/xek.cmd) from its three shell
 # sections and the launcher templates, baking in the version, base URL and stub hashes read
-# from res/packager/xeq/runners.{version,url,tsv}. `make test` and `make e2e` depend on this.
-xeq-script:
-	./etc/ci/xeq-script-build.sh \
-	  "$$(cat res/packager/xeq/runners.version)" \
-	  "$$(cat res/packager/xeq/runners.url)" \
-	  res/packager/xeq/runners.tsv \
-	  dist/xeq
+# from res/packager/xek/runners.{version,url,tsv}. `make test` and `make e2e` depend on this.
+xek-script:
+	./etc/ci/xek-script-build.sh \
+	  "$$(cat res/packager/xek/runners.version)" \
+	  "$$(cat res/packager/xek/runners.url)" \
+	  res/packager/xek/runners.tsv \
+	  dist/xek
 
 # Install the jars into ~/.ivy2/local, where coursier finds them with no repository
-# configuration — how a downstream build consumes XEQ before it has a published home.
+# configuration — how a downstream build consumes XEK before it has a published home.
 publishLocal:
-	$(MILL) xeq.core.publishLocal
-	$(MILL) xeq.packager.publishLocal
-	$(MILL) xeq.toolchain.publishLocal
+	$(MILL) xek.core.publishLocal
+	$(MILL) xek.packager.publishLocal
+	$(MILL) xek.toolchain.publishLocal
 
 # The end-to-end check: package the example application around a real runner stub and run it.
 # Needs dist/runners (from `runners-build` or `runners-fetch`), and resolves a daemon
 # implementation — the one place anything here does.
-e2e: xeq-script
+e2e: xek-script
 	./etc/ci/e2e.sh
 
 clean:

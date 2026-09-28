@@ -1,21 +1,19 @@
                                                                                                   /*
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃                                                                                                  ┃
-┃                                 ╭───╮ ╭───╮╭────────╮╭─────────╮                                 ┃
-┃                                 │   ╰─╯   ││   ╭─╮  ││   ╭─╮   │                                 ┃
-┃                                 ╰──╮   ╭──╯│   ╰─╯  ││   │ │   │                                 ┃
-┃                                 ╭──╯   ╰──╮│   ╭────╯│   │ │   │                                 ┃
-┃                                 │   ╭─╮   ││   ╰────╮│   ╰─╯   │                                 ┃
-┃                                 ╰───╯ ╰───╯╰────────╯╰─────╮   │                                 ┃
-┃                                                            │   ╰╮                                ┃
-┃                                                            ╰────╯                                ┃
+┃                                 ╭───╮ ╭───╮╭────────╮╭───╮ ╭───╮                                 ┃
+┃                                 │   ╰─╯   ││   ╭─╮  ││   ╰─╯   │                                 ┃
+┃                                 ╰──╮   ╭──╯│   ╰─╯  ││      ╭──╯                                 ┃
+┃                                 ╭──╯   ╰──╮│   ╭────╯│      ╰──╮                                 ┃
+┃                                 │   ╭─╮   ││   ╰────╮│   ╭─╮   │                                 ┃
+┃                                 ╰───╯ ╰───╯╰────────╯╰───╯ ╰───╯                                 ┃
 ┃                                                                                                  ┃
-┃    Cross-build Executable Quickstart, version ${VERSION}.                                        ┃
+┃    Cross-platform Executable Kit, version ${VERSION}.                                            ┃
 ┃    © Copyright 2021-26 Jon Pretty, Propensive OÜ.                                                ┃
 ┃                                                                                                  ┃
 ┃    The primary distribution site is:                                                             ┃
 ┃                                                                                                  ┃
-┃        https://github.com/propensive/xeq/                                                        ┃
+┃        https://github.com/propensive/xek/                                                        ┃
 ┃                                                                                                  ┃
 ┃    Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file     ┃
 ┃    except in compliance with the License. You may obtain a copy of the License at                ┃
@@ -29,7 +27,7 @@
 ┃                                                                                                  ┃
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
                                                                                                   */
-package xeq
+package xek
 
 import anticipation.*
 import galilei.*
@@ -39,7 +37,7 @@ import vacuous.*
 
 // A complete, declarative description of how to turn an application into a
 // distributable. `Packager.pack` is a thin facade over the existing per-platform
-// assembly (`Assembler`) and script wrapping (`Xeq`); each field maps to one of
+// assembly (`Assembler`) and script wrapping (`Xek`); each field maps to one of
 // those existing mechanisms.
 object Packaging:
   // How the per-platform binaries reach the user.
