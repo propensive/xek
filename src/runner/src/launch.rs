@@ -34,7 +34,7 @@ pub fn launch(
     download: bool,
 ) {
     crate::debug!("launch: start name={} script={}", name, script.display());
-    let java = match crate::java::find_java(config.java_min, config.java_pref, config.bundle, download, name) {
+    let java = match crate::java::find_java(config.java_min, config.java_pref, config.bundle, download) {
         Some(path) => { crate::debug!("launch: java found at {}", path.display()); path },
         None => {
             crate::debug!("launch: java not found");
@@ -95,8 +95,7 @@ pub fn launch(
 
     let _ = std::fs::write(pid_file, format!("{}\n", child.id()));
 
-    let start = Instant::now();
-    let (outcome, shown) = await_startup(socket_file, fail_file, progress_file, name, Some(&mut child));
+    let outcome = await_startup(socket_file, fail_file, progress_file, Some(&mut child));
     let _ = std::fs::remove_file(progress_file);
     crate::debug!("launch: post-poll socket_ready={} fail_exists={}",
         crate::state::socket_ready(socket_file), fail_file.exists());
@@ -107,6 +106,7 @@ pub fn launch(
         // The daemon process exited before its socket appeared: it failed during startup.
         Outcome::Exited => {
             crate::debug!("launch: daemon exited during startup, aborting");
+            crate::xeq::clear();
             crate::state::abort(fail_file);
             crate::state::report_failure(base_dir, name, "it exited during startup");
             crate::state::backout(fail_file, pid_file, name);
@@ -115,6 +115,7 @@ pub fn launch(
 
         Outcome::Failed | Outcome::Idle(_) => {
             crate::debug!("launch: socket never appeared, aborting");
+            crate::xeq::clear();
             crate::state::abort(fail_file);
             crate::state::report_failure(base_dir, name, &idle_reason(&outcome));
             crate::state::backout(fail_file, pid_file, name);
@@ -122,11 +123,7 @@ pub fn launch(
         }
     }
 
-    if shown {
-        let elapsed = start.elapsed();
-        let tenths = elapsed.as_secs() * 10 + u64::from(elapsed.subsec_millis() / 100);
-        crate::xeq::done(name, &format!("Started in {}.{}s", tenths / 10, tenths % 10));
-    }
+    crate::xeq::clear();
 
     // The daemon writes the build file (recording the launcher's size, mtime and hash)
     // shortly after binding the socket. We don't need it to connect, but the staleness
@@ -141,29 +138,28 @@ pub fn launch(
 // Waits for the daemon to bind its socket, restarting the idle window on every change to the
 // progress file and echoing the bootstrap's position to the terminal. `child` is the daemon
 // process when this launcher spawned it (its exit is then detected immediately rather than at
-// the deadline); a launcher waiting on another launcher's daemon passes `None`. Returns the
-// outcome and whether a status line was shown (so the caller can close it).
+// the deadline); a launcher waiting on another launcher's daemon passes `None`. The status line
+// is left showing on return; the caller clears it, or prints its diagnostic after clearing it.
 pub fn await_startup(
     socket_file: &Path,
     fail_file: &Path,
     progress_file: &Path,
-    name: &str,
     mut child: Option<&mut Child>,
-) -> (Outcome, bool) {
+) -> Outcome {
     let start = Instant::now();
     let mut watch = Watch::new(start);
     let mut shown = false;
 
     loop {
-        if crate::state::socket_ready(socket_file) { return (Outcome::Bound, shown); }
-        if fail_file.exists() { return (Outcome::Failed, shown); }
+        if crate::state::socket_ready(socket_file) { return Outcome::Bound; }
+        if fail_file.exists() { return Outcome::Failed; }
 
         // If the daemon process exits before its socket appears, stop immediately rather
         // than polling out the full window — or, worse, falling through to connect to a
         // socket that will never accept (which can block forever).
         if let Some(child) = child.as_deref_mut() {
             if matches!(child.try_wait(), Ok(Some(_))) && !crate::state::socket_ready(socket_file) {
-                return (Outcome::Exited, shown);
+                return Outcome::Exited;
             }
         }
 
@@ -172,17 +168,18 @@ pub fn await_startup(
 
         if watch.observe(current, now) {
             if let Some(progress) = current {
-                crate::xeq::step(name, &progress::message(&progress));
+                crate::xeq::spin(&progress::message(&progress));
                 shown = true;
             }
         }
+        crate::xeq::tick();
 
         if watch.expired(now, STARTUP_IDLE_LIMIT) {
-            return (Outcome::Idle(watch.current()), shown);
+            return Outcome::Idle(watch.current());
         }
 
         if !shown && start.elapsed() >= Duration::from_secs(2) {
-            crate::xeq::step(name, "Starting…");
+            crate::xeq::step("Starting…");
             shown = true;
         }
 

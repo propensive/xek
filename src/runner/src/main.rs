@@ -98,6 +98,7 @@ fn main() {
 
     let base_dir = state::base_dir(&name);
     if let Err(reason) = state::prepare_base_dir(&base_dir) {
+        xeq::clear();
         eprintln!("\nThe {name} state directory {} cannot be used: {reason}.", base_dir.display());
         std::process::exit(STARTUP_FAILURE_EXIT_CODE);
     }
@@ -145,9 +146,8 @@ fn main() {
                 // Wait by the same rule as the launcher doing the spawning: a cold
                 // Burdock cache being fetched by that daemon is progress here too.
                 debug!("main: another launcher holds the lock; awaiting socket");
-                let (outcome, shown) =
-                    launch::await_startup(&socket_file, &fail_file, &progress_file, &name, None);
-                if shown && matches!(outcome, launch::Outcome::Bound) { xeq::done(&name, "Started"); }
+                let outcome = launch::await_startup(&socket_file, &fail_file, &progress_file, None);
+                xeq::clear();
                 if !matches!(outcome, launch::Outcome::Bound) {
                     debug!("main: socket did not appear");
                     state::abort(&fail_file);
@@ -170,6 +170,7 @@ fn main() {
         std::process::exit(STARTUP_FAILURE_EXIT_CODE);
     }
     if let Err(reason) = state::socket_private(&socket_file) {
+        xeq::clear();
         eprintln!("\nThe {name} daemon socket {} is not trusted: {reason}.", socket_file.display());
         std::process::exit(STARTUP_FAILURE_EXIT_CODE);
     }
@@ -456,6 +457,7 @@ fn negotiate(acceptance_file: &Path, name: &str) -> bintel::Composition {
             composition
         }
         Err(mismatch) => {
+            xeq::clear();
             eprintln!(
                 "\nThe {name} daemon speaks another launcher protocol: its schema is {}, this launcher's is {}.",
                 acceptance::hex(&mismatch.daemon_base), acceptance::hex(&bintel::BASE),

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-pub fn find_java(minimum: u16, preferred: u16, bundle: &str, do_download: bool, name: &str) -> Option<PathBuf> {
+pub fn find_java(minimum: u16, preferred: u16, bundle: &str, do_download: bool) -> Option<PathBuf> {
     if let Some(path) = which("java") {
         if check_version(&path, minimum) { return Some(path); }
     }
@@ -35,7 +35,7 @@ pub fn find_java(minimum: u16, preferred: u16, bundle: &str, do_download: bool, 
         }
     }
 
-    if do_download { return download(preferred, bundle, name); }
+    if do_download { return download(preferred, bundle); }
     None
 }
 
@@ -117,7 +117,7 @@ fn os_label() -> &'static str {
     }
 }
 
-pub fn download(preferred: u16, bundle: &str, name: &str) -> Option<PathBuf> {
+pub fn download(preferred: u16, bundle: &str) -> Option<PathBuf> {
     let data_home = crate::state::data_home();
     let java_home = data_home.join("java");
     let temp_root = data_home.join("tmp");
@@ -136,33 +136,38 @@ pub fn download(preferred: u16, bundle: &str, name: &str) -> Option<PathBuf> {
         return None;
     }
 
-    crate::xeq::step(name, &format!("Downloading Java {preferred}…"));
+    crate::xeq::spin(&format!("Downloading Java {preferred}…"));
     let archive = temp_dir.join("jdk.tar.gz");
-    let download_status = if have_curl {
-        Command::new("curl").args(["-fsSL", "-o"]).arg(&archive).arg(&url).status()
+    let download = if have_curl {
+        Command::new("curl").args(["-fsSL", "-o"]).arg(&archive).arg(&url).spawn()
     } else {
-        Command::new("wget").args(["-q", "-O"]).arg(&archive).arg(&url).status()
+        Command::new("wget").args(["-q", "-O"]).arg(&archive).arg(&url).spawn()
     };
+    // Poll rather than wait, so the spinner keeps turning while the download runs.
+    let download_status = download.and_then(|mut child| loop {
+        if let Some(status) = child.try_wait()? { break Ok(status); }
+        crate::xeq::tick();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    });
     if !matches!(&download_status, Ok(s) if s.success()) {
-        crate::xeq::done(name, "The download failed.");
+        crate::xeq::clear();
+        eprintln!("The download of Java {preferred} failed.");
         let _ = std::fs::remove_dir_all(&temp_dir);
         return None;
     }
-    let bytes = std::fs::metadata(&archive).map(|m| m.len()).unwrap_or(0);
-    crate::xeq::done(name, &format!("Downloaded Java {preferred} ({} MB)", bytes / 1_048_576));
-
-    crate::xeq::step(name, "Unpacking Java…");
+    crate::xeq::step("Unpacking Java…");
     let tar_status = Command::new("tar")
         .arg("xzf").arg(&archive).arg("-C").arg(&temp_dir)
         .stdin(Stdio::null())
         .status();
     let _ = std::fs::remove_file(&archive);
     if !matches!(&tar_status, Ok(s) if s.success()) {
-        crate::xeq::done(name, "Unpack failed.");
+        crate::xeq::clear();
+        eprintln!("Unpacking Java {preferred} failed.");
         let _ = std::fs::remove_dir_all(&temp_dir);
         return None;
     }
-    crate::xeq::done(name, "Unpacked Java");
+    crate::xeq::clear();
 
     let release_file = find_release(&temp_dir)?;
     let release_dir = release_file.parent()?.to_path_buf();
