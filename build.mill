@@ -124,7 +124,7 @@ object settings:
       mvn"dev.propensive:profanity-core:$v",     // termcaps
       mvn"dev.propensive:digression-ansi:$v",    // stack-trace diagnostics
       mvn"dev.propensive:inimitable-core:$v",    // Uuid, for scratch filenames
-      mvn"dev.propensive:stratiform-binary:$v")  // the schema signature, derived from spec/
+      mvn"dev.propensive:stratiform-core:$v")    // the schema signature, derived from spec/ (BinTEL lives in stratiform-core since 0.69.0)
 
     // `xeq.example`: the end-to-end fixture, and the ONLY place the daemon appears. It is not a
     // dependency of any published XEQ artifact — see the module's comment.
