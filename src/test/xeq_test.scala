@@ -62,8 +62,8 @@ import logging.silentLogging
 import stdios.fileDescriptorStdio
 import termcaps.environmentTermcap
 import strategies.throwUnsafely
-import charEncoders.utf8Encoder
-import charDecoders.utf8Decoder
+import codepages.utf8Codepage
+import charsets.utf8Charset
 import alphabets.hexLowerCase
 import providers.javaBaseProvider
 import textSanitizers.skipSanitizer

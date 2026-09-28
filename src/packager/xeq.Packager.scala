@@ -150,7 +150,7 @@ object Packager:
         val dir: Path on Linux = unsafely(output.parent.assume)
         val path: Path on Linux = unsafely(t"${dir.encode}/.xeq-manifest.tsv".as[Path on Linux])
         path.open[File](Write, OpenFlag.Create, OpenFlag.Truncate):
-          file.write(Chain(body.in[Data](using charEncoders.utf8Encoder)))
+          file.write(Chain(body.in[Data](using codepages.utf8Codepage)))
         path
 
   // PackageError → Packager.Error
