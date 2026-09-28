@@ -1,19 +1,19 @@
                                                                                                   /*
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃                                                                                                  ┃
-┃                                 ╭───╮ ╭───╮╭────────╮╭─────────╮                                 ┃
-┃                                 │   ╰─╯   ││   ╭─╮  ││   ╭─╮   │                                 ┃
-┃                                 ╰───╮ ╭───╯│   ╰─╯  ││   │ │   │                                 ┃
-┃                                 ╭───╯ ╰───╮│   ╭────╯│   │ ╰─╮ │                                 ┃
-┃                                 │   ╭─╮   ││   ╰────╮│   ╰─╮ │ │                                 ┃
-┃                                 ╰───╯ ╰───╯╰────────╯╰─────╯ ╰─╯                                 ┃
+┃                                 ╭───╮ ╭───╮╭────────╮╭───╮ ╭───╮                                 ┃
+┃                                 │   ╰─╯   ││   ╭─╮  ││   ╰─╯   │                                 ┃
+┃                                 ╰──╮   ╭──╯│   ╰─╯  ││      ╭──╯                                 ┃
+┃                                 ╭──╯   ╰──╮│   ╭────╯│      ╰──╮                                 ┃
+┃                                 │   ╭─╮   ││   ╰────╮│   ╭─╮   │                                 ┃
+┃                                 ╰───╯ ╰───╯╰────────╯╰───╯ ╰───╯                                 ┃
 ┃                                                                                                  ┃
-┃    XEQ, version 0.1.0.                                                                      ┃
-┃    © Copyright 2021-25 Jon Pretty, Propensive OÜ.                                                ┃
+┃    Cross-platform Executable Kit, version ${VERSION}.                                            ┃
+┃    © Copyright 2021-26 Jon Pretty, Propensive OÜ.                                                ┃
 ┃                                                                                                  ┃
 ┃    The primary distribution site is:                                                             ┃
 ┃                                                                                                  ┃
-┃        https://github.com/propensive/xeq/                                                        ┃
+┃        https://github.com/propensive/xek/                                                        ┃
 ┃                                                                                                  ┃
 ┃    Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file     ┃
 ┃    except in compliance with the License. You may obtain a copy of the License at                ┃
@@ -27,13 +27,13 @@
 ┃                                                                                                  ┃
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
                                                                                                   */
-package xeq
+package xek
 
 import anticipation.*
 import gossamer.*
 import vacuous.*
 
-// The xeq packaging configuration `executableEdges`' tools fold settings into: the distributable's
+// The xek packaging configuration `executableEdges`' tools fold settings into: the distributable's
 // basename, the platforms it targets (defaulting to every platform its runner source names),
 // where the bare runner stubs come from, the Java runtime policy recorded in each stub's
 // ETHRCFG block, self-upgrade signing, and the build number that orders upgrades. A runner

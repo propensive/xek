@@ -136,7 +136,7 @@ pub fn download(preferred: u16, bundle: &str) -> Option<PathBuf> {
         return None;
     }
 
-    crate::xeq::spin(&format!("Downloading Java {preferred}…"));
+    crate::xek::spin(&format!("Downloading Java {preferred}…"));
     let archive = temp_dir.join("jdk.tar.gz");
     let download = if have_curl {
         Command::new("curl").args(["-fsSL", "-o"]).arg(&archive).arg(&url).spawn()
@@ -146,28 +146,28 @@ pub fn download(preferred: u16, bundle: &str) -> Option<PathBuf> {
     // Poll rather than wait, so the spinner keeps turning while the download runs.
     let download_status = download.and_then(|mut child| loop {
         if let Some(status) = child.try_wait()? { break Ok(status); }
-        crate::xeq::tick();
+        crate::xek::tick();
         std::thread::sleep(std::time::Duration::from_millis(50));
     });
     if !matches!(&download_status, Ok(s) if s.success()) {
-        crate::xeq::clear();
+        crate::xek::clear();
         eprintln!("The download of Java {preferred} failed.");
         let _ = std::fs::remove_dir_all(&temp_dir);
         return None;
     }
-    crate::xeq::step("Unpacking Java…");
+    crate::xek::step("Unpacking Java…");
     let tar_status = Command::new("tar")
         .arg("xzf").arg(&archive).arg("-C").arg(&temp_dir)
         .stdin(Stdio::null())
         .status();
     let _ = std::fs::remove_file(&archive);
     if !matches!(&tar_status, Ok(s) if s.success()) {
-        crate::xeq::clear();
+        crate::xek::clear();
         eprintln!("Unpacking Java {preferred} failed.");
         let _ = std::fs::remove_dir_all(&temp_dir);
         return None;
     }
-    crate::xeq::clear();
+    crate::xek::clear();
 
     let release_file = find_release(&temp_dir)?;
     let release_dir = release_file.parent()?.to_path_buf();

@@ -1,4 +1,4 @@
-// The launcher's status line: the one line xeq itself writes to the terminal, and only to a
+// The launcher's status line: the one line xek itself writes to the terminal, and only to a
 // terminal. It is redrawn in place — gray text for a step in progress, a blue braille spinner
 // for a download — with the cursor hidden and parked at the start of the line, and it is
 // cleared, not kept, when the step completes. Diagnostics are not drawn here: they are printed

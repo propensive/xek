@@ -1,12 +1,13 @@
-# XEQ
+# XEK
 
 **A JVM application as a single executable file.**
 
-An XEQ executable is a small native *runner stub* with the application's JAR appended to it.
-Running it starts — or reuses — a background daemon holding a warm JVM, forwards the
-invocation's arguments, environment, streams and signals to it, and returns its exit status. So
-the JVM's startup cost is paid once rather than once per invocation, and the command behaves
-like any other command: it reads a pipe, respects `Ctrl-C`, and reports a status.
+XEK is the Cross-platform Executable Kit. An XEK executable is a small native *runner stub*
+with the application's JAR appended to it. Running it starts — or reuses — a background daemon
+holding a warm JVM, forwards the invocation's arguments, environment, streams and signals to it,
+and returns its exit status. So the JVM's startup cost is paid once rather than once per
+invocation, and the command behaves like any other command: it reads a pipe, respects `Ctrl-C`,
+and reports a status.
 
 The stub is generic and reusable. It is the same bytes for every application on a given
 platform, so building an executable is joining three files — the stub, a small configuration
@@ -26,8 +27,8 @@ mytool 1.0.0
 |---|---|
 | `src/runner` | The runner stub, in Rust: platform detection, JVM discovery, the daemon handshake, terminal modes, signals, and signed self-upgrade. 0.2–0.3 MB per platform |
 | `src/sign` | `ethereal-sign` — keygen and signing for the self-upgrade path |
-| `src/script` | The `xeq` builder: a polyglot script (one file valid as `sh`, `.bat` and PowerShell) that joins a stub, a record and a JAR, and generates the polyglot launchers. Published with the runners |
-| `src/packager` | `Packager` — a thin front end that turns a `Packaging` into a distributable by invoking the `xeq` script |
+| `src/script` | The `xek` builder: a polyglot script (one file valid as `sh`, `.bat` and PowerShell) that joins a stub, a record and a JAR, and generates the polyglot launchers. Published with the runners |
+| `src/packager` | `Packager` — a thin front end that turns a `Packaging` into a distributable by invoking the `xek` script |
 | `src/toolchain` | The same packaging as an [Anthology](https://github.com/propensive/soundness) toolchain format, so an application compiles and packages in one pass |
 | `spec/` | **The contract** between a launcher and a daemon, and the reason the two can be developed apart |
 | `src/example` | The end-to-end fixture: the smallest daemonized application there is |
@@ -50,7 +51,7 @@ In every downloading case the bytes are verified against a SHA-256 recorded at p
 
 ## The two halves
 
-XEQ is the launcher half. The other half is a **daemon** — the JVM-side implementation that
+XEK is the launcher half. The other half is a **daemon** — the JVM-side implementation that
 accepts the connection, reconstitutes the invocation's context and runs the application. The
 reference daemon is `ethereal`, in [Soundness](https://github.com/propensive/soundness).
 
@@ -60,11 +61,11 @@ they share. Both sides carry the schema's signature and refuse a peer that disag
 mismatched pair fails at the first message rather than misreading fields — which is precisely
 what makes it safe for them to release on their own cadences.
 
-XEQ's Scala modules are *built* against Soundness's libraries, as any Scala project might be.
+XEK's Scala modules are *built* against Soundness's libraries, as any Scala project might be.
 Nothing here depends on `ethereal`, the daemon, except the end-to-end fixture, which needs
 something at the other end of the socket to be a test at all. That pin (`etc/refs`) is always
-a Soundness *release*, never a snapshot, because Soundness in turn pins an XEQ release in its
-`etc/xeq.tsv`: a protocol change is released here first, and Soundness follows.
+a Soundness *release*, never a snapshot, because Soundness in turn pins an XEK release in its
+`etc/xek.tsv`: a protocol change is released here first, and Soundness follows.
 
 ## Building
 
@@ -76,7 +77,7 @@ The stubs are built with a nightly because compiling the standard library for si
 describes.
 
 ```sh
-make xeq-script      # assemble dist/xeq, the builder
+make xek-script      # assemble dist/xek, the builder
 	make build           # the Scala modules
 make test            # the test suite, through the `fume` runner
 make cargo-test      # the runner's own unit tests
@@ -99,16 +100,16 @@ Stubs are published on their own cadence, and only when the Rust source changes:
 make runners-release RUNNERS_VERSION=0.6
 ```
 
-which cross-compiles the five stubs, assembles the `xeq` builder script, uploads them all to a
-`xeq-0.6` release, records their hashes in `etc/runners/0.6.tsv` and `etc/runners/0.6.SHA256SUMS`,
-and rewrites `res/packager/xeq/runners.{tsv,version,url}` — the resources the packager reads. Publishing is therefore a data change, not a code change, and
+which cross-compiles the five stubs, assembles the `xek` builder script, uploads them all to a
+`xek-0.6` release, records their hashes in `etc/runners/0.6.tsv` and `etc/runners/0.6.SHA256SUMS`,
+and rewrites `res/packager/xek/runners.{tsv,version,url}` — the resources the packager reads. Publishing is therefore a data change, not a code change, and
 an application picks up a runner fix without anything being rebuilt.
 
 ## Status
 
 Extracted from Soundness, where this machinery grew as the `ziggurat` library and the Rust
 runner inside `ethereal`. Runner releases up to `runners-0.5` were published from that
-repository under the `runners-` tag prefix; releases from here use `xeq-`, and `xeq-0.6` — the
+repository under the `runners-` tag prefix; releases from here use `xek-`, and `xek-0.6` — the
 first made from this repository — supersedes them and adds the builder script as a release asset.
 
 ## Licence

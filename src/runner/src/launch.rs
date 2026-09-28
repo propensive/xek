@@ -106,7 +106,7 @@ pub fn launch(
         // The daemon process exited before its socket appeared: it failed during startup.
         Outcome::Exited => {
             crate::debug!("launch: daemon exited during startup, aborting");
-            crate::xeq::clear();
+            crate::xek::clear();
             crate::state::abort(fail_file);
             crate::state::report_failure(base_dir, name, "it exited during startup");
             crate::state::backout(fail_file, pid_file, name);
@@ -115,7 +115,7 @@ pub fn launch(
 
         Outcome::Failed | Outcome::Idle(_) => {
             crate::debug!("launch: socket never appeared, aborting");
-            crate::xeq::clear();
+            crate::xek::clear();
             crate::state::abort(fail_file);
             crate::state::report_failure(base_dir, name, &idle_reason(&outcome));
             crate::state::backout(fail_file, pid_file, name);
@@ -123,7 +123,7 @@ pub fn launch(
         }
     }
 
-    crate::xeq::clear();
+    crate::xek::clear();
 
     // The daemon writes the build file (recording the launcher's size, mtime and hash)
     // shortly after binding the socket. We don't need it to connect, but the staleness
@@ -168,18 +168,18 @@ pub fn await_startup(
 
         if watch.observe(current, now) {
             if let Some(progress) = current {
-                crate::xeq::spin(&progress::message(&progress));
+                crate::xek::spin(&progress::message(&progress));
                 shown = true;
             }
         }
-        crate::xeq::tick();
+        crate::xek::tick();
 
         if watch.expired(now, STARTUP_IDLE_LIMIT) {
             return Outcome::Idle(watch.current());
         }
 
         if !shown && start.elapsed() >= Duration::from_secs(2) {
-            crate::xeq::step("Starting…");
+            crate::xek::step("Starting…");
             shown = true;
         }
 

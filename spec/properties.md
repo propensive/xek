@@ -25,7 +25,7 @@ the rollout in [`README.md`](README.md).
 
 ## Platform labels
 
-One label per published stub, used in asset names, manifests and the `xeq` script's `--target`:
+One label per published stub, used in asset names, manifests and the `xek` script's `--target`:
 
 `linux-x64`, `linux-arm64`, `macos-x64`, `macos-arm64`, `windows-x64`.
 

@@ -1,68 +1,68 @@
 # ---------------------------------------------------------------------------
-# xeq builder — PowerShell 5.1+ section. Mirrors the bash section: joins a
+# xek builder — PowerShell 5.1+ section. Mirrors the bash section: joins a
 # stub, an ETHRCFG v3 record and a JAR, and generates the polyglot launchers.
 # ---------------------------------------------------------------------------
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-$XeqSelf = $MyInvocation.MyCommand.Definition
+$XekSelf = $MyInvocation.MyCommand.Definition
 $Latin = [Text.Encoding]::GetEncoding(28591)
 $Utf8NoBom = New-Object Text.UTF8Encoding($false)
 
-function Xeq-Die($code, $msg) { [Console]::Error.WriteLine("xeq: $msg"); exit $code }
+function Xek-Die($code, $msg) { [Console]::Error.WriteLine("xek: $msg"); exit $code }
 
 # Baked-in metadata from the payload region.
-$XeqLines = [IO.File]::ReadAllLines($XeqSelf)
-function Xeq-Meta($k) { ($XeqLines | Where-Object { $_ -like "# $k=*" } | Select-Object -First 1) -replace "^# $k=" }
-$XeqVersion    = Xeq-Meta 'XEQ_VERSION'
-$XeqRunnersUrl = Xeq-Meta 'RUNNERS_URL'
-$XeqManifest   = ($XeqLines | Where-Object { $_ -like 'runners:*' } | Select-Object -First 1) -replace '^runners:'
+$XekLines = [IO.File]::ReadAllLines($XekSelf)
+function Xek-Meta($k) { ($XekLines | Where-Object { $_ -like "# $k=*" } | Select-Object -First 1) -replace "^# $k=" }
+$XekVersion    = Xek-Meta 'XEK_VERSION'
+$XekRunnersUrl = Xek-Meta 'RUNNERS_URL'
+$XekManifest   = ($XekLines | Where-Object { $_ -like 'runners:*' } | Select-Object -First 1) -replace '^runners:'
 
-function Xeq-BakedHash($label) {
-  foreach ($e in $XeqManifest.Split(',')) { if ($e -like "$label=*") { return $e.Substring($label.Length + 1) } }
+function Xek-BakedHash($label) {
+  foreach ($e in $XekManifest.Split(',')) { if ($e -like "$label=*") { return $e.Substring($label.Length + 1) } }
   return $null
 }
 
-function Xeq-Cache {
-  if ($env:XEQ_CACHE) { $env:XEQ_CACHE }
-  elseif ($env:XDG_CACHE_HOME) { Join-Path $env:XDG_CACHE_HOME 'xeq' }
-  elseif ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'xeq' }
-  else { Join-Path $HOME '.cache/xeq' }
+function Xek-Cache {
+  if ($env:XEK_CACHE) { $env:XEK_CACHE }
+  elseif ($env:XDG_CACHE_HOME) { Join-Path $env:XDG_CACHE_HOME 'xek' }
+  elseif ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'xek' }
+  else { Join-Path $HOME '.cache/xek' }
 }
 
-function Xeq-Sha256($path) { (Get-FileHash -Path $path -Algorithm SHA256).Hash.ToLower() }
+function Xek-Sha256($path) { (Get-FileHash -Path $path -Algorithm SHA256).Hash.ToLower() }
 
-function Xeq-StubName($label) { if ($label -like 'windows*') { "runner-$label.exe" } else { "runner-$label" } }
+function Xek-StubName($label) { if ($label -like 'windows*') { "runner-$label.exe" } else { "runner-$label" } }
 
-function Xeq-ResolveStub($label) {
-  $name = Xeq-StubName $label
+function Xek-ResolveStub($label) {
+  $name = Xek-StubName $label
   if ($opt.runnersDir) {
     $p = Join-Path $opt.runnersDir $name
-    if (-not (Test-Path $p)) { Xeq-Die 2 "no stub $name in $($opt.runnersDir)" }
+    if (-not (Test-Path $p)) { Xek-Die 2 "no stub $name in $($opt.runnersDir)" }
     return $p
   }
-  $base = if ($opt.runnersUrl) { $opt.runnersUrl } else { $XeqRunnersUrl }
-  if (-not $base) { Xeq-Die 2 "no runner source: pass --runners or --runners-url" }
+  $base = if ($opt.runnersUrl) { $opt.runnersUrl } else { $XekRunnersUrl }
+  if (-not $base) { Xek-Die 2 "no runner source: pass --runners or --runners-url" }
   $want = if ($opt.runnersManifest) {
     (Get-Content $opt.runnersManifest | ForEach-Object { $_ -replace "`r" } |
       Where-Object { $_ -match "^$label[`t=]" } | Select-Object -First 1) -replace "^$label[`t=]"
-  } else { Xeq-BakedHash $label }
-  $dir = Join-Path (Xeq-Cache) ("xeq-" + $(if ($XeqVersion) { $XeqVersion } else { '0' }))
+  } else { Xek-BakedHash $label }
+  $dir = Join-Path (Xek-Cache) ("xek-" + $(if ($XekVersion) { $XekVersion } else { '0' }))
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
   $path = Join-Path $dir $name
-  if ((Test-Path $path) -and $want -and ((Xeq-Sha256 $path) -eq $want)) { return $path }
-  xeq_msg 33 '████████' 0 "Fetching $name…"
+  if ((Test-Path $path) -and $want -and ((Xek-Sha256 $path) -eq $want)) { return $path }
+  xek_msg 33 '████████' 0 "Fetching $name…"
   $tmp = "$path.part"
   Invoke-WebRequest -Uri "$base/$name" -OutFile $tmp -UseBasicParsing
-  if ($want) { $got = Xeq-Sha256 $tmp; if ($got -ne $want) { Remove-Item $tmp; Xeq-Die 2 "SHA-256 mismatch for $name" } }
+  if ($want) { $got = Xek-Sha256 $tmp; if ($got -ne $want) { Remove-Item $tmp; Xek-Die 2 "SHA-256 mismatch for $name" } }
   Move-Item -Force $tmp $path
-  xeq_msg 32 '████████' 1 "Fetched $name"
+  xek_msg 32 '████████' 1 "Fetched $name"
   return $path
 }
 
-function Xeq-Record {
+function Xek-Record {
   $r = New-Object byte[] 3764
   $Latin.GetBytes('ETHRCFG').CopyTo($r, 0); $r[7] = 3
-  if (-not [BitConverter]::IsLittleEndian) { Xeq-Die 2 'big-endian host unsupported' }
+  if (-not [BitConverter]::IsLittleEndian) { Xek-Die 2 'big-endian host unsupported' }
   [BitConverter]::GetBytes([uint64]$opt.buildId).CopyTo($r, 8)
   [BitConverter]::GetBytes([uint16]$opt.javaMin).CopyTo($r, 16)
   [BitConverter]::GetBytes([uint16]$opt.javaPref).CopyTo($r, 18)
@@ -70,13 +70,13 @@ function Xeq-Record {
   $r[21] = [byte]$opt.flags
   if ($opt.pubkey) {
     $k = [IO.File]::ReadAllBytes($opt.pubkey)
-    if ($k.Length -ne 1312) { Xeq-Die 2 "public key must be 1312 bytes, is $($k.Length)" }
+    if ($k.Length -ne 1312) { Xek-Die 2 "public key must be 1312 bytes, is $($k.Length)" }
     $k.CopyTo($r, 32)
   }
   return $r
 }
 
-function Xeq-RebaseZip64($path, $delta) {
+function Xek-RebaseZip64($path, $delta) {
   $fs = [IO.File]::Open($path, 'Open', 'ReadWrite')
   try {
     $size = $fs.Length
@@ -100,46 +100,46 @@ function Xeq-RebaseZip64($path, $delta) {
   } finally { $fs.Close() }
 }
 
-function Xeq-Concat($paths, $out) {
+function Xek-Concat($paths, $out) {
   $o = [IO.File]::Create($out)
   try { foreach ($p in $paths) { $s = [IO.File]::OpenRead($p); $s.CopyTo($o); $s.Close() } } finally { $o.Close() }
 }
 
-function Xeq-BuildNative($stub, $out) {
+function Xek-BuildNative($stub, $out) {
   $tmp = "$out.tmp"
   $rec = [IO.Path]::GetTempFileName()
-  [IO.File]::WriteAllBytes($rec, (Xeq-Record))
-  Xeq-Concat @($stub, $rec, $opt.jar) $tmp
+  [IO.File]::WriteAllBytes($rec, (Xek-Record))
+  Xek-Concat @($stub, $rec, $opt.jar) $tmp
   Remove-Item $rec
   $stubSize = (Get-Item $stub).Length
-  Xeq-RebaseZip64 $tmp ($stubSize + 3764)
+  Xek-RebaseZip64 $tmp ($stubSize + 3764)
   Move-Item -Force $tmp $out
 }
 
 # --- template extraction ---------------------------------------------------
-$XeqIndexNum = $null; $XeqIndex = $null
-function Xeq-LoadIndex {
-  if ($null -ne $script:XeqIndexNum) { return }
-  for ($i = 0; $i -lt $XeqLines.Count; $i++) {
-    if ($XeqLines[$i].StartsWith('index:')) { $script:XeqIndexNum = $i + 1; $script:XeqIndex = $XeqLines[$i].Substring(6); return }
+$XekIndexNum = $null; $XekIndex = $null
+function Xek-LoadIndex {
+  if ($null -ne $script:XekIndexNum) { return }
+  for ($i = 0; $i -lt $XekLines.Count; $i++) {
+    if ($XekLines[$i].StartsWith('index:')) { $script:XekIndexNum = $i + 1; $script:XekIndex = $XekLines[$i].Substring(6); return }
   }
-  Xeq-Die 2 'no embedded templates'
+  Xek-Die 2 'no embedded templates'
 }
-function Xeq-Template($name) {
-  Xeq-LoadIndex
+function Xek-Template($name) {
+  Xek-LoadIndex
   $off = $null
-  foreach ($e in $XeqIndex.Split(',')) { if ($e -like "$name=*") { $off = [int]$e.Substring($name.Length + 1) } }
-  if ($null -eq $off) { Xeq-Die 2 "no embedded template $name" }
-  $start = $XeqIndexNum + $off  # 0-based line index of first content line
+  foreach ($e in $XekIndex.Split(',')) { if ($e -like "$name=*") { $off = [int]$e.Substring($name.Length + 1) } }
+  if ($null -eq $off) { Xek-Die 2 "no embedded template $name" }
+  $start = $XekIndexNum + $off  # 0-based line index of first content line
   $b64 = New-Object Text.StringBuilder
-  for ($i = $start; $i -lt $XeqLines.Count; $i++) {
-    if ($XeqLines[$i].StartsWith('-----END')) { break }
-    [void]$b64.Append($XeqLines[$i])
+  for ($i = $start; $i -lt $XekLines.Count; $i++) {
+    if ($XekLines[$i].StartsWith('-----END')) { break }
+    [void]$b64.Append($XekLines[$i])
   }
   return [Convert]::FromBase64String($b64.ToString())
 }
 
-function Xeq-B64Lines($bytes, $gzip) {
+function Xek-B64Lines($bytes, $gzip) {
   if ($gzip) {
     $ms = New-Object IO.MemoryStream
     $gz = New-Object IO.Compression.GZipStream($ms, [IO.Compression.CompressionMode]::Compress)
@@ -152,11 +152,11 @@ function Xeq-B64Lines($bytes, $gzip) {
   return ,$out
 }
 
-function Xeq-Prefix($delivery) {
-  $tmpl = $Latin.GetString((Xeq-Template 'xeq.tmpl'))
-  $bat = $Latin.GetString((Xeq-Template "xeq-$delivery.bat"))
-  $ps1 = $Latin.GetString((Xeq-Template "xeq-$delivery.ps1"))
-  $sh  = $Latin.GetString((Xeq-Template "xeq-$delivery.sh"))
+function Xek-Prefix($delivery) {
+  $tmpl = $Latin.GetString((Xek-Template 'xek.tmpl'))
+  $bat = $Latin.GetString((Xek-Template "xek-$delivery.bat"))
+  $ps1 = $Latin.GetString((Xek-Template "xek-$delivery.ps1"))
+  $sh  = $Latin.GetString((Xek-Template "xek-$delivery.sh"))
   $lines = $tmpl -split "`n"
   $sb = New-Object Text.StringBuilder
   foreach ($ln in $lines) {
@@ -171,10 +171,10 @@ function Xeq-Prefix($delivery) {
 }
 
 # payloads: array of @{label;bytes;gzip}
-function Xeq-EmitPayloads($payloads, $sb) {
+function Xek-EmitPayloads($payloads, $sb) {
   $offset = 1; $index = @(); $encoded = @()
   foreach ($p in $payloads) {
-    $lines = Xeq-B64Lines $p.bytes $p.gzip
+    $lines = Xek-B64Lines $p.bytes $p.gzip
     $encoded += ,$lines
     $index += "$($p.label)=$offset"
     $offset += $lines.Count + 2
@@ -187,42 +187,42 @@ function Xeq-EmitPayloads($payloads, $sb) {
   }
 }
 
-function Xeq-WriteText($out, $text) { [IO.File]::WriteAllBytes($out, $Utf8NoBom.GetBytes($text)) }
+function Xek-WriteText($out, $text) { [IO.File]::WriteAllBytes($out, $Utf8NoBom.GetBytes($text)) }
 
-function Xeq-BuildEmbedAll($out) {
+function Xek-BuildEmbedAll($out) {
   $payloads = @()
   foreach ($label in $opt.targets) {
-    $stub = Xeq-ResolveStub $label
+    $stub = Xek-ResolveStub $label
     $payloads += @{ label = $label; bytes = [IO.File]::ReadAllBytes($stub); gzip = -not ($label -like 'windows*') }
   }
-  $payloads += @{ label = 'record'; bytes = (Xeq-Record); gzip = $false }
+  $payloads += @{ label = 'record'; bytes = (Xek-Record); gzip = $false }
   $payloads += @{ label = 'data'; bytes = [IO.File]::ReadAllBytes($opt.jar); gzip = $false }
   $sb = New-Object Text.StringBuilder
-  [void]$sb.Append((Xeq-Prefix 'installer'))
-  Xeq-EmitPayloads $payloads $sb
+  [void]$sb.Append((Xek-Prefix 'installer'))
+  Xek-EmitPayloads $payloads $sb
   [void]$sb.Append("#>`n")
-  Xeq-WriteText $out $sb.ToString()
+  Xek-WriteText $out $sb.ToString()
 }
 
-function Xeq-BuildDownload($out) {
-  $base = if ($opt.runnersUrl) { $opt.runnersUrl } else { $XeqRunnersUrl }
-  if (-not $base) { Xeq-Die 2 'download needs a runner URL' }
+function Xek-BuildDownload($out) {
+  $base = if ($opt.runnersUrl) { $opt.runnersUrl } else { $XekRunnersUrl }
+  if (-not $base) { Xek-Die 2 'download needs a runner URL' }
   $assets = @()
   foreach ($label in $opt.targets) {
-    $name = Xeq-StubName $label
-    $hash = Xeq-BakedHash $label
-    if (-not $hash) { Xeq-Die 2 "no hash for $label" }
+    $name = Xek-StubName $label
+    $hash = Xek-BakedHash $label
+    if (-not $hash) { Xek-Die 2 "no hash for $label" }
     $assets += "$label=$base/$name|$hash"
   }
   $sb = New-Object Text.StringBuilder
-  [void]$sb.Append((Xeq-Prefix 'onlinelauncher'))
-  Xeq-EmitPayloads @(@{label='record';bytes=(Xeq-Record);gzip=$false}, @{label='data';bytes=[IO.File]::ReadAllBytes($opt.jar);gzip=$false}) $sb
+  [void]$sb.Append((Xek-Prefix 'onlinelauncher'))
+  Xek-EmitPayloads @(@{label='record';bytes=(Xek-Record);gzip=$false}, @{label='data';bytes=[IO.File]::ReadAllBytes($opt.jar);gzip=$false}) $sb
   [void]$sb.Append("assets:" + ($assets -join ',') + "`n")
   [void]$sb.Append("#>`n")
-  Xeq-WriteText $out $sb.ToString()
+  Xek-WriteText $out $sb.ToString()
 }
 
-function Xeq-BuildDispatch($out, $manifest) {
+function Xek-BuildDispatch($out, $manifest) {
   $assets = @()
   foreach ($line in [IO.File]::ReadAllLines($manifest)) {
     if (-not $line.Trim()) { continue }
@@ -230,19 +230,19 @@ function Xeq-BuildDispatch($out, $manifest) {
     $assets += "$($f[0])=$($f[1])|$($f[2])"
   }
   $sb = New-Object Text.StringBuilder
-  [void]$sb.Append((Xeq-Prefix 'dispatcher'))
+  [void]$sb.Append((Xek-Prefix 'dispatcher'))
   [void]$sb.Append("assets:" + ($assets -join ',') + "`n")
   [void]$sb.Append("#>`n")
-  Xeq-WriteText $out $sb.ToString()
+  Xek-WriteText $out $sb.ToString()
 }
 
-function Xeq-HostTarget {
+function Xek-HostTarget {
   $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
   "windows-$arch"
 }
-function Xeq-AllLabels {
+function Xek-AllLabels {
   if ($opt.runnersManifest) { Get-Content $opt.runnersManifest | ForEach-Object { ($_ -split "[`t=]")[0] } | Where-Object { $_ } }
-  else { $XeqManifest.Split(',') | ForEach-Object { $_.Split('=')[0] } | Where-Object { $_ } }
+  else { $XekManifest.Split(',') | ForEach-Object { $_.Split('=')[0] } | Where-Object { $_ } }
 }
 
 # --- parse & dispatch ------------------------------------------------------
@@ -266,45 +266,45 @@ while ($i -lt $args.Count) {
     '--build-id' { $opt.buildId = [uint64]$args[++$i] }
     '--public-key' { $opt.pubkey = $args[++$i] }
     '--allow-downgrade' { $opt.flags = 1 }
-    default { Xeq-Die 1 "unknown option: $($args[$i])" }
+    default { Xek-Die 1 "unknown option: $($args[$i])" }
   }
   $i++
 }
 
 switch ($cmd) {
-  'version' { Write-Output "xeq $XeqVersion"; exit 0 }
+  'version' { Write-Output "xek $XekVersion"; exit 0 }
   { $_ -in 'help','-h','--help','' } {
-    [Console]::Error.WriteLine("xeq $XeqVersion — build XEQ executables and launchers")
-    [Console]::Error.WriteLine("  xeq build|embed-all|download --jar F --out F [opts]")
-    [Console]::Error.WriteLine("  xeq dispatch --out F --manifest TSV; xeq record --out F; xeq fetch; xeq version")
+    [Console]::Error.WriteLine("xek $XekVersion — build XEK executables and launchers")
+    [Console]::Error.WriteLine("  xek build|embed-all|download --jar F --out F [opts]")
+    [Console]::Error.WriteLine("  xek dispatch --out F --manifest TSV; xek record --out F; xek fetch; xek version")
     exit $(if ($cmd) { 0 } else { 1 })
   }
   'build' {
-    if (-not $opt.jar -or -not $opt.out) { Xeq-Die 1 'build needs --jar and --out' }
-    $target = if ($opt.targets.Count -ge 1) { $opt.targets[0] } else { Xeq-HostTarget }
-    Xeq-BuildNative (Xeq-ResolveStub $target) $opt.out; exit 0
+    if (-not $opt.jar -or -not $opt.out) { Xek-Die 1 'build needs --jar and --out' }
+    $target = if ($opt.targets.Count -ge 1) { $opt.targets[0] } else { Xek-HostTarget }
+    Xek-BuildNative (Xek-ResolveStub $target) $opt.out; exit 0
   }
   'embed-all' {
-    if (-not $opt.jar -or -not $opt.out) { Xeq-Die 1 'embed-all needs --jar and --out' }
-    if ($opt.targets.Count -eq 0) { $opt.targets = @(Xeq-AllLabels) }
-    Xeq-BuildEmbedAll $opt.out; exit 0
+    if (-not $opt.jar -or -not $opt.out) { Xek-Die 1 'embed-all needs --jar and --out' }
+    if ($opt.targets.Count -eq 0) { $opt.targets = @(Xek-AllLabels) }
+    Xek-BuildEmbedAll $opt.out; exit 0
   }
   'download' {
-    if (-not $opt.jar -or -not $opt.out) { Xeq-Die 1 'download needs --jar and --out' }
-    if ($opt.targets.Count -eq 0) { $opt.targets = @(Xeq-AllLabels) }
-    Xeq-BuildDownload $opt.out; exit 0
+    if (-not $opt.jar -or -not $opt.out) { Xek-Die 1 'download needs --jar and --out' }
+    if ($opt.targets.Count -eq 0) { $opt.targets = @(Xek-AllLabels) }
+    Xek-BuildDownload $opt.out; exit 0
   }
   'dispatch' {
-    if (-not $opt.out -or -not $opt.manifest) { Xeq-Die 1 'dispatch needs --out and --manifest' }
-    Xeq-BuildDispatch $opt.out $opt.manifest; exit 0
+    if (-not $opt.out -or -not $opt.manifest) { Xek-Die 1 'dispatch needs --out and --manifest' }
+    Xek-BuildDispatch $opt.out $opt.manifest; exit 0
   }
   'record' {
-    if (-not $opt.out) { Xeq-Die 1 'record needs --out' }
-    [IO.File]::WriteAllBytes($opt.out, (Xeq-Record)); exit 0
+    if (-not $opt.out) { Xek-Die 1 'record needs --out' }
+    [IO.File]::WriteAllBytes($opt.out, (Xek-Record)); exit 0
   }
   'fetch' {
-    if ($opt.targets.Count -eq 0) { $opt.targets = @(Xeq-AllLabels) }
-    foreach ($l in $opt.targets) { Xeq-ResolveStub $l | Out-Null }; exit 0
+    if ($opt.targets.Count -eq 0) { $opt.targets = @(Xek-AllLabels) }
+    foreach ($l in $opt.targets) { Xek-ResolveStub $l | Out-Null }; exit 0
   }
-  default { Xeq-Die 1 "unknown command: $cmd" }
+  default { Xek-Die 1 "unknown command: $cmd" }
 }

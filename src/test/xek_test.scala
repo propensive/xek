@@ -1,19 +1,19 @@
                                                                                                   /*
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃                                                                                                  ┃
-┃                                 ╭───╮ ╭───╮╭────────╮╭─────────╮                                 ┃
-┃                                 │   ╰─╯   ││   ╭─╮  ││   ╭─╮   │                                 ┃
-┃                                 ╰───╮ ╭───╯│   ╰─╯  ││   │ │   │                                 ┃
-┃                                 ╭───╯ ╰───╮│   ╭────╯│   │ ╰─╮ │                                 ┃
-┃                                 │   ╭─╮   ││   ╰────╮│   ╰─╮ │ │                                 ┃
-┃                                 ╰───╯ ╰───╯╰────────╯╰─────╯ ╰─╯                                 ┃
+┃                                 ╭───╮ ╭───╮╭────────╮╭───╮ ╭───╮                                 ┃
+┃                                 │   ╰─╯   ││   ╭─╮  ││   ╰─╯   │                                 ┃
+┃                                 ╰──╮   ╭──╯│   ╰─╯  ││      ╭──╯                                 ┃
+┃                                 ╭──╯   ╰──╮│   ╭────╯│      ╰──╮                                 ┃
+┃                                 │   ╭─╮   ││   ╰────╮│   ╭─╮   │                                 ┃
+┃                                 ╰───╯ ╰───╯╰────────╯╰───╯ ╰───╯                                 ┃
 ┃                                                                                                  ┃
-┃    XEQ, version 0.1.0.                                                                      ┃
-┃    © Copyright 2021-25 Jon Pretty, Propensive OÜ.                                                ┃
+┃    Cross-platform Executable Kit, version ${VERSION}.                                            ┃
+┃    © Copyright 2021-26 Jon Pretty, Propensive OÜ.                                                ┃
 ┃                                                                                                  ┃
 ┃    The primary distribution site is:                                                             ┃
 ┃                                                                                                  ┃
-┃        https://github.com/propensive/xeq/                                                        ┃
+┃        https://github.com/propensive/xek/                                                        ┃
 ┃                                                                                                  ┃
 ┃    Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file     ┃
 ┃    except in compliance with the License. You may obtain a copy of the License at                ┃
@@ -27,7 +27,7 @@
 ┃                                                                                                  ┃
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
                                                                                                   */
-package xeq
+package xek
 
 import ambience.*
 import anticipation.*
@@ -71,12 +71,12 @@ import errorDiagnostics.stackTracesDiagnostics
 import filesystemOptions.deleteRecursively
 import filesystemBackends.javaBaseFilesystem
 
-// The suite drives the published `xeq` builder script (dist/xeq — build it with
-// `make xeq-script`) rather than any in-JVM assembler: the script is the single implementation
+// The suite drives the published `xek` builder script (dist/xek — build it with
+// `make xek-script`) rather than any in-JVM assembler: the script is the single implementation
 // of the ETHRCFG v3 format (spec/ethrcfg.md). `Packager` is a thin front end over it, tested
 // here through the same shell-out an Anthology build uses. Suites that need real stubs
 // (dist/runners) or a Windows host skip cleanly when those are absent.
-object Tests extends Suite(m"XEQ tests"):
+object Tests extends Suite(m"XEK tests"):
   def run(): Unit =
     val tempDirs = scala.collection.mutable.ListBuffer.empty[Path on Linux]
 
@@ -91,7 +91,7 @@ object Tests extends Suite(m"XEQ tests"):
   private def body(tempDir: () -> Path on Linux): Unit =
     val here: Path on Linux = workingDirectory
     val script: Path on Linux =
-      safely(Environment.xeq[Text].as[Path on Linux]).or(unsafely(t"${here.encode}/dist/xeq".as[Path on Linux]))
+      safely(Environment.xek[Text].as[Path on Linux]).or(unsafely(t"${here.encode}/dist/xek".as[Path on Linux]))
 
     val hostLabel: Text = sh"uname -s".exec[Text]().trim match
       case t"Darwin" => sh"uname -m".exec[Text]().trim match
@@ -137,11 +137,11 @@ object Tests extends Suite(m"XEQ tests"):
 
     // Not a skip. Real stubs need cargo and zig, and a Windows host cannot be conjured, so
     // those suites step aside; the builder is a shell script that any host can produce with
-    // `make xeq-script`, so its absence means every test below would vanish and the suite
+    // `make xek-script`, so its absence means every test below would vanish and the suite
     // would report success having run nothing — which is exactly what CI did.
     if !scriptOk then
       suite(m"builder script"):
-        test(m"dist/xeq exists — build it with `make xeq-script`"):
+        test(m"dist/xek exists — build it with `make xek-script`"):
           script.existent()
         .assert(identity)
     else

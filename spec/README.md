@@ -1,6 +1,6 @@
-# The XEQ specification
+# The XEK specification
 
-XEQ is a way of shipping a JVM application as a single executable file. An XEQ executable is a
+XEK is a way of shipping a JVM application as a single executable file. An XEK executable is a
 small native *runner stub* with the application's JAR appended to it: running it starts (or
 reuses) a background daemon holding a warm JVM, forwards the invocation's arguments,
 environment, streams and signals to that daemon, and returns its exit status. The stub is
@@ -12,7 +12,7 @@ This directory is the contract between the two halves, which live in different r
 release on different cadences:
 
 - **the launcher** — the Rust runner in this repository (`src/runner`), published as reusable
-  per-platform stubs, plus the `xeq` builder script published with them (`src/script`) and the
+  per-platform stubs, plus the `xek` builder script published with them (`src/script`) and the
   Scala packaging front ends over it (`src/packager`, `src/toolchain`);
 - **the daemon** — the JVM side that the stub launches and talks to. The reference
   implementation is `ethereal` in [Soundness](https://github.com/propensive/soundness).
@@ -31,13 +31,13 @@ the artefacts of the other that it tests against.
 | [`launcher.md`](launcher.md) | What the launcher does around an invocation: reserved arguments, the terminal, end of input, signals and exit status |
 | [`COMPATIBILITY.md`](COMPATIBILITY.md) | Which runner release speaks which protocol, and against which daemon |
 
-## Why "ethereal" appears in a specification owned by XEQ
+## Why "ethereal" appears in a specification owned by XEK
 
 The protocol, its system properties and its on-disk layout are named after `ethereal`, the
 daemon implementation they were written for, and those names are on the wire and in the
 filesystem: renaming them would break every launcher and daemon already deployed. The names are
-therefore frozen, and the specification keeps them. "XEQ" names the executable format and this
-project; "ethereal" names the protocol an XEQ executable speaks.
+therefore frozen, and the specification keeps them. "XEK" names the executable format and this
+project; "ethereal" names the protocol an XEK executable speaks.
 
 ## Changing a contract
 
@@ -63,7 +63,7 @@ A new message kind, a required field, or a change to what an existing field mean
 base, and so its signature. The rollout order is then strict:
 
 1. **This repository first.** Change the contract here, change the runner, and publish a new
-   `xeq-<version>` release. Nothing depends on the daemon, so this can ship alone.
+   `xek-<version>` release. Nothing depends on the daemon, so this can ship alone.
 2. **The daemon next.** Update its copy of the schema, its pinned signature, and the runner
    version its tests fetch; release.
 3. **The packager last**, if it needs anything from the new daemon release.

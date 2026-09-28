@@ -9,7 +9,7 @@ import scalalib.*
 import publish.*
 
 object settings:
-  // The Scala compiler is the propensive/proscala fork. XEQ reads Soundness's TASTy, which that
+  // The Scala compiler is the propensive/proscala fork. XEK reads Soundness's TASTy, which that
   // compiler produced, so it must compile with the same one. The mechanism is ported from the
   // Soundness build: `proscala.downloadRelease` fetches the release tarball into the *shared*
   // `~/.cache/soundness/proscala/<tag>` cache — so a release fetched by either build serves both
@@ -25,23 +25,23 @@ object settings:
   // to use its `release/lib` jars directly (fork-developer mode).
   val scalaHome = sys.env.getOrElse("SOUNDNESS_SCALA_HOME", "")
 
-  // The Soundness release XEQ's Scala modules are compiled against is pinned in etc/refs and
+  // The Soundness release XEK's Scala modules are compiled against is pinned in etc/refs and
   // read by `deps`, below. Soundness publishes one GitHub release per version whose assets are
   // the individual component jars, each embedding its own POM; `make sync-deps` installs the
   // pinned one into `~/.ivy2/local`, from which coursier resolves these coordinates with no
   // repository configuration. Component jars carry no `_3` suffix, hence the single-colon `mvn"…"`.
   //
   // This is a dependency on Soundness's *libraries*, in one direction only. Nothing in Soundness
-  // depends on XEQ, and nothing here depends on `ethereal`, the daemon: the two halves of an XEQ
+  // depends on XEK, and nothing here depends on `ethereal`, the daemon: the two halves of an XEK
   // executable meet at `spec/`, not at a coordinate.
 
-  // The version XEQ's own jars are published under. Snapshots override it through
+  // The version XEK's own jars are published under. Snapshots override it through
   // `publishVersion` (in `Component`), never here.
-  val xeqVersion = "0.1.0"
+  val xekVersion = "0.1.0"
 
   val scalaOptions = Seq(
     // The fork's opt-in behaviours, enabled by name, exactly as the Soundness build enables
-    // them: XEQ's sources were written for that dialect and read TASTy produced by it.
+    // them: XEK's sources were written for that dialect and read TASTy produced by it.
     "-Zalias-captures",
     "-Zdiagnostic-givens",
     "-Zgiven-prefixes",
@@ -87,18 +87,18 @@ object settings:
   def sep(options: Seq[String]): Seq[String] =
     cc(options) :+ "-language:experimental.separationChecking"
 
-  // XEQ's sources are written for the proscenium predef (the Soundness house predef), so the
+  // XEK's sources are written for the proscenium predef (the Soundness house predef), so the
   // build replicates `-Yno-predef -Yimports:…`. `scala` is deliberately NOT imported: the
   // blessed collections are proscenium's opaque `List`/`Set`/`Map`/`Array`, and naming both
   // packages would make every such reference ambiguous.
   val predef = Seq("-Yno-predef", "-Yimports:java.lang,proscenium")
 
-  // Every Soundness component XEQ's modules reach directly, at the version `v` (the pin, read
+  // Every Soundness component XEK's modules reach directly, at the version `v` (the pin, read
   // by a module's task). Each jar's embedded POM names its own dependencies, so the rest of the
   // surface arrives transitively.
   class Soundness(v: String):
 
-    // `xeq.packager`: a thin front end that shells out to the published `xeq` builder script.
+    // `xek.packager`: a thin front end that shells out to the published `xek` builder script.
     val packager = Seq(
       mvn"dev.propensive:eucalyptus-core:$v",    // logging for the subprocess
       mvn"dev.propensive:guillotine-core:$v",    // running the builder script
@@ -109,12 +109,12 @@ object settings:
       mvn"dev.propensive:turbulence-core:$v",    // streams
       mvn"dev.propensive:ambience-core:$v")      // environment and working directory
 
-    // `xeq.toolchain`: the `Jar` → executable edge of an Anthology toolchain.
+    // `xek.toolchain`: the `Jar` → executable edge of an Anthology toolchain.
     val toolchain = Seq(
       mvn"dev.propensive:anthology-linker:$v",   // Jar, Toolchain, Edge, Tool
       mvn"dev.propensive:parasite-core:$v")      // Monitor
 
-    // `xeq.test`.
+    // `xek.test`.
     val test = Seq(
       mvn"dev.propensive:gastronomy-core:$v",    // SHA-256 for byte-identity checks
       mvn"dev.propensive:probably-cli:$v",       // Suite
@@ -126,8 +126,8 @@ object settings:
       mvn"dev.propensive:inimitable-core:$v",    // Uuid, for scratch filenames
       mvn"dev.propensive:stratiform-core:$v")    // the schema signature, derived from spec/ (BinTEL lives in stratiform-core since 0.69.0)
 
-    // `xeq.example`: the end-to-end fixture, and the ONLY place the daemon appears. It is not a
-    // dependency of any published XEQ artifact — see the module's comment.
+    // `xek.example`: the end-to-end fixture, and the ONLY place the daemon appears. It is not a
+    // dependency of any published XEK artifact — see the module's comment.
     val example = Seq(
       mvn"dev.propensive:ethereal-core:$v",
       mvn"dev.propensive:exoskeleton-completions:$v")
@@ -243,7 +243,7 @@ trait Forked extends ScalaModule:
   // Soundness's own POMs pin the fork toolchain at the version Soundness was built with. The
   // synthetic repository above only ever contains `settings.scalaVersion`, and no fork version
   // exists on Central, so any pin that differs from ours is unresolvable. Forcing them all to
-  // `settings.scalaVersion` is what lets XEQ be built by a compiler from a *different* proscala
+  // `settings.scalaVersion` is what lets XEK be built by a compiler from a *different* proscala
   // stream than the one that produced the Soundness jars.
   override def depManagement: T[Seq[Dep]] = Task:
     super.depManagement() ++ Seq(
@@ -322,32 +322,32 @@ trait Component(dependencies: PublishModule*) extends Forked, PublishModule:
     mill.javalib.Assembly.Rule.AppendPattern("META-INF/givens/.*"),
     mill.javalib.Assembly.Rule.AppendPattern("META-INF/services/.*"))
 
-  // A `Task.Input` reading `Task.env`, not a plain value: `XEQ_RELEASE_VERSION` is how
+  // A `Task.Input` reading `Task.env`, not a plain value: `XEK_RELEASE_VERSION` is how
   // `make snapshot` (snapshot.sh in propensive/.github) drives the snapshot version through a
   // Mill daemon that is already running — the daemon freezes `sys.env` at its own start, while
   // `Task.env` is the environment of each `./mill` invocation. A release never sets it: the
-  // released version is `settings.xeqVersion`, and the release script insists on it.
+  // released version is `settings.xekVersion`, and the release script insists on it.
   def publishVersion = Task.Input:
-    Task.env.get("XEQ_RELEASE_VERSION").filter(_.nonEmpty).getOrElse(settings.xeqVersion)
+    Task.env.get("XEK_RELEASE_VERSION").filter(_.nonEmpty).getOrElse(settings.xekVersion)
   def artifactSuffix = Task("")
 
   def pomSettings = Task(PomSettings(
-    description = "XEQ: JVM applications as single executable files",
+    description = "XEK: JVM applications as single executable files",
     organization = "dev.propensive",
-    url = "https://github.com/propensive/xeq/",
+    url = "https://github.com/propensive/xek/",
     licenses = Seq(License.`Apache-2.0`),
-    versionControl = VersionControl.github("propensive", "xeq"),
+    versionControl = VersionControl.github("propensive", "xek"),
     developers = Seq(Developer("propensive", "Jon Pretty", "https://github.com/propensive"))))
 
-  override def artifactName = Task(s"xeq-$moduleId")
+  override def artifactName = Task(s"xek-$moduleId")
 
-object xeq extends Module:
+object xek extends Module:
   override def moduleDir = super.moduleDir / os.up / "src"
 
   // The polyglot script generator: turns payloads and asset tables into a single file that is
   // simultaneously a valid `sh` script, a `.bat` file and a PowerShell script, which unpacks or
   // downloads the executable for the platform it finds itself on and replaces itself with it.
-  // Turning a `Packaging` into a distributable: a thin front end over the published `xeq`
+  // Turning a `Packaging` into a distributable: a thin front end over the published `xek`
   // builder script (`src/script`), which joins a bare stub, the ETHRCFG record and the JAR and
   // generates the polyglot launchers.
   object packager extends Component():
@@ -365,7 +365,7 @@ object xeq extends Module:
   // `fume run -c …` over the assembly, exactly as Soundness runs its own suites.
   object test extends Component(packager, toolchain):
     def mvnDeps = Task(settings.Soundness(deps.soundness()).test)
-    override def artifactName = Task("xeq-test")
+    override def artifactName = Task("xek-test")
     override def scalacOptions = settings.sep(super.scalacOptions())
 
     // The protocol schema and the runner's copy of its signature are read off the classpath,
@@ -379,12 +379,12 @@ object xeq extends Module:
   // Everything the builder bakes into the script: the release version, base URL and stub
   // hashes, the polyglot templates, and the three shell sections it splices together.
   def scriptSources = Task.Sources
-   ( mill.api.BuildCtx.workspaceRoot / "res" / "packager" / "xeq",
-     mill.api.BuildCtx.workspaceRoot / "res" / "core" / "xeq",
+   ( mill.api.BuildCtx.workspaceRoot / "res" / "packager" / "xek",
+     mill.api.BuildCtx.workspaceRoot / "res" / "core" / "xek",
      mill.api.BuildCtx.workspaceRoot / "src" / "script",
-     mill.api.BuildCtx.workspaceRoot / "etc" / "ci" / "xeq-script-build.sh" )
+     mill.api.BuildCtx.workspaceRoot / "etc" / "ci" / "xek-script-build.sh" )
 
-  // `dist/xeq`, the builder script the suite drives, produced by `make xeq-script` — which
+  // `dist/xek`, the builder script the suite drives, produced by `make xek-script` — which
   // stays the one place that knows how it is assembled.
   //
   // It exists as a Mill target only so that CI can ask for it: the shared workflow never runs
@@ -394,24 +394,24 @@ object xeq extends Module:
   // list in .github/workflows/build.yml, which runs before the test step.
   def script: T[Unit] = Task:
     scriptSources()
-    os.proc("make", "xeq-script")
+    os.proc("make", "xek-script")
      .call(cwd = mill.api.BuildCtx.workspaceRoot, stdout = os.Inherit, stderr = os.Inherit)
 
   // The end-to-end fixture: a real daemonized application, packaged by the modules above and run
   // through a real runner stub. This is the ONE module that depends on a daemon implementation
   // (Soundness's `ethereal`), because the other end of the protocol has to be *something* for an
   // end-to-end test to exist. It is deliberately outside every aggregate — nothing published
-  // from this repository depends on it, and `mill xeq.packager.compile` and the test suite never
+  // from this repository depends on it, and `mill xek.packager.compile` and the test suite never
   // resolve it. `make e2e` is what builds it.
   //
   // Like every module here it compiles against the Soundness *release* in etc/refs, so it may
   // not use daemon API that only the next Soundness release will have (AGENTS.md, rule 6):
-  // Soundness pins XEQ's release, and a fixture that needed unreleased Soundness would leave
+  // Soundness pins XEK's release, and a fixture that needed unreleased Soundness would leave
   // neither side able to release first.
   object example extends Component():
     def mvnDeps = Task(settings.Soundness(deps.soundness()).example)
-    override def artifactName = Task("xeq-example")
-    def finalMainClass = "xeq.hello"
+    override def artifactName = Task("xek-example")
+    def finalMainClass = "xek.hello"
 
   // Everything published from this repository. Note the absence of `example`.
   def all = Task:

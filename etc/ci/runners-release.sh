@@ -23,8 +23,8 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 VERSION="${1:-}"
-REPO="${2:-propensive/xeq}"
-TAG="xeq-$VERSION"
+REPO="${2:-propensive/xek}"
+TAG="xek-$VERSION"
 
 if [[ -z "$VERSION" ]]; then
   echo "Usage: $0 <version> [owner/repo]" >&2; exit 1
@@ -53,14 +53,14 @@ echo "runners-release: wrote $MANIFEST"
 # Assemble the polyglot builder script from the just-built manifest, so its baked-in stub
 # hashes match exactly what is being uploaded.
 BASE_URL="https://github.com/$REPO/releases/download/$TAG"
-./etc/ci/xeq-script-build.sh "$VERSION" "$BASE_URL" "$MANIFEST" dist/xeq
+./etc/ci/xek-script-build.sh "$VERSION" "$BASE_URL" "$MANIFEST" dist/xek
 
 # Record the SHA-256 of every published asset (stubs and both script names) for verification
 # by downstream fetchers. Kept separate from the platform-only manifest that the packager and
 # `runners-fetch.sh` read.
 SUMS="etc/runners/$VERSION.SHA256SUMS"
 : > "$SUMS"
-for f in "$OUT"/runner-* dist/xeq dist/xeq.cmd; do
+for f in "$OUT"/runner-* dist/xek dist/xek.cmd; do
   name=$(basename "$f")
   hash=$( { sha256sum "$f" 2>/dev/null || shasum -a 256 "$f"; } | cut -d' ' -f1)
   printf '%s\t%s\n' "$name" "$hash" >> "$SUMS"
@@ -73,15 +73,15 @@ if ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
   gh release create "$TAG" --repo "$REPO" --title "$TAG" \
     --notes "Reusable native runner stubs, version $VERSION"
 fi
-gh release upload "$TAG" --repo "$REPO" --clobber "$OUT"/runner-* dist/xeq dist/xeq.cmd "$SUMS"
+gh release upload "$TAG" --repo "$REPO" --clobber "$OUT"/runner-* dist/xek dist/xek.cmd "$SUMS"
 
 count=$(find "$OUT" -maxdepth 1 -name 'runner-*' | wc -l | tr -d ' ')
 echo "runners-release: uploaded $count stubs to $REPO@$TAG"
 # The packager reads its runner source from resources rather than from compiled-in constants,
 # so publishing a release is a data change: copy the manifest, the version and the base URL
-# into `res/packager/xeq`, and `Runners.standard` names the new release with no code edit.
-cp -f "$MANIFEST" res/packager/xeq/runners.tsv
-printf '%s\n' "$VERSION" > res/packager/xeq/runners.version
-printf '%s\n' "$BASE_URL" > res/packager/xeq/runners.url
+# into `res/packager/xek`, and `Runners.standard` names the new release with no code edit.
+cp -f "$MANIFEST" res/packager/xek/runners.tsv
+printf '%s\n' "$VERSION" > res/packager/xek/runners.version
+printf '%s\n' "$BASE_URL" > res/packager/xek/runners.url
 
-echo "runners-release: commit $MANIFEST and res/packager/xeq/runners.{tsv,version,url}"
+echo "runners-release: commit $MANIFEST and res/packager/xek/runners.{tsv,version,url}"

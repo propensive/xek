@@ -4,7 +4,7 @@
 # result, and require it to behave as a command should.
 #
 # This is the only stage that exercises the whole chain at once — a stub built (or fetched)
-# from this repository, an `ETHRCFG` record and an application JAR joined to it by the `xeq`
+# from this repository, an `ETHRCFG` record and an application JAR joined to it by the `xek`
 # builder script, a daemon started over the launcher protocol, and its output carried back. It is
 # also the only stage that needs a daemon implementation, which is why it lives here and not in
 # the test suite.
@@ -41,19 +41,19 @@ if [[ ! -f "dist/runners/runner-$LABEL" ]]; then
 fi
 
 echo "e2e: assembling the example application for $LABEL"
-./mill xeq.example.assembly
+./mill xek.example.assembly
 
-JAR=out/xeq/example/assembly.dest/out.jar
+JAR=out/xek/example/assembly.dest/out.jar
 OUT=dist/hello
 mkdir -p dist
 rm -f "$OUT"
 
 # Package with the published builder script, from the local stubs: `Native` delivery, one
-# platform, no download and no hash check. This is the same `xeq build` a shell user runs.
-if [[ ! -x dist/xeq ]]; then
-  echo "e2e: dist/xeq not found — run \`make xeq-script\`" >&2; exit 1
+# platform, no download and no hash check. This is the same `xek build` a shell user runs.
+if [[ ! -x dist/xek ]]; then
+  echo "e2e: dist/xek not found — run \`make xek-script\`" >&2; exit 1
 fi
-./dist/xeq build --jar "$PWD/$JAR" --out "$PWD/$OUT" --target "$LABEL" --runners "$PWD/dist/runners"
+./dist/xek build --jar "$PWD/$JAR" --out "$PWD/$OUT" --target "$LABEL" --runners "$PWD/dist/runners"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
