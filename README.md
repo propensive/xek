@@ -92,18 +92,32 @@ The Scala side resolves Soundness components from `~/.ivy2/local`; `make sync-re
 VERSION=X.Y.Z` in a Soundness checkout puts them there. The compiler is the
 [proscala](https://github.com/propensive/proscala) fork, downloaded and cached automatically.
 
-## Publishing runner stubs
+## Releasing runner stubs
 
-Stubs are published on their own cadence, and only when the Rust source changes:
+Stubs are released on their own cadence, and only when the Rust source changes, by tagging — as
+every repository in the ecosystem is released:
 
 ```sh
-make runners-release RUNNERS_VERSION=0.6
+git tag -s xek-0.10 && git push --tags
 ```
 
-which cross-compiles the five stubs, assembles the `xek` builder script, uploads them all to a
-`xek-0.6` release, records their hashes in `etc/runners/0.6.tsv` and `etc/runners/0.6.SHA256SUMS`,
-and rewrites `res/packager/xek/runners.{tsv,version,url}` — the resources the packager reads. Publishing is therefore a data change, not a code change, and
-an application picks up a runner fix without anything being rebuilt.
+The tag fires `.github/workflows/release.yml`, which runs the shared `release.sh` from
+[propensive/.github](https://github.com/propensive/.github) as configured by `etc/release`. It
+gates on a verified signed tag and on CI already being green on that commit; cross-compiles the
+five stubs and assembles the `xek` builder script (`etc/ci/runners-assemble.sh`); uploads them to
+the `xek-0.10` release, with `0.10.SHA256SUMS`, and checks every digest; and, if anything fails,
+deletes the release and the tag. Once the release is public it opens two draft pull requests: one
+here recording the hashes in `etc/runners/0.10.tsv` and `etc/runners/0.10.SHA256SUMS` and
+rewriting `res/packager/xek/runners.{tsv,version,url}`, the resources the packager reads
+(`etc/ci/runners-record.sh`); and one in Soundness moving its `etc/xeq.tsv` to the release
+(`etc/downstream`). Adopting a release is therefore a data change, not a code change, and an
+application picks up a runner fix without anything being rebuilt.
+
+To rehearse a release without publishing anything, from a checkout of the commit to be tagged:
+
+```sh
+RELEASE_DRY_RUN=1 ./etc/shared release.sh xek-0.10
+```
 
 ## Status
 

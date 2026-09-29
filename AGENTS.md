@@ -62,7 +62,7 @@ is what keeps `make runners-build` reproducible.
 ### Rules
 
 1. **Keep the pin current.** Bump the date in `rust-toolchain.toml` as a matter of course when
-   touching the Rust source, and at the latest before each `make runners-release`, so the stubs
+   touching the Rust source, and at the latest before each release (`git tag -s xek-X.Y`), so the stubs
    are not built by a nightly months behind the compiler's fixes. A bump is its own commit;
    CI's `cargo test` runs on the pinned toolchain and validates it.
 2. **Expect a bump to disturb the flags**, and fix them in the same PR. Everything unstable

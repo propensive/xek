@@ -4,8 +4,8 @@
 # `dist/runners`, verifying each against the committed `etc/runners/<version>.tsv` manifest.
 #
 # Use this when the Rust toolchain isn't available to `make runners-build`: it fetches the
-# exact bytes published by `make runners-release`. The runners are never stored in a JAR —
-# builds and tests read them from `dist/runners` (or download them here first).
+# exact bytes published by a release (`git tag -s xek-X.Y`). The runners are never stored in a
+# JAR — builds and tests read them from `dist/runners` (or download them here first).
 #
 # Usage: ./etc/ci/runners-fetch.sh <version> [owner/repo]
 #         (or `make runners-fetch RUNNERS_VERSION=X [REPO=owner/repo]`)

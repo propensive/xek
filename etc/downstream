@@ -1,0 +1,4 @@
+# The repositories each release of xek is proposed to, as a draft pull request moving their
+# etc/xeq.tsv to it. Soundness packages with xek; everything further down takes its xek from the
+# Soundness release it builds against. See propensive/.github.
+propensive/soundness

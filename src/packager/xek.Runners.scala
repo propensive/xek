@@ -44,8 +44,8 @@ import textSanitizers.skipSanitizer
 // The reusable native runner stubs are published independently of any application, as a
 // GitHub release whose assets are one bare stub per platform, and are verified against a
 // manifest of their SHA-256 hashes. Which release that is, and where it lives, is not
-// compiled in: `make runners-release` writes the three resources read below, so publishing
-// a new set of stubs changes data, not code.
+// compiled in: each release's record pull request writes the three resources read below, so
+// publishing a new set of stubs changes data, not code.
 //
 // The manifest is the same tab-separated format as `etc/runners/<version>.tsv` — one
 // `<label>\t<sha256>` line per platform — so the archived manifests and the embedded one

@@ -1,0 +1,19 @@
+# What this repository's release needs that another's does not. See propensive/.github, which
+# holds the script; a release is cut by `git tag -s xek-X.Y && git push --tags`.
+#
+# xek releases no jars: a release is the five native runner stubs, the `xek` builder script (also
+# as `xek.cmd`) and their checksums, assembled by etc/ci/runners-assemble.sh rather than by Mill's
+# `release.stage`. The shared script gates, uploads, verifies every digest, writes the notes and
+# rolls back exactly as it does for the jars of the other repositories.
+
+name       xek
+title      xek
+
+# Tags are `xek-<version>`. Those before the rename, `xeq-<version>`, are earlier releases too, so
+# the notes of the first `xek-` release start from the last `xeq-` one.
+tag        xek- xeq-
+
+assemble   ./etc/ci/runners-assemble.sh
+
+# The hashes just published go into etc/runners/ and res/packager/xek/, in a pull request here.
+after      ./etc/ci/runners-record.sh

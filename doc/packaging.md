@@ -83,8 +83,9 @@ directory instead — the output of `make runners-build` or `make runners-fetch`
 the test suite and `make e2e` use.
 
 The stubs and the `xek` builder script are not built by the Scala build and are never stored in a
-jar. They are published together on their own cadence by `make runners-release`, which also
-rewrites the resources the packager reads, so adopting a new runner is a data change. `Packager`
+jar. They are released together on their own cadence, by tagging `xek-X.Y`, and the release
+opens a pull request rewriting the resources the packager reads, so adopting a new runner is a
+data change. `Packager`
 locates the script from the `XEK` environment variable or `dist/xek`, and shells out to it — the
 one implementation of the byte format, shared with anyone building from a plain shell.
 
