@@ -49,7 +49,7 @@ object Packaging:
     case Native
 
   // Where each platform's bare reusable runner stub comes from. The stubs are published
-  // independently (see `make runners-release`); a build never compiles them.
+  // independently (by tagging `xek-X.Y`); a build never compiles them.
   enum RunnerSource:
     // Read `<directory>/runner-<label>[.exe]` from a local directory (e.g. the output of
     // `make runners-build`). For development and testing — no download, no hash check.
