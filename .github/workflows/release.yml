@@ -17,6 +17,13 @@ name: Release
 on:
   push:
     tags: ['xek-[0-9]*']
+  # A rehearsal on GitHub's own machines, publishing nothing: every gate that can run before the tag
+  # exists, the whole build, the notes and the pull requests it would open, as RELEASE_DRY_RUN=1.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The version to rehearse, as X.Y — the tag would be xek-X.Y
+        required: true
 
 jobs:
   release:
@@ -47,7 +54,16 @@ jobs:
       # PROPAGATE_TOKEN (optional) writes to other repositories — see propensive/.github's README;
       # the job's own token reaches only this one.
       - name: Publish the release
+        if: github.event_name == 'push'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PROPAGATE_TOKEN: ${{ secrets.PROPAGATE_TOKEN }}
         run: ./etc/shared release.sh
+
+      - name: Rehearse the release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_DRY_RUN: "1"
+          VERSION: ${{ inputs.version }}
+        run: ./etc/shared release.sh "xek-$VERSION"
