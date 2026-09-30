@@ -2,8 +2,9 @@
 #
 # Assemble a release of xek: the five native runner stubs; the `xek` command, as an embed-all
 # polyglot file for every platform (also as `xek.cmd`, the same bytes) and as a native executable
-# for each (`xek-<platform>[.exe]`); and `<version>.SHA256SUMS` over all of them, written into
-# $RELEASE_ASSETS for the shared release script to upload.
+# for each (`xek-<platform>[.exe]`); the `install.sh` that https://propensive.dev/xek serves; and
+# `<version>.SHA256SUMS` over all of them, written into $RELEASE_ASSETS for the shared release
+# script to upload.
 #
 # This is the `assemble` step named in etc/release, run by propensive/.github's release.sh when a
 # `xek-<version>` tag is pushed; the gates before it (a signed tag, CI green on the commit, no
@@ -63,7 +64,13 @@ PLATFORMS=$(cut -f1 "$MANIFEST" | paste -sd, -)
 ./mill xek.cli.bootstrap --platform "$PLATFORMS" --runners "$WORK/runners" "$JAR" "$WORK/xek"
 cp "$WORK/xek" "$WORK/xek.cmd"
 
-cp "$WORK/runners"/runner-* "$WORK"/xek "$WORK"/xek.cmd "$WORK"/xek-* "$RELEASE_ASSETS"/
+# The installer served from https://propensive.dev/xek, which redirects to the latest release's
+# `install.sh`: it downloads the native `xek-<platform>` for where it runs and checks it against
+# the digest it embeds, taken here from the very files being uploaded.
+./etc/shared generate-install.sh xek "$RELEASE_VERSION" "$RELEASE_TAG" "$WORK" > "$WORK/install.sh"
+
+cp "$WORK/runners"/runner-* "$WORK"/xek "$WORK"/xek.cmd "$WORK"/xek-* "$WORK/install.sh" \
+  "$RELEASE_ASSETS"/
 
 # Every other asset's SHA-256, for downstream fetchers that verify by name: consumers pin an
 # `xek` asset's line in their etc/xeq.tsv.

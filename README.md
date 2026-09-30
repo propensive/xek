@@ -23,7 +23,14 @@ mytool 1.0.0
 
 The `xek` command builds them. It is an XEK executable itself, written with
 [Soundness](https://github.com/propensive/soundness), and builds for any platform from any
-other:
+other. On Linux or macOS, install it with
+
+```sh
+curl -fsSL https://propensive.dev/xek | sh
+```
+
+which puts it in `~/.local/bin` (or `$XEK_INSTALL_DIR`); on Windows, download `xek-windows-x64.exe`
+from the [latest release](https://github.com/propensive/xek/releases/latest). Then:
 
 ```sh
 xek app.jar                              # ./app, a native executable for this platform
