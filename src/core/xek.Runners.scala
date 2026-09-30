@@ -60,18 +60,10 @@ object Runners:
   lazy val baseUrl: Text = cp"/xek/runners.url".read[Text].trim
 
   // Lowercase SHA-256 hex of each published stub, by platform label.
-  lazy val hashes: Map[Text, Text] =
-    val lines = cp"/xek/runners.tsv".read[Text].cut(t"\n").map(_.trim).filter: line =>
-      line != t"" && !line.starts(t"#")
+  lazy val hashes: Map[Text, Text] = Stubs.manifest(cp"/xek/runners.tsv".read[Text])
 
-    lines.map: line =>
-      val fields = line.cut(t"\t")
-      (fields.prim.or(t""), fields.reverse.prim.or(t""))
-
-    . to[Map]
-
-  // The published stubs, as a runner source a `Packaging` can be built with.
-  def standard: Packaging.RunnerSource = Packaging.RunnerSource.Remote(baseUrl, hashes)
+  // The published stubs, as a source to build from.
+  def standard: Stubs.Source = Stubs.Source.Remote(baseUrl, hashes)
 
   // Every platform the published release names.
   def labels: List[Text] = hashes.keys.to[List]

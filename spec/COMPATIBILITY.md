@@ -18,8 +18,10 @@ at the first message rather than misreading fields. Above the base, the schema m
 Releases up to and including `runners-0.5` were published from the Soundness repository, at
 `propensive/soundness`, before this project was extracted, under the tag prefix `runners-`.
 Releases from this repository use the prefix `xek-`, and each carries the five stubs and the
-`xek` builder script (as `xek` and `xek.cmd`, the same bytes). Their hashes are recorded in
-`etc/runners/`.
+`xek` builder. Up to `xek-0.9` the builder was a polyglot shell script (as `xek` and `xek.cmd`,
+the same bytes); from `xek-0.10` it is the `xek` command, itself an XEK executable, published as
+a polyglot `xek` (and `xek.cmd`) and as a native `xek-<platform>` for each platform. Their hashes
+are recorded in `etc/runners/`.
 
 The signature is pinned in three places, which the test suites check against each other:
 

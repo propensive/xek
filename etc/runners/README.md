@@ -17,16 +17,16 @@ embeds them to verify the stub it downloads at runtime; a monoglot or offline bu
 stub bytes it downloads at build time against them. The stubs are version-independent and
 reusable across applications — they are republished only when the Rust runner source changes.
 
-## The manifest the packager reads
+## The manifest the builder reads
 
-`res/packager/xek/runners.{tsv,version,url}` is the copy compiled into `xek-packager`, and is
-what `Runners.standard` names. `runners-release.sh` rewrites all three, so publishing a release
+`res/core/xek/runners.{tsv,version,url}` is the copy compiled into `xek-core`, and is what
+`Runners.standard` names, and what the `xek` command downloads and verifies stubs against. `runners-release.sh` rewrites all three, so publishing a release
 is a data change rather than a code change.
 
 ## Provenance
 
 Releases `runners-0.1` through `runners-0.5` were published from the Soundness repository,
-before this project was extracted, and `res/packager/xek/runners.url` still points there. Those
+before this project was extracted, and `res/core/xek/runners.url` still points there. Those
 stubs are byte-identical to what this repository builds from the same sources.
 
 The first release made from here supersedes that: build with `make runners-release

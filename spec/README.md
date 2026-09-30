@@ -12,8 +12,9 @@ This directory is the contract between the two halves, which live in different r
 release on different cadences:
 
 - **the launcher** — the Rust runner in this repository (`src/runner`), published as reusable
-  per-platform stubs, plus the `xek` builder script published with them (`src/script`) and the
-  Scala packaging front ends over it (`src/packager`, `src/toolchain`);
+  per-platform stubs, plus the builder which joins them to an application (`src/core`), which is
+  published with them as the `xek` command (`src/cli`) and reached from Scala through the
+  packaging front ends (`src/packager`, `src/toolchain`);
 - **the daemon** — the JVM side that the stub launches and talks to. The reference
   implementation is `ethereal` in [Soundness](https://github.com/propensive/soundness).
 

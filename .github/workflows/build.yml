@@ -15,9 +15,9 @@ jobs:
   build:
     uses: propensive/.github/.github/workflows/scala-ci.yml@main
     with:
-      # `xek.script` writes dist/xek, which the suite drives and which nothing else in CI
-      # produces — the shared workflow runs these targets and then `fume`, never the Makefile.
-      compile:       xek.all xek.script
+      # `xek.cli.assembly` is the `xek` command's JAR, which must assemble as well as compile:
+      # the shared workflow runs these targets and then `fume`, never the Makefile.
+      compile:       xek.all xek.cli.assembly
       test_assembly: xek.test.assembly
 
   rust:

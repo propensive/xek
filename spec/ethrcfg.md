@@ -64,8 +64,8 @@ Total: 3764 bytes.
 
 That is all. In a POSIX shell the whole of step 3 is `cat stub record app.jar > mytool`, and in
 `cmd.exe` it is `copy /b stub+record+app.jar mytool.exe`. The reference builder is the `xek`
-script published with every runner release (`src/script`), which does steps 1–4 and generates
-the polyglot launcher scripts; nothing in it is more than a few lines of shell.
+command published with every runner release (`src/core`, behind `src/cli`), which does steps 1–4
+and generates the polyglot launcher scripts.
 
 ### Why nothing is signed
 
@@ -109,4 +109,5 @@ never finds a v2 record, so the two cannot upgrade into each other; see
 - `src/runner/src/config.rs` — the reader, in the stub.
 - `src/runner/src/verify.rs` — the verifier.
 - `src/sign/src/main.rs` — the signer.
-- `src/script` — the builder: the `xek` script published with each release.
+- `src/core` — the builder: `xek.Record` writes the record and `xek.Assembler` the executable,
+  for the `xek` command (`src/cli`) published with each release, and for `xek.Packager`.

@@ -5,7 +5,8 @@
 #
 # This is the only stage that exercises the whole chain at once — a stub built (or fetched)
 # from this repository, an `ETHRCFG` record and an application JAR joined to it by the `xek`
-# builder script, a daemon started over the launcher protocol, and its output carried back. It is
+# command (itself an XEK executable, so the chain is exercised twice), a daemon started over the
+# launcher protocol, and its output carried back. It is
 # also the only stage that needs a daemon implementation, which is why it lives here and not in
 # the test suite.
 #
@@ -48,12 +49,12 @@ OUT=dist/hello
 mkdir -p dist
 rm -f "$OUT"
 
-# Package with the published builder script, from the local stubs: `Native` delivery, one
-# platform, no download and no hash check. This is the same `xek build` a shell user runs.
+# Package with `xek`, from the local stubs: a native executable for one platform, with no
+# download and no hash check — the same command a shell user runs.
 if [[ ! -x dist/xek ]]; then
-  echo "e2e: dist/xek not found — run \`make xek-script\`" >&2; exit 1
+  echo "e2e: dist/xek not found — run \`make xek\`" >&2; exit 1
 fi
-./dist/xek build --jar "$PWD/$JAR" --out "$PWD/$OUT" --target "$LABEL" --runners "$PWD/dist/runners"
+./dist/xek --platform "$LABEL" --runners "$PWD/dist/runners" "$PWD/$JAR" "$PWD/$OUT"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT

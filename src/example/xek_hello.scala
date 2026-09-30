@@ -102,7 +102,7 @@ def hello(): Unit = cli:
         val done: juc.CountDownLatch = juc.CountDownLatch(1)
 
         trap:
-          case Interrupt.Term =>
+          case Signal(Interrupt.Term, _, _, _) =>
             done.countDown()
             SignalResponse.Accept
 
@@ -115,11 +115,11 @@ def hello(): Unit = cli:
         val received: juc.LinkedBlockingQueue[Text] = juc.LinkedBlockingQueue()
 
         trap:
-          case signal: UnixSignal =>
+          case Signal(signal: UnixSignal, _, _, _) =>
             received.offer(signal.shortName)
             SignalResponse.Accept
 
-          case signal: WindowsSignal =>
+          case Signal(signal: WindowsSignal, _, _, _) =>
             received.offer(signal.shortName)
             SignalResponse.Accept
 

@@ -30,64 +30,59 @@
 package xek
 
 import anticipation.*
-import galilei.*
-import prepositional.*
-import serpentine.*
+import contingency.*
+import fulminate.*
 import vacuous.*
 
-// A complete, declarative description of how to turn an application into a
-// distributable. `Packager.pack` builds it with `core`, exactly as the `xek` command would.
-object Packaging:
-  // How the per-platform binaries reach the user.
-  enum Delivery:
-    case EmbedAll
-    // Online: the JAR is embedded once and each bare stub is downloaded at runtime from the
-    // `RunnerSource.Remote` base URL (so `Download` requires a `Remote` runner source).
-    case Download
-    case Native
+// The 3764-byte ETHRCFG v3 record which configures a runner stub for one application, laid out
+// exactly as `spec/ethrcfg.md` describes. A builder writes it between the stub and the JAR; the
+// runner finds it by its magic.
+case class Record
+  ( buildId:        Long            = 0L,
+    javaMinimum:    Int             = Record.javaMinimum,
+    javaPreferred:  Int             = Record.javaPreferred,
+    jdk:            Boolean         = false,
+    allowDowngrade: Boolean         = false,
+    publicKey:      Optional[Data]  = Unset ):
 
-  // Where each platform's bare reusable runner stub comes from. The stubs are published
-  // independently (by tagging `xek-X.Y`); a build never compiles them.
-  enum RunnerSource:
-    // Read `<directory>/runner-<label>[.exe]` from a local directory (e.g. the output of
-    // `make runners-build`). For development and testing — no download, no hash check.
-    case Local(directory: Path on Linux)
+  def data: Data raises Assembler.Error =
+    if javaMinimum < 0 || javaMinimum > 0xffff || javaPreferred < 0 || javaPreferred > 0xffff
+    then abort(Assembler.Error(Assembler.Fault.Usage, m"a Java version must be between 0 and 65535"))
 
-    // Download each stub from `<baseUrl>/runner-<label>[.exe]` and verify it against
-    // `hashes(label)` (lowercase SHA-256 hex, from the committed `etc/runners/<v>.tsv`
-    // manifest). The production source.
-    case Remote(baseUrl: Text, hashes: Map[Text, Text])
+    val buffer = java.nio.ByteBuffer.allocate(Record.size).nn
+    buffer.order(java.nio.ByteOrder.LITTLE_ENDIAN)
+    buffer.put(Record.magic)
+    buffer.putLong(buildId)
+    buffer.putShort(javaMinimum.toShort)
+    buffer.putShort(javaPreferred.toShort)
+    buffer.put((if jdk then 1 else 0).toByte)
+    buffer.put((if allowDowngrade then 1 else 0).toByte)
+    buffer.position(Record.keyOffset)
 
-  object RunnerSource:
-    // The published stubs named in `res/core/xek/runners.*`.
-    def standard: RunnerSource = Remote(Runners.baseUrl, Runners.hashes)
+    publicKey.let: key =>
+      val bytes: scala.Array[Byte] = Array.unsafeJvm(key)
 
-  // The bundled Java runtime *preference* recorded in the ETHRCFG block. Records
-  // a preference only — the runner downloads a JRE/JDK at runtime; nothing is
-  // embedded in the artifact.
-  enum Bundle:
-    case Jre, Jdk
+      if bytes.length != Record.keySize then
+        val size: Int = bytes.length
+        abort(Assembler.Error(Assembler.Fault.Format, m"a public key must be ${Record.keySize} bytes, but is $size"))
 
-  // How the application's classes reach the runtime.
-  enum Dependencies:
-    case FatJar(jar: Path on Linux)         // the fat jar, appended to the runner as-is
-    case BurdockRemote(jar: Path on Linux)  // a macro-built thin jar that fetches deps (Stage C)
+      buffer.put(bytes)
 
-  case class JavaPolicy(minimum: Int = 21, preferred: Int = 24, bundle: Bundle = Bundle.Jre)
+    Array.unsafeFrozen(buffer.array().nn)
 
-  // Self-upgrade signing. `Unset` overall disables upgrades (the safe default).
-  case class Signing
-    ( publicKey:      Optional[Path on Linux] = Unset, // baked in via `-Dethereal.publicKey`
-     seed:           Optional[Path on Linux] = Unset, // signs post-assembly via `ethereal-sign`
-     allowDowngrade: Boolean                 = false )
+object Record:
+  // The defaults a runner reads for an unset (zero) field.
+  val javaMinimum: Int = 21
+  val javaPreferred: Int = 24
 
-case class Packaging
-  ( name:         Text,
-   targets:      List[Text],
-   delivery:     Packaging.Delivery,
-   dependencies: Packaging.Dependencies,
-   output:       Path on Linux,
-   runnerSource: Packaging.RunnerSource,
-   java:         Packaging.JavaPolicy        = Packaging.JavaPolicy(),
-   signing:      Optional[Packaging.Signing] = Unset,
-   buildId:      Long                        = 0L )
+  val size: Int = 3764
+  val keyOffset: Int = 32
+  val keySize: Int = 1312
+  val signatureOffset: Int = 1344
+
+  // `ETHRCFG` and the format version, 3. No stub contains these bytes (`spec/ethrcfg.md`).
+  def magic: scala.Array[Byte] =
+    val bytes = new scala.Array[Byte](8)
+    System.arraycopy("ETHRCFG".getBytes("US-ASCII").nn, 0, bytes, 0, 7)
+    bytes(7) = 3
+    bytes

@@ -82,12 +82,27 @@ against its committed manifest; `Packaging.RunnerSource.Local` reads prebuilt st
 directory instead — the output of `make runners-build` or `make runners-fetch` — which is what
 the test suite and `make e2e` use.
 
-The stubs and the `xek` builder script are not built by the Scala build and are never stored in a
-jar. They are released together on their own cadence, by tagging `xek-X.Y`, and the release
-opens a pull request rewriting the resources the packager reads, so adopting a new runner is a
-data change. `Packager`
-locates the script from the `XEK` environment variable or `dist/xek`, and shells out to it — the
-one implementation of the byte format, shared with anyone building from a plain shell.
+The stubs are not built by the Scala build and are never stored in a jar. They are released on
+their own cadence, by tagging `xek-X.Y`, with the `xek` command, and the release opens a pull
+request rewriting the resources the builder reads, so adopting a new runner is a data change.
+`Packager` builds with `xek-core` — the one implementation of the byte format, which the `xek`
+command runs too — so an Anthology build and a user at a shell produce the same bytes.
+
+### From a shell
+
+The same packaging is the `xek` command:
+
+```sh
+xek app.jar                              # ./app, a native executable for this platform
+xek -p linux-x64 -p windows-x64 app.jar  # app-linux-x64 and app-windows-x64.exe
+xek --polyglot app.jar                   # ./app, one file for sh, PowerShell and cmd.exe
+xek --polyglot -x bat -p linux-x64,macos-arm64 app.jar dist/
+xek --download app.jar                   # a polyglot file which fetches its stub on first run
+xek --dispatch executables.tsv app       # a polyglot file which fetches a complete executable
+xek --java 25 --java-min 21 --jdk app.jar
+```
+
+`xek --help` lists every option, and `xek '{admin}' install` installs its tab-completions.
 
 ### The other end
 
