@@ -146,14 +146,19 @@ object settings:
 // `proscala-<tag>.tar.gz` asset carrying a `lib/` directory of jars, extracted into `<tag>/lib`. A
 // `.complete` sentinel makes a fully-populated cache a no-op — no network, no GitHub API call.
 object proscala extends Module:
-  def downloadRelease(tag: String): os.Path =
+  //
+  // The API call is authenticated when a `GITHUB_TOKEN` is given: unauthenticated, it shares the
+  // rate limit of every job on a hosted runner's address, and a release job was refused (403) by
+  // it. The header reaches `curl` on stdin, so the token appears in no process's arguments.
+  def downloadRelease(tag: String, token: Option[String] = None): os.Path =
     val root = os.home / ".cache" / "soundness" / "proscala" / tag
     val lib = root / "lib"
     val sentinel = lib / ".complete"
     if os.exists(sentinel) then lib else
       os.makeDir.all(root)
       val api = s"https://api.github.com/repos/propensive/proscala/releases/tags/$tag"
-      val json = ujson.read(os.proc("curl", "-fsSL", api).call().out.text())
+      val header = token.fold("")(token => s"Authorization: Bearer $token\n")
+      val json = ujson.read(os.proc("curl", "-fsSL", "-H", "@-", api).call(stdin = header).out.text())
       val asset = json("assets").arr.find(_("name").str.endsWith(".tar.gz")).getOrElse:
         throw new Exception(s"no .tar.gz asset on proscala release $tag")
       val name = asset("name").str
@@ -181,7 +186,7 @@ object proscala extends Module:
   // `settings.scalaRelease` assets are downloaded and cached.
   def distribution: T[PathRef] = Task.Input:
     if settings.scalaHome.nonEmpty then PathRef(os.Path(settings.scalaHome) / "lib")
-    else PathRef(downloadRelease(settings.scalaRelease))
+    else PathRef(downloadRelease(settings.scalaRelease, Task.env.get("GITHUB_TOKEN").filter(_.nonEmpty)))
 
   def repo: T[PathRef] = Task:
     val lib = distribution().path
