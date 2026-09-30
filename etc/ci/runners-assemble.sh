@@ -53,6 +53,11 @@ cp "$MANIFEST" res/core/xek/runners.tsv
 printf '%s\n' "$RELEASE_VERSION" > res/core/xek/runners.version
 printf '%s\n' "$BASE_URL" > res/core/xek/runners.url
 
+# release.sh installs the pinned upstream releases (etc/refs) only for a release made of jars, so an
+# assembled release that compiles Scala installs them itself, exactly as CI does: without them,
+# nothing from Soundness resolves on a fresh runner.
+./etc/shared sync-deps.sh
+
 # `xek` built by `xek`, from its own JAR and the stubs just built: once as a polyglot file for
 # every platform, and once as a native executable for each, which is what a build that knows its
 # platform — Soundness's, say — should fetch, since a polyglot file replaces itself on first run.
