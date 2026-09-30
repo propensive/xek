@@ -39,16 +39,34 @@ cp "etc/runners/$V.tsv" res/core/xek/runners.tsv
 printf '%s\n' "$V" > res/core/xek/runners.version
 printf '%s\n' "https://github.com/$REPO/releases/download/$RELEASE_TAG" > res/core/xek/runners.url
 
-git switch -q -c "$BRANCH"
-git add "etc/runners/$V.tsv" "etc/runners/$V.SHA256SUMS" res/core/xek/runners.tsv \
-  res/core/xek/runners.version res/core/xek/runners.url
-BOT_EMAIL="41898282+github-actions[bot]@users.noreply.github.com"
-git -c user.name="${GIT_AUTHOR_NAME:-github-actions[bot]}" \
-    -c user.email="${GIT_AUTHOR_EMAIL:-$BOT_EMAIL}" \
-    commit -q -m "Record the $RELEASE_TAG runner release" -m \
-"Writes the hashes published in $RELEASE_TAG into etc/runners/$V.tsv and
+# The commit is made through the GraphQL `createCommitOnBranch` mutation rather than with `git`:
+# GitHub signs a commit made that way, and `main` here accepts only verified commits, which a
+# `git commit` by the release job's bot cannot be. The branch is created first, at the released
+# commit, and deleted again if the commit fails.
+export GH_TOKEN=${PROPAGATE_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN:-}}}
+FILES=("etc/runners/$V.tsv" "etc/runners/$V.SHA256SUMS" res/core/xek/runners.tsv
+  res/core/xek/runners.version res/core/xek/runners.url)
+HEAD_SHA=$(git rev-parse HEAD)
+
+ADDITIONS=$(for f in "${FILES[@]}"; do
+  jq -n --arg path "$f" --arg contents "$(base64 < "$f" | tr -d '\n')" \
+    '{path: $path, contents: $contents}'
+done | jq -s .)
+
+HEADLINE="Record the $RELEASE_TAG runner release"
+MESSAGE="Writes the hashes published in $RELEASE_TAG into etc/runners/$V.tsv and
 etc/runners/$V.SHA256SUMS, and points the builder's resources at the release."
-git push -q origin "$BRANCH"
+
+gh api -X POST "repos/$REPO/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$HEAD_SHA" >/dev/null
+jq -n --arg repo "$REPO" --arg branch "$BRANCH" --arg head "$HEAD_SHA" \
+  --arg headline "$HEADLINE" --arg body "$MESSAGE" --argjson additions "$ADDITIONS" \
+  '{query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+    variables: {input: {branch: {repositoryNameWithOwner: $repo, branchName: $branch},
+                        expectedHeadOid: $head, message: {headline: $headline, body: $body},
+                        fileChanges: {additions: $additions}}}}' |
+  gh api graphql --input - --jq '.data.createCommitOnBranch.commit.oid' ||
+  { gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" >/dev/null 2>&1
+    echo "runners-record: committing to $BRANCH failed" >&2; exit 1; }
 
 BASE=$(gh repo view "$REPO" --json defaultBranchRef --jq .defaultBranchRef.name)
 BODY=$(cat <<EOF
@@ -57,6 +75,5 @@ Records the $RELEASE_TAG runner release: the stub hashes in \`etc/runners/$V.tsv
 <!-- Opened as a draft by the release of $RELEASE_TAG. Before marking it ready, add the release's row to spec/COMPATIBILITY.md — the protocol, the base signature it speaks, and the Soundness daemon release that speaks it — and rewrite the paragraph above if the release changes anything a user of the packager would notice. -->
 EOF
 )
-GH_TOKEN=${PROPAGATE_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN:-}}} \
-  gh pr create --repo "$REPO" --draft --base "$BASE" --head "$BRANCH" \
+gh pr create --repo "$REPO" --draft --base "$BASE" --head "$BRANCH" \
     --title "Record the $RELEASE_TAG runner release" --body "$BODY"
