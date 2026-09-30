@@ -78,9 +78,10 @@ object settings:
 
   // Capture checking, and capture plus separation checking. Soundness rolls these out
   // module-by-module and each module here compiles under exactly the tier its sources were
-  // written and checked under in Soundness: the script generator and the packager under `sep`,
-  // the toolchain edge (which passes a capturing `edit` function through `Toolchain.Setting`,
-  // and implements a `Tool` whose signature is not capture-annotated) under neither.
+  // written and checked under: the packager under `sep`; the builder (`core`, whose work is
+  // `java.nio` byte arrays and streams), the `xek` command and the suite under neither; and the
+  // toolchain edge (which passes a capturing `edit` function through `Toolchain.Setting`, and
+  // implements a `Tool` whose signature is not capture-annotated) under neither.
   def cc(options: Seq[String]): Seq[String] =
     options ++ Seq("-Ycc-new", "-language:experimental.captureChecking")
 
@@ -98,16 +99,22 @@ object settings:
   // surface arrives transitively.
   class Soundness(v: String):
 
-    // `xek.packager`: a thin front end that shells out to the published `xek` builder script.
-    val packager = Seq(
-      mvn"dev.propensive:eucalyptus-core:$v",    // logging for the subprocess
-      mvn"dev.propensive:guillotine-core:$v",    // running the builder script
-      mvn"dev.propensive:hieroglyph-core:$v",    // UTF-8 for the temp manifest and resources
-      mvn"dev.propensive:spectacular-core:$v",   // `show` for numbers passed as flags
-      mvn"dev.propensive:galilei-jvm:$v",        // paths and files
-      mvn"dev.propensive:hellenism-core:$v",     // classpath resources (`Runners`)
-      mvn"dev.propensive:turbulence-core:$v",    // streams
-      mvn"dev.propensive:ambience-core:$v")      // environment and working directory
+    // `xek.core`: the builder itself — the record, stub resolution, assembly and the polyglot
+    // launchers. Byte-level work goes through `java.nio`; these give it paths, text and resources.
+    val core = Seq(
+      mvn"dev.propensive:galilei-jvm:$v",        // paths
+      mvn"dev.propensive:ambience-core:$v",      // the system properties paths are read with
+      mvn"dev.propensive:gossamer-core:$v",      // text
+      mvn"dev.propensive:hieroglyph-core:$v",    // UTF-8 for resources
+      mvn"dev.propensive:hellenism-core:$v",     // classpath resources (templates, `Runners`)
+      mvn"dev.propensive:turbulence-core:$v")    // reading resources
+
+    // `xek.cli`: the `xek` command itself, an XEK executable daemonized through `ethereal`, with
+    // its arguments and tab-completions from `exoskeleton`.
+    val cli = Seq(
+      mvn"dev.propensive:ethereal-core:$v",
+      mvn"dev.propensive:exoskeleton-completions:$v",
+      mvn"dev.propensive:ambience-core:$v")      // the invocation's environment
 
     // `xek.toolchain`: the `Jar` → executable edge of an Anthology toolchain.
     val toolchain = Seq(
@@ -116,7 +123,8 @@ object settings:
 
     // `xek.test`.
     val test = Seq(
-      mvn"dev.propensive:gastronomy-core:$v",    // SHA-256 for byte-identity checks
+      mvn"dev.propensive:guillotine-core:$v",    // running the files it builds
+      mvn"dev.propensive:eucalyptus-core:$v",    // logging for those subprocesses
       mvn"dev.propensive:probably-cli:$v",       // Suite
       mvn"dev.propensive:probably-events:$v",    // the BinTEL event stream a host runner reads
       mvn"dev.propensive:spectacular-core:$v",   // `show`
@@ -344,14 +352,20 @@ trait Component(dependencies: PublishModule*) extends Forked, PublishModule:
 object xek extends Module:
   override def moduleDir = super.moduleDir / os.up / "src"
 
-  // The polyglot script generator: turns payloads and asset tables into a single file that is
-  // simultaneously a valid `sh` script, a `.bat` file and a PowerShell script, which unpacks or
-  // downloads the executable for the platform it finds itself on and replaces itself with it.
-  // Turning a `Packaging` into a distributable: a thin front end over the published `xek`
-  // builder script (`src/script`), which joins a bare stub, the ETHRCFG record and the JAR and
-  // generates the polyglot launchers.
-  object packager extends Component():
-    def mvnDeps = Task(settings.Soundness(deps.soundness()).packager)
+  // The builder: the ETHRCFG record, the runner stubs (resolved from a local directory, or
+  // downloaded, verified and cached), native assembly, and the polyglot launchers — a single
+  // file that is at once a valid `sh` script, a `.bat` file and a PowerShell script, which
+  // unpacks or downloads the executable for the platform it finds itself on. The single
+  // implementation of the builder's side of `spec/ethrcfg.md`.
+  //
+  // Compiled without capture checking, like `toolchain`: its work is byte arrays and streams
+  // from `java.nio`, which the checker can only be told about by casting.
+  object core extends Component():
+    def mvnDeps = Task(settings.Soundness(deps.soundness()).core)
+
+  // Turning a `Packaging` into a distributable, through `core`.
+  object packager extends Component(core):
+    def mvnDeps = Task(Seq.empty[Dep])
     override def scalacOptions = settings.sep(super.scalacOptions())
 
   // The same packaging reached as an Anthology toolchain format, so an application can be
@@ -359,14 +373,79 @@ object xek extends Module:
   object toolchain extends Component(packager):
     def mvnDeps = Task(settings.Soundness(deps.soundness()).toolchain)
 
+  // `xek`, the command: `core` behind a command line, and itself an XEK executable, daemonized
+  // through Soundness's `ethereal` like any other. Its `bootstrap` entry point runs `core` from
+  // a plain JVM, with no launcher, which is how the first `xek` executable is built.
+  object cli extends Component(core):
+    def mvnDeps = Task(settings.Soundness(deps.soundness()).cli)
+    override def artifactName = Task("xek-cli")
+    override def mainClass = Some("xek.command")
+
+    // The JAR is appended to a stub as it is, so it starts with the ZIP itself, not with a shell
+    // script to run it.
+    override def prependShellScript = ""
+
+    // `xek --version` reads the version it was built as from `xek/cli.version`.
+    def version = Task:
+      os.write(Task.dest / "xek" / "cli.version", publishVersion(), createFolders = true)
+      PathRef(Task.dest)
+
+    override def resources = Task(super.resources() ++ Seq(version()))
+
+    // Soundness's `stenography` depends on the Scala compiler for its macros, so the compiler
+    // and its dependencies reach the runtime classpath, as do the TASTy files a compiler reads.
+    // `xek` runs no macros and reads no TASTy, and they would be most of the bytes of every copy
+    // of it, so they are left out of the executable's JAR.
+    override def assemblyRules = super.assemblyRules ++ Seq(
+      mill.javalib.Assembly.Rule.ExcludePattern("dotty/.*"),
+      mill.javalib.Assembly.Rule.ExcludePattern("scala/tools/.*"),
+      mill.javalib.Assembly.Rule.ExcludePattern("scala/quoted/runtime/impl/.*"),
+      mill.javalib.Assembly.Rule.ExcludePattern("xsbti/.*"),
+      mill.javalib.Assembly.Rule.ExcludePattern("org/jline/.*"),
+      mill.javalib.Assembly.Rule.ExcludePattern("coursierapi/.*"),
+      mill.javalib.Assembly.Rule.ExcludePattern(".*\\.tasty"))
+
+    // Runs `xek` from this module's assembly with no launcher, through its `bootstrap` entry
+    // point, on the JVM Mill runs with: `xek` built by `xek`. Takes the command line `xek` takes,
+    // with paths relative to the repository, as in `./mill xek.cli.bootstrap --polyglot
+    // --runners dist/runners out/xek/cli/assembly.dest/out.jar dist/xek`.
+    def bootstrap(arguments: mainargs.Leftover[String]) = Task.Command:
+      val jar = assembly().path
+      val java = mill.util.Jvm.javaExe(javaHome().map(_.path))
+
+      os.proc(java, "-cp", jar.toString, "xek.bootstrap", arguments.value)
+       .call(cwd = mill.api.BuildCtx.workspaceRoot, stdout = os.Inherit, stderr = os.Inherit)
+
+      PathRef(jar)
+
+    // Writes `dist/xek`, the `xek` command as an embed-all polyglot file for every platform
+    // (and `dist/xek.cmd`, the same bytes, for cmd.exe). The stubs are the ones in
+    // `dist/runners` when that exists (`make runners-build`, or `make runners-fetch`), and
+    // otherwise the published release named in `res/core/xek/runners.*`, downloaded and
+    // verified. A command rather than a target, since `dist/runners` is outside the build: it
+    // is cheap once the assembly is cached.
+    def executable() = Task.Command:
+      val root = mill.api.BuildCtx.workspaceRoot
+      val jar = assembly().path
+      val java = mill.util.Jvm.javaExe(javaHome().map(_.path))
+      val runners = root / "dist" / "runners"
+      val output = root / "dist" / "xek"
+      val local = if os.exists(runners) then Seq("--runners", runners.toString) else Nil
+      val arguments = Seq("--polyglot", jar.toString, output.toString) ++ local
+
+      os.proc(java, "-cp", jar.toString, "xek.bootstrap", arguments)
+       .call(cwd = root, stdout = os.Inherit, stderr = os.Inherit)
+
+      os.copy.over(output, root / "dist" / "xek.cmd")
+      PathRef(output)
+
   // Suites have no `main` of their own: a host runner discovers them from the
   // `META-INF/services/probably.Suite` index the beneficence plugin writes, and drives them
   // over the BinTEL test-event protocol. `make test` assembles this module and runs
   // `fume run -c …` over the assembly, exactly as Soundness runs its own suites.
-  object test extends Component(packager, toolchain):
+  object test extends Component(core, packager, toolchain):
     def mvnDeps = Task(settings.Soundness(deps.soundness()).test)
     override def artifactName = Task("xek-test")
-    override def scalacOptions = settings.sep(super.scalacOptions())
 
     // The protocol schema and the runner's copy of its signature are read off the classpath,
     // so the suite can compare them wherever its host runner's working directory happens
@@ -375,27 +454,6 @@ object xek extends Module:
       mill.api.BuildCtx.workspaceRoot / "spec",
       mill.api.BuildCtx.workspaceRoot / "src" / "runner" / "src")
     override def resources = Task(super.resources() ++ contract())
-
-  // Everything the builder bakes into the script: the release version, base URL and stub
-  // hashes, the polyglot templates, and the three shell sections it splices together.
-  def scriptSources = Task.Sources
-   ( mill.api.BuildCtx.workspaceRoot / "res" / "packager" / "xek",
-     mill.api.BuildCtx.workspaceRoot / "res" / "core" / "xek",
-     mill.api.BuildCtx.workspaceRoot / "src" / "script",
-     mill.api.BuildCtx.workspaceRoot / "etc" / "ci" / "xek-script-build.sh" )
-
-  // `dist/xek`, the builder script the suite drives, produced by `make xek-script` — which
-  // stays the one place that knows how it is assembled.
-  //
-  // It exists as a Mill target only so that CI can ask for it: the shared workflow never runs
-  // the Makefile, it runs the targets named in `compile` and then `fume run` over the test
-  // assembly, and `fume` resolves the script from the working directory. Without this the
-  // suite found no script, skipped every test and reported success. Named in the `compile`
-  // list in .github/workflows/build.yml, which runs before the test step.
-  def script: T[Unit] = Task:
-    scriptSources()
-    os.proc("make", "xek-script")
-     .call(cwd = mill.api.BuildCtx.workspaceRoot, stdout = os.Inherit, stderr = os.Inherit)
 
   // The end-to-end fixture: a real daemonized application, packaged by the modules above and run
   // through a real runner stub. This is the ONE module that depends on a daemon implementation
@@ -415,6 +473,8 @@ object xek extends Module:
 
   // Everything published from this repository. Note the absence of `example`.
   def all = Task:
+    core.compile()
     packager.compile()
+    cli.compile()
     toolchain.compile()
     test.compile()

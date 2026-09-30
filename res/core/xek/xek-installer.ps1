@@ -60,6 +60,15 @@ if ($os -eq "windows") {
     & cmd /c "more +$skip `"$scriptPath`" > `"${tmp}.pem`""
     & certutil -decode "${tmp}.pem" "${tmp}.bin" > $null
     Remove-Item "${tmp}.pem"
+    if ($offsets.ContainsKey("record")) {
+        $rskip = $indexLineNum + $offsets["record"] - 1
+        & cmd /c "more +$rskip `"$scriptPath`" > `"${tmp}.pem`""
+        & certutil -decode "${tmp}.pem" "${tmp}.rec" > $null
+        Remove-Item "${tmp}.pem"
+        & cmd /c "copy /b `"${tmp}.bin`"+`"${tmp}.rec`" `"${tmp}.brc`" > nul"
+        Move-Item -Force "${tmp}.brc" "${tmp}.bin"
+        Remove-Item "${tmp}.rec"
+    }
     if ($offsets.ContainsKey("data")) {
         $dskip = $indexLineNum + $offsets["data"] - 1
         & cmd /c "more +$dskip `"$scriptPath`" > `"${tmp}.pem`""
@@ -74,6 +83,10 @@ if ($os -eq "windows") {
     $skip = $indexLineNum + $offsets[$label]
     $decode = '{ base64 -d 2>/dev/null || base64 -D; }'
     & bash -c "tail -n +$($skip + 1) '$scriptPath' | sed -n '/^-----END/q; /^-----BEGIN/d; p' | $decode | gunzip > '$outputPath'" 2>/dev/null
+    if ($offsets.ContainsKey("record")) {
+        $rskip = $indexLineNum + $offsets["record"]
+        & bash -c "tail -n +$($rskip + 1) '$scriptPath' | sed -n '/^-----END/q; /^-----BEGIN/d; p' | $decode >> '$outputPath'" 2>/dev/null
+    }
     if ($offsets.ContainsKey("data")) {
         $dskip = $indexLineNum + $offsets["data"]
         & bash -c "tail -n +$($dskip + 1) '$scriptPath' | sed -n '/^-----END/q; /^-----BEGIN/d; p' | $decode >> '$outputPath'" 2>/dev/null

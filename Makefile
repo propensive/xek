@@ -6,7 +6,7 @@
 
 MILL = ./mill
 
-.PHONY: check build test cargo-test runners-build runners-fetch runners-release xek-script publishLocal sync-deps tools e2e clean
+.PHONY: check build test cargo-test runners-build runners-fetch runners-release xek publishLocal sync-deps tools e2e clean
 
 # Everything published from this repository. `example` is deliberately excluded: it is the
 # end-to-end fixture, and the only module that depends on a daemon implementation.
@@ -15,9 +15,9 @@ build:
 
 # Suites carry no `main`; a host runner discovers them from the `META-INF/services/probably.Suite`
 # index and drives them over the test-event protocol. `$(TESTS)` are fume selection terms.
-test: xek-script
+test:
 	$(MILL) xek.test.assembly
-	XEK=$(PWD)/dist/xek fume run -c out/xek/test/assembly.dest/out.jar $(TESTS)
+	fume run -c out/xek/test/assembly.dest/out.jar $(TESTS)
 
 # The runner's own unit tests — the BinTEL codec, the ETHRCFG verifier, the state machine.
 cargo-test:
@@ -36,7 +36,7 @@ runners-fetch:
 
 # Releases are cut by tagging, not by make. The tag fires .github/workflows/release.yml, which
 # runs the shared release.sh in propensive/.github: it gates on a signed tag and on CI already
-# being green on that commit, builds the stubs and the builder script (etc/ci/runners-assemble.sh),
+# being green on that commit, builds the stubs and the `xek` command (etc/ci/runners-assemble.sh),
 # publishes them, and then opens pull requests recording the hashes here and pinning the release
 # in Soundness. If anything fails, the release and the tag are both deleted. See etc/release. To
 # rehearse without publishing: RELEASE_DRY_RUN=1 ./etc/shared release.sh xek-X.Y
@@ -63,15 +63,11 @@ check:
 tools:
 	./etc/shared tools.sh
 
-# Assemble the polyglot `xek` builder script (dist/xek and dist/xek.cmd) from its three shell
-# sections and the launcher templates, baking in the version, base URL and stub hashes read
-# from res/packager/xek/runners.{version,url,tsv}. `make test` and `make e2e` depend on this.
-xek-script:
-	./etc/ci/xek-script-build.sh \
-	  "$$(cat res/packager/xek/runners.version)" \
-	  "$$(cat res/packager/xek/runners.url)" \
-	  res/packager/xek/runners.tsv \
-	  dist/xek
+# Build the `xek` command, as dist/xek (and dist/xek.cmd, the same bytes): a polyglot file for
+# every platform, built by `xek` itself from its own JAR, around the stubs in dist/runners if
+# they are there and the published release's otherwise. `make e2e` depends on this.
+xek:
+	$(MILL) xek.cli.executable
 
 # Install the jars into ~/.ivy2/local, where coursier finds them with no repository
 # configuration — how a downstream build consumes XEK before it has a published home.
@@ -79,11 +75,12 @@ publishLocal:
 	$(MILL) xek.core.publishLocal
 	$(MILL) xek.packager.publishLocal
 	$(MILL) xek.toolchain.publishLocal
+	$(MILL) xek.cli.publishLocal
 
 # The end-to-end check: package the example application around a real runner stub and run it.
 # Needs dist/runners (from `runners-build` or `runners-fetch`), and resolves a daemon
 # implementation — the one place anything here does.
-e2e: xek-script
+e2e: xek
 	./etc/ci/e2e.sh
 
 clean:

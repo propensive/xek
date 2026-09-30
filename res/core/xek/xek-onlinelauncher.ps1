@@ -62,6 +62,15 @@ xek_msg 33 '████████' 0 'Assembling…'
 if ($os -eq "windows") {
     $tmpDir = if ($env:TEMP) { $env:TEMP } else { "/tmp" }
     $tmp = Join-Path $tmpDir "~zig_$PID"
+    if ($offsets.ContainsKey("record")) {
+        $rskip = $indexLineNum + $offsets["record"] - 1
+        & cmd /c "more +$rskip `"$s`" > `"${tmp}.pem`""
+        & certutil -decode "${tmp}.pem" "${tmp}.rec" > $null
+        Remove-Item "${tmp}.pem"
+        & cmd /c "copy /b `"$t`"+`"${tmp}.rec`" `"${t}.rec`" > nul"
+        Move-Item -Force "${t}.rec" $t
+        Remove-Item "${tmp}.rec"
+    }
     $dskip = $indexLineNum + $offsets["data"] - 1
     & cmd /c "more +$dskip `"$s`" > `"${tmp}.pem`""
     & certutil -decode "${tmp}.pem" "${tmp}.dat" > $null
@@ -70,8 +79,12 @@ if ($os -eq "windows") {
     Remove-Item "${tmp}.dat"
     Move-Item -Force "${t}.out" $t
 } else {
-    $dskip = $indexLineNum + $offsets["data"]
     $decode = '{ base64 -d 2>/dev/null || base64 -D; }'
+    if ($offsets.ContainsKey("record")) {
+        $rskip = $indexLineNum + $offsets["record"]
+        & bash -c "tail -n +$($rskip + 1) '$s' | sed -n '/^-----END/q; /^-----BEGIN/d; p' | $decode >> '$t'" 2>/dev/null
+    }
+    $dskip = $indexLineNum + $offsets["data"]
     & bash -c "tail -n +$($dskip + 1) '$s' | sed -n '/^-----END/q; /^-----BEGIN/d; p' | $decode >> '$t'" 2>/dev/null
     & chmod +x $t
 }

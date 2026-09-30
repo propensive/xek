@@ -15,11 +15,32 @@ record and the JAR — not compiling. That is what makes cross-platform packagin
 executable can be built on one machine, in about as long as it takes to copy a file.
 
 ```sh
-$ ls -la mytool
--rwxr-xr-x  1 you  staff  4014592  mytool
+$ xek mytool.jar
+Wrote /home/you/mytool
 $ ./mytool --version
 mytool 1.0.0
 ```
+
+The `xek` command builds them. It is an XEK executable itself, written with
+[Soundness](https://github.com/propensive/soundness), and builds for any platform from any
+other:
+
+```sh
+xek app.jar                              # ./app, a native executable for this platform
+xek app.jar dist/tool                    # dist/tool
+xek -p linux-x64 -p windows-x64 app.jar  # app-linux-x64 and app-windows-x64.exe
+xek --polyglot app.jar                   # ./app, one file for every platform (see below)
+xek --polyglot --exclude bat app.jar     # …leaving out the cmd.exe section
+xek --polyglot --platforms linux-x64,macos-arm64 app.jar
+xek --download app.jar                   # a polyglot file which fetches its stub on first run
+xek --dispatch executables.tsv app       # a polyglot file which fetches a whole executable
+xek --java 25 --java-min 21 --jdk app.jar
+```
+
+Options may come before or after the JAR, and `xek --help` lists them all. The `--java` options
+record which runtime an executable wants: the runner uses a suitable installed Java, and
+otherwise downloads the preferred version from Adoptium on first run. `xek '{admin}' install`
+installs tab-completions for `xek`, as for any XEK executable.
 
 ## What's here
 
@@ -27,8 +48,9 @@ mytool 1.0.0
 |---|---|
 | `src/runner` | The runner stub, in Rust: platform detection, JVM discovery, the daemon handshake, terminal modes, signals, and signed self-upgrade. 0.2–0.3 MB per platform |
 | `src/sign` | `ethereal-sign` — keygen and signing for the self-upgrade path |
-| `src/script` | The `xek` builder: a polyglot script (one file valid as `sh`, `.bat` and PowerShell) that joins a stub, a record and a JAR, and generates the polyglot launchers. Published with the runners |
-| `src/packager` | `Packager` — a thin front end that turns a `Packaging` into a distributable by invoking the `xek` script |
+| `src/core` | The builder: the configuration record, stubs (local, or downloaded, verified and cached), native assembly, and the polyglot launchers (`res/core/xek`) — one file valid as `sh`, `.bat` and PowerShell |
+| `src/cli` | The `xek` command: `core` behind a command line with tab-completions, and an XEK executable itself. Published with the runners |
+| `src/packager` | `Packager` — turns a `Packaging` into a distributable with `core` |
 | `src/toolchain` | The same packaging as an [Anthology](https://github.com/propensive/soundness) toolchain format, so an application compiles and packages in one pass |
 | `spec/` | **The contract** between a launcher and a daemon, and the reason the two can be developed apart |
 | `src/example` | The end-to-end fixture: the smallest daemonized application there is |
@@ -39,12 +61,13 @@ An application's JAR reaches a user in one of four shapes, and the same `Packagi
 each:
 
 - **native** — one self-contained binary for one platform. The plain case.
-- **embed-all** — a polyglot script carrying *every* platform's stub and the application,
-  which unpacks the right one where it runs. One file, works anywhere, offline.
-- **download** — a polyglot script carrying the application and a table of
+- **embed-all** (`--polyglot`) — a polyglot script carrying *every* platform's stub and the
+  application, which unpacks the right one where it runs. One file, works anywhere, offline. It
+  runs as it is in `sh`; PowerShell and `cmd.exe` need it renamed to end `.ps1` or `.bat`.
+- **download** (`--download`) — a polyglot script carrying the application and a table of
   (url, hash) pairs; on first run it fetches the one stub it needs, verifies it, appends the
   embedded JAR and replaces itself.
-- **dispatcher** — a polyglot script carrying *nothing* but a table of (url, hash) pairs
+- **dispatcher** (`--dispatch`) — a polyglot script carrying *nothing* but a table of (url, hash) pairs
   naming complete per-platform executables. The smallest possible cross-platform artefact.
 
 In every downloading case the bytes are verified against a SHA-256 recorded at publication.
@@ -62,8 +85,9 @@ mismatched pair fails at the first message rather than misreading fields — whi
 what makes it safe for them to release on their own cadences.
 
 XEK's Scala modules are *built* against Soundness's libraries, as any Scala project might be.
-Nothing here depends on `ethereal`, the daemon, except the end-to-end fixture, which needs
-something at the other end of the socket to be a test at all. That pin (`etc/refs`) is always
+Nothing published as a library here depends on `ethereal`, the daemon. The `xek` command does,
+as any XEK application must, and so does the end-to-end fixture, which needs something at the
+other end of the socket to be a test at all. That pin (`etc/refs`) is always
 a Soundness *release*, never a snapshot, because Soundness in turn pins an XEK release in its
 `etc/xek.tsv`: a protocol change is released here first, and Soundness follows.
 
@@ -77,8 +101,8 @@ The stubs are built with a nightly because compiling the standard library for si
 describes.
 
 ```sh
-make xek-script      # assemble dist/xek, the builder
-	make build           # the Scala modules
+make build           # the Scala modules
+make xek             # dist/xek, the `xek` command, built by itself
 make test            # the test suite, through the `fume` runner
 make cargo-test      # the runner's own unit tests
 
@@ -104,11 +128,12 @@ git tag -s xek-0.10 && git push --tags
 The tag fires `.github/workflows/release.yml`, which runs the shared `release.sh` from
 [propensive/.github](https://github.com/propensive/.github) as configured by `etc/release`. It
 gates on a verified signed tag and on CI already being green on that commit; cross-compiles the
-five stubs and assembles the `xek` builder script (`etc/ci/runners-assemble.sh`); uploads them to
-the `xek-0.10` release, with `0.10.SHA256SUMS`, and checks every digest; and, if anything fails,
+five stubs and builds the `xek` command around them, as a polyglot `xek` and a native
+`xek-<platform>` for each platform (`etc/ci/runners-assemble.sh`); uploads them to the
+`xek-0.10` release, with `0.10.SHA256SUMS`, and checks every digest; and, if anything fails,
 deletes the release and the tag. Once the release is public it opens two draft pull requests: one
 here recording the hashes in `etc/runners/0.10.tsv` and `etc/runners/0.10.SHA256SUMS` and
-rewriting `res/packager/xek/runners.{tsv,version,url}`, the resources the packager reads
+rewriting `res/core/xek/runners.{tsv,version,url}`, the resources the builder reads
 (`etc/ci/runners-record.sh`); and one in Soundness moving its `etc/xeq.tsv` to the release
 (`etc/downstream`). Adopting a release is therefore a data change, not a code change, and an
 application picks up a runner fix without anything being rebuilt.
@@ -124,7 +149,8 @@ RELEASE_DRY_RUN=1 ./etc/shared release.sh xek-0.10
 Extracted from Soundness, where this machinery grew as the `ziggurat` library and the Rust
 runner inside `ethereal`. Runner releases up to `runners-0.5` were published from that
 repository under the `runners-` tag prefix; releases from here use `xek-`, and `xek-0.6` — the
-first made from this repository — supersedes them and adds the builder script as a release asset.
+first made from this repository — supersedes them and adds the builder as a release asset: a
+polyglot shell script up to `xek-0.9`, and the `xek` command after it.
 
 ## Licence
 

@@ -59,7 +59,7 @@ object executableOptions:
 
   object runners:
     // The published `runners-<version>` release, verified against its committed manifest.
-    def standard: Toolchain.Setting = xek(_.copy(runners = Runners.standard))
+    def standard: Toolchain.Setting = xek(_.copy(runners = Packaging.RunnerSource.standard))
 
     // A local directory of prebuilt stubs (e.g. the output of `make runners-build`).
     def local(directory: Path on Linux): Toolchain.Setting =

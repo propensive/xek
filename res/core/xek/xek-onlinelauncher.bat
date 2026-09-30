@@ -33,13 +33,29 @@ set "indexrest="
 for /f "usebackq tokens=1* delims=:" %%a in (`findstr /n /b "index:" "%~f0"`) do if !indexnum! equ 0 (set "indexnum=%%a" & set "indexrest=%%b")
 set "indexcontent=!indexrest:~6!"
 set "data_offset="
+set "record_offset="
 for %%E in ("!indexcontent:,=" "!") do (
-    for /f "tokens=1,2 delims==" %%K in (%%E) do (if "%%K"=="data" set "data_offset=%%L")
+    for /f "tokens=1,2 delims==" %%K in (%%E) do (
+        if "%%K"=="data" set "data_offset=%%L"
+        if "%%K"=="record" set "record_offset=%%L"
+    )
 )
 if not defined data_offset (echo No embedded data payload>&2 & del "!t!" & exit /b 1)
 set "out=%TEMP%\~zigout%RANDOM%.exe"
 set "tmp_pem=%TEMP%\~zigpem%RANDOM%.pem"
 set "tmp_data=%TEMP%\~zigdat%RANDOM%"
+if defined record_offset (
+    set "tmp_rec=%TEMP%\~zigrec%RANDOM%"
+    set /a "rskip=indexnum + record_offset - 1"
+    more +!rskip! "%~f0" > "!tmp_pem!"
+    certutil -decode "!tmp_pem!" "!tmp_rec!" > nul
+    del "!tmp_pem!"
+    if exist "!tmp_rec!" (
+        copy /b "!t!"+"!tmp_rec!" "!t!.rec" > nul
+        move /y "!t!.rec" "!t!" > nul
+        del "!tmp_rec!"
+    )
+)
 set /a "dskip=indexnum + data_offset - 1"
 more +!dskip! "%~f0" > "!tmp_pem!"
 certutil -decode "!tmp_pem!" "!tmp_data!" > nul

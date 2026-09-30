@@ -42,8 +42,8 @@ version it declares for its next release. The build reads the file through the `
    could be released before the other. The pin is always a Soundness release, and everything
    Scala here — `src/example`, the end-to-end fixture, included — uses only that release's API.
    When a protocol change needs new daemon behaviour, do not teach the fixture about it: the
-   assertion belongs in Soundness's `ethereal` suite, run with `XEK` pointing at a script built
-   from this checkout (`make runners-build`, then `etc/ci/xek-script-build.sh`). The order is
+   assertion belongs in Soundness's `ethereal` suite, run with `XEK` pointing at an `xek` built
+   from this checkout (`make runners-build`, then `make xek`, which writes `dist/xek`). The order is
    then fixed: this repository merges and releases first, Soundness bumps `etc/xek.tsv` to the
    new release, and only afterwards may `etc/refs` here move up to the Soundness release that
    followed.

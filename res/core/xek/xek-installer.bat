@@ -18,10 +18,12 @@ if !indexnum! equ 0 (
 )
 set "indexcontent=!indexrest:~6!"
 set "offset="
+set "record_offset="
 set "data_offset="
 for %%E in ("!indexcontent:,=" "!") do (
     for /f "tokens=1,2 delims==" %%K in (%%E) do (
         if "%%K"=="windows-!arch!" set "offset=%%L"
+        if "%%K"=="record" set "record_offset=%%L"
         if "%%K"=="data" set "data_offset=%%L"
     )
 )
@@ -39,6 +41,19 @@ del "!tmp_pem!"
 if not exist "!tmp_bin!" (
     echo Extraction failed for windows-!arch! >&2
     exit /b 1
+)
+rem The ETHRCFG v3 record (spec/ethrcfg.md), embedded once, appended after the stub.
+if defined record_offset (
+    set "tmp_rec=%TEMP%\~ethereal_%RANDOM%_rec"
+    set /a "rskip=indexnum + record_offset - 1"
+    more +!rskip! "!script!" > "!tmp_pem!"
+    certutil -decode "!tmp_pem!" "!tmp_rec!" > nul
+    del "!tmp_pem!"
+    if exist "!tmp_rec!" (
+        copy /b "!tmp_bin!"+"!tmp_rec!" "!tmp_bin!.rec" > nul
+        move /y "!tmp_bin!.rec" "!tmp_bin!" > nul
+        del "!tmp_rec!"
+    )
 )
 if defined data_offset (
     set "tmp_data=%TEMP%\~ethereal_%RANDOM%_data"

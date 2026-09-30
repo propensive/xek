@@ -29,49 +29,27 @@
                                                                                                   */
 package xek
 
+import java.nio.file as jnf
+
 import ambience.*
 import anticipation.*
-import aperture.*
 import contingency.*
-import distillate.*
-import denominative.size
-import denominative.dysasymptotics.linearSize
-import eucalyptus.*
 import fulminate.*
-import galilei.*, galilei.Platform.pathReadable
-import gossamer.*
-import guillotine.*
-import hieroglyph.*
+import galilei.*
 import prepositional.*
 import rudiments.*
 import serpentine.*
-import spectacular.*
-import turbulence.*
 import vacuous.*
 
-import environments.javaBaseEnvironment
+import denominative.size
+import denominative.dysasymptotics.linearSize
 import errorDiagnostics.emptyDiagnostics
-import logging.silentLogging
 
-import filesystemOptions.createNonexistentParents
-import filesystemOptions.dereferenceSymlinks
-import filesystemOptions.overwritePreexisting
-
-import filesystemBackends.javaBaseFilesystem
-
-// Turns a `Packaging` into a distributable by invoking the published `xek` builder script —
-// the single implementation of the ETHRCFG v3 format and the polyglot launchers
-// (`src/script`, `spec/ethrcfg.md`). The script is located from the `XEK` environment
-// variable, else `dist/xek` under the working directory. `Native` runs `xek build`, `EmbedAll`
-// runs `xek embed-all`, `Download` runs `xek download`; each delivery's flags come straight
-// from the `Packaging` fields.
-//
-// Nothing here reimplements the byte format: the split's whole point is that one script,
-// released with the runners, does the joining, and this is a thin front end over it so an
-// Anthology build reaches the same code a shell user does.
+// Turns a `Packaging` into a distributable through `core` — the same code the `xek` command runs,
+// so that an Anthology build and a shell user reach the same bytes.
 object Packager:
   def pack(config: Packaging)(using WorkingDirectory): Path on Linux raises Packager.Error =
-    val appJar: Path on Linux = config.dependencies.absolve match
+    val jar: Path on Linux = config.dependencies.absolve match
       case Packaging.Dependencies.FatJar(jar) => jar
       case Packaging.Dependencies.BurdockRemote(_) =>
         abort(Packager.Error(m"Burdock remote dependencies are not yet supported (Stage C)"))
@@ -82,74 +60,49 @@ object Packager:
         abort(Packager.Error(m"Native delivery requires exactly one target, but $length were given"))
       case _ => ()
 
-    val subcommand: Text = config.delivery match
-      case Packaging.Delivery.Native   => t"build"
-      case Packaging.Delivery.EmbedAll => t"embed-all"
-      case Packaging.Delivery.Download => t"download"
+    val targets: List[Target] = config.targets.map(target(_))
 
-    // The remote runner source's per-label hashes reach the script as a temporary manifest in
-    // the `label<TAB>sha256` format `etc/runners/<v>.tsv` uses; a local directory is passed
-    // straight through. A missing hash is caught here, before the script runs, so the error
-    // matches the pre-shell-out behaviour the tests pin.
-    val runnerArgs: List[Text] = config.runnerSource.absolve match
-      case Packaging.RunnerSource.Local(directory) =>
-        List(t"--runners", directory.encode)
+    val source: Stubs.Source = config.runnerSource.absolve match
+      case Packaging.RunnerSource.Local(directory)      => Stubs.Source.Directory(local(directory))
+      case Packaging.RunnerSource.Remote(baseUrl, hashes) => Stubs.Source.Remote(baseUrl, hashes)
 
-      case Packaging.RunnerSource.Remote(baseUrl, hashes) =>
-        config.targets.each: label =>
-          hashes(label).lest(Packager.Error(m"No runner hash given for $label"))
+    val publicKey: Optional[Data] =
+      config.signing.let(_.publicKey).let { path => Array.unsafeFrozen(jnf.Files.readAllBytes(javaPath(path)).nn) }
 
-        val manifest: Path on Linux = temporaryManifest(hashes, config.output)
-        List(t"--runners-url", baseUrl, t"--runners-manifest", manifest.encode)
+    val record: Record =
+      Record
+        ( buildId        = config.buildId,
+          javaMinimum    = config.java.minimum,
+          javaPreferred  = config.java.preferred,
+          jdk            = config.java.bundle == Packaging.Bundle.Jdk,
+          allowDowngrade = config.signing.let(_.allowDowngrade).or(false),
+          publicKey      = publicKey )
 
-    val args = scala.collection.mutable.ListBuffer[Text]()
-    args += resolveScript.encode
-    args += subcommand
-    args += t"--jar"; args += appJar.encode
-    args += t"--out"; args += config.output.encode
-    config.targets.each { label => args += t"--target"; args += label }
-    args += t"--java-min";  args += config.java.minimum.show
-    args += t"--java-pref"; args += config.java.preferred.show
-    args += t"--build-id";  args += config.buildId.show
-    if config.java.bundle == Packaging.Bundle.Jdk then args += t"--jdk"
-    config.signing.let(_.publicKey).let { path => args += t"--public-key"; args += path.encode }
-    if config.signing.let(_.allowDowngrade).or(false) then args += t"--allow-downgrade"
-    runnerArgs.each(args += _)
+    val options: Options =
+      Options
+        ( jar      = local(jar),
+          output   = local(config.output),
+          targets  = targets,
+          polyglot = config.delivery == Packaging.Delivery.EmbedAll,
+          download = config.delivery == Packaging.Delivery.Download,
+          record   = record,
+          source   = source )
 
-    val exit: Exit =
-      mitigate:
-        case Exec.Error(_, _, _) => Packager.Error(m"Could not run the xek builder script")
-      . protect:
-          Command(args.toList*).exec[Exit]()
+    val home: Text = java.lang.System.getProperty("user.home").nn.tt
+    val cache: Path on Local = Stubs.cache(name => Optional(java.lang.System.getenv(name.s)).let(_.tt), home)
 
-    exit match
-      case Exit.Ok         => config.output
-      case Exit.Fail(code) =>
-        abort(Packager.Error(m"The xek builder exited with status $code (see its output above)"))
-
-  // Locate the builder script: `$XEK`, else `dist/xek` under the working directory. Absent, a
-  // clear instruction rather than a download — every in-repo caller (tests, `make e2e`) has run
-  // `make xek-script`, and a downstream build sets `XEK` to the release asset it fetched.
-  private def resolveScript(using WorkingDirectory): Path on Linux raises Packager.Error =
-    safely(Environment.xek[Text].as[Path on Linux]).or:
-      val work: Path on Linux = workingDirectory
-      val candidate: Path on Linux = unsafely(t"${work.encode}/dist/xek".as[Path on Linux])
-      if candidate.existent() then candidate
-      else abort(Packager.Error(m"No xek builder found: set XEK or run `make xek-script` to write dist/xek"))
-
-  // A temporary manifest for the script, beside the output so it shares its writable directory.
-  private def temporaryManifest(hashes: Map[Text, Text], output: Path on Linux)
-  :   Path on Linux raises Packager.Error =
     mitigate:
-      case Io.Error(_, _, _, _) => Packager.Error(m"Could not write a temporary runner manifest")
-      case Truncation.Error(_)  => Packager.Error(m"Could not write a temporary runner manifest")
+      case Assembler.Error(_, detail) => Packager.Error(detail)
     . protect:
-        val body: Text = hashes.to[List].map((label, hash) => t"$label\t$hash").join(t"\n")
-        val dir: Path on Linux = unsafely(output.parent.assume)
-        val path: Path on Linux = unsafely(t"${dir.encode}/.xek-manifest.tsv".as[Path on Linux])
-        path.open[File](Write, OpenFlag.Create, OpenFlag.Truncate):
-          file.write(Chain(body.in[Data](using codepages.utf8Codepage)))
-        path
+        val plan: Build.Plan = Build.plan(options, Unset, Files.parent(local(config.output)))
+        Build.execute(plan, cache)(_ => ())
 
-  // PackageError → Packager.Error
+    config.output
+
+  private def target(label: Text): Target raises Packager.Error =
+    Target.parse(label).lest(Packager.Error(m"$label is not a known platform"))
+
+  private def javaPath(path: Path on Linux): jnf.Path = jnf.Path.of(path.encode.s).nn
+  private def local(path: Path on Linux): Path on Local = Files.local(javaPath(path))
+
   case class Error(detail: Message)(using Diagnostics) extends fulminate.Error(detail)
