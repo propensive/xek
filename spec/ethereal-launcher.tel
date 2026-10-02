@@ -40,7 +40,9 @@ record Init
       octal; columns and rows are the terminal's size when stdout is
       a terminal; the code pages are the Windows console's input and
       output code pages. Each descriptor is a file descriptor the
-      client holds, which the daemon may open as a stream.
+      client holds, which the daemon may open as a stream. Each raw
+      is the native bytes of an argument, environment entry or the
+      working directory whose text form could not carry them.
   field pid String required
   field uid String required
   field username String required
@@ -58,6 +60,21 @@ record Init
   field input-codepage String optional
   field output-codepage String optional
   field descriptor Descriptor optional repeatable
+  field raw Raw optional repeatable
+
+record Raw
+  description
+      A value of the init document as the operating system gave it,
+      for one whose text form lost something: an argument or an
+      environment entry that is not valid UTF-8, or on Windows holds
+      an unpaired surrogate, or the working directory. The kind is
+      argument, environment or pwd; the index is the position among
+      the arguments or environment entries, from 0, and absent for
+      pwd. The bytes are the platform's own: bytes on Unix, UTF-16
+      code units, little-endian, on Windows.
+  field kind String required
+  field index String optional
+  field bytes Bytes required
 
 record Descriptor
   description
