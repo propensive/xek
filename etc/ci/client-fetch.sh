@@ -4,7 +4,7 @@
 # `dist/client`, verifying each against the committed `etc/client/<version>.tsv` manifest.
 #
 # Use this when the Rust toolchain isn't available to `make client-build`: it fetches the
-# exact bytes published by a release (`git tag -s xek-X.Y.Z`). The client are never stored in a
+# exact bytes published by a release (`git tag -s X.Y.Z`). The client are never stored in a
 # JAR — builds and tests read them from `dist/client` (or download them here first).
 #
 # Usage: ./etc/ci/client-fetch.sh <version> [owner/repo] [directory]
@@ -27,12 +27,14 @@ fi
 
 OUT="${3:-dist/client}"
 mkdir -p "$OUT"
-# Releases from before the project was renamed (0.6 to 0.9) are tagged `xeq-<version>`; later
-# ones `xek-<version>`. Probe for the new name and fall back to the old.
-TAG="xek-$VERSION"
-if ! curl -fsIL "https://github.com/$REPO/releases/download/$TAG/$VERSION.SHA256SUMS" >/dev/null 2>&1; then
-  TAG="xeq-$VERSION"
-fi
+# Releases from 1.0.0 are tagged with the bare version; those from the rename up to 0.10,
+# `xek-<version>`; those before it, `xeq-<version>`. Probe newest naming first.
+TAG="$VERSION"
+for candidate in "$VERSION" "xek-$VERSION" "xeq-$VERSION"; do
+  if curl -fsIL "https://github.com/$REPO/releases/download/$candidate/$VERSION.SHA256SUMS" >/dev/null 2>&1; then
+    TAG="$candidate"; break
+  fi
+done
 base="https://github.com/$REPO/releases/download/$TAG"
 
 # Releases up to `xek-0.10` published the stubs as `runner-<label>`; from `xek-1.0.0` they are

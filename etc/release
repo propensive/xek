@@ -1,5 +1,5 @@
 # What this repository's release needs that another's does not. See propensive/.github, which
-# holds the script; a release is cut by `git tag -s xek-X.Y.Z && git push --tags`.
+# holds the script; a release is cut by `git tag -s X.Y.Z && git push --tags`.
 #
 # xek releases no jars: a release is the five native client stubs, the `xek` command (as a
 # polyglot `xek`, also as `xek.cmd`, and as a native `xek-<platform>` for each platform) and their
@@ -10,9 +10,9 @@
 name       xek
 title      xek
 
-# Tags are `xek-<version>`. Those before the rename, `xeq-<version>`, are earlier releases too, so
-# the notes of the first `xek-` release start from the last `xeq-` one.
-tag        xek- xeq-
+# Tags are the bare version from 1.0.0. Those up to 0.10 were `xek-<version>`, and those before the
+# rename `xeq-<version>`; both are earlier releases too, so the notes of 1.0.0 start from `xek-0.10`.
+tag        - xek- xeq-
 
 assemble   ./etc/ci/client-assemble.sh
 
