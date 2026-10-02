@@ -53,8 +53,8 @@ pub fn launch(
     let mut command = Command::new(&executable);
     command.env(crate::WRAP_VARIABLE, "1").arg(&java);
     for argument in build_java_arguments(script, name, progress_file, config) { command.arg(argument); }
-    // Capture the JVM invocation time as late as possible — after the slow
-    // argument-building work (zsh probe, $fpath capture) — so `uptime` in the
+    // Capture the JVM invocation time as late as possible — after the
+    // argument-building work (the `PATH` search for the command) — so `uptime` in the
     // daemon measures from the moment java is actually spawned, not from when
     // launch() was entered.
     command.arg(format!("-Dethereal.startTime={}", crate::now_ms()));
@@ -200,15 +200,6 @@ fn build_java_arguments(script: &Path, name: &str, progress_file: &Path, config:
     // The *effective* user, since that is whose files the daemon will be creating; the
     // `init` document carries the real user of each invocation. A SID on Windows.
     let uid: String = crate::user_info::effective_uid();
-    // zsh's `$fpath` is the canonical source for shell-installed completion
-    // function paths, but probe for zsh on PATH first: without this, every
-    // daemon launch pays the cost of a failed `Command::spawn("zsh")` on
-    // Windows (no zsh) and minimal Linux images, masked by `unwrap_or_default`.
-    let fpath = if crate::java::which("zsh").is_some() {
-        capture_stdout("zsh", &["-c", "printf '%s\\n' $fpath"]).unwrap_or_default()
-    } else {
-        String::new()
-    };
     let command_path = crate::java::which(name)
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default();
@@ -222,7 +213,6 @@ fn build_java_arguments(script: &Path, name: &str, progress_file: &Path, config:
         "-Dethereal.payloadSize=0".to_string(),
         format!("-Dethereal.jarSize={}", jar_size),
         format!("-Dethereal.command={}", command_path),
-        format!("-Dethereal.fpath={}", fpath.trim_end()),
         // Where a Burdock bootstrap reports its dependency downloads; see `progress.rs`.
         format!("-Dburdock.progress={}", progress_file.display()),
     ]
@@ -264,10 +254,4 @@ fn detach(command: &mut Command) {
     const DETACHED_PROCESS: u32 = 0x00000008;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
     command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
-}
-
-fn capture_stdout(command: &str, args: &[&str]) -> Option<String> {
-    let output = Command::new(command).args(args).output().ok()?;
-    if !output.status.success() { return None; }
-    Some(String::from_utf8_lossy(&output.stdout).to_string())
 }
