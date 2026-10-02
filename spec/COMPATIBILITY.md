@@ -7,7 +7,7 @@ at the first message rather than misreading fields. Above the base, the schema m
 
 | Release | Protocol | Base signature (BLAKE3-256 + cadence) | `ETHRCFG` | Reference daemon |
 |---|---|---|---|---|
-| `xek-0.11` | `ethereal-launcher` BinTEL | `3cb134104ab97c0cf5ac17839307699eea72846ca31c0c7a755f5c91c2a4480d80` | v3 | none yet: the Soundness release after 0.69.0 |
+| `xek-0.11` | `ethereal-launcher` BinTEL | `55d18c247b88db8fc6af7a197c56ee2b680084d1800afe8947a2f613c70492e563` | v3 | none yet: the Soundness release after 0.69.0 |
 | `xek-0.10` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
 | `xek-0.9` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
 | `xek-0.8` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
@@ -61,8 +61,9 @@ stdout, a `stderr` connection, a `control` connection, a connection per `signal`
 `exit`. Those three variants go; `data`, `end`, `credit` and `open` arrive, with a `Bytes`
 scalar (`encoding base-256`) for the chunks; `signal` and `closed` lose their `pid`, the
 session being the invocation's; and `record Init` gains a repeatable `descriptor` record
-advertising the client's file descriptors; `record Mode` gains `echo`; and `run` and `exited`
-let the daemon have a command run on the client's terminal. [`launcher.md`](launcher.md)
+advertising the client's file descriptors; `record Mode` gains `echo`; `run` and `exited` let
+the daemon have a command run on the client's terminal; and `record Init` gains a repeatable
+`raw` record carrying the native bytes of any value its text could not. [`launcher.md`](launcher.md)
 describes the session, its flow control, the descriptors and the terminal. The variant indices are renumbered, so nothing of the
 old base's wire form survives, which the signature says.
 

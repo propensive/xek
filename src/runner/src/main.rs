@@ -401,6 +401,10 @@ impl ClientInfo {
         let stdout_tty = tty::stdout_is_tty();
         let stderr_tty = tty::stderr_is_tty();
         let size = tty::terminal_size();
+        let mut raw: Vec<protocol::Raw> = Vec::new();
+        for (index, arg) in args.iter().enumerate() {
+            if let Some(entry) = protocol::Raw::of("argument", Some(index), arg) { raw.push(entry); }
+        }
         let mut env: Vec<String> = env::vars_os()
             .filter(|(name, _)| {
                 // Strip any inherited COLUMNS/LINES/TERMINAL_BG; if we detected real
@@ -417,6 +421,11 @@ impl ClientInfo {
                 entry.push(&name);
                 entry.push("=");
                 entry.push(&value);
+                entry
+            })
+            .enumerate()
+            .map(|(index, entry)| {
+                if let Some(value) = protocol::Raw::of("environment", Some(index), &entry) { raw.push(value); }
                 entry.to_string_lossy().into_owned()
             })
             .collect();
@@ -434,7 +443,10 @@ impl ClientInfo {
             script: script.to_string_lossy().into_owned(),
             invoked_as,
             pwd: env::current_dir()
-                .map(|path| path.to_string_lossy().into_owned())
+                .map(|path| {
+                    if let Some(value) = protocol::Raw::of("pwd", None, path.as_os_str()) { raw.push(value); }
+                    path.to_string_lossy().into_owned()
+                })
                 .unwrap_or_default(),
             args: args.iter().map(|arg| arg.to_string_lossy().into_owned()).collect(),
             env,
@@ -449,6 +461,7 @@ impl ClientInfo {
             size: if stdout_tty { size } else { None },
             codepages: tty::codepages(),
             descriptors: descriptors::inherited(),
+            raw,
         }
     }
 }
@@ -609,5 +622,13 @@ mod tests {
         let args = vec![OsString::from_vec(vec![b'a', 0xff, b'b'])];
         let info = ClientInfo::collect(Path::new("/x"), None, &args, false, None);
         assert_eq!(info.args, vec!["a\u{fffd}b".to_string()]);
+        // …and the bytes travel beside it, so the daemon can recover what was typed.
+        let raws: Vec<&protocol::Raw> = info.raw.iter().filter(|r| r.kind == "argument").collect();
+        assert_eq!(raws.len(), 1);
+        assert_eq!((raws[0].index, &raws[0].bytes), (Some(0), &vec![b'a', 0xff, b'b']));
+        // A value the text carries exactly has no raw form.
+        let plain = vec![OsString::from("plain")];
+        let info = ClientInfo::collect(Path::new("/x"), None, &plain, false, None);
+        assert!(info.raw.iter().all(|r| r.kind != "argument"));
     }
 }

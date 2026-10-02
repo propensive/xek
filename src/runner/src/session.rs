@@ -680,7 +680,7 @@ mod tests {
         ClientInfo {
             pid: 1, user_id: "1".into(), user_name: "u".into(), script: "/x".into(), invoked_as: None,
             pwd: "/".into(), args: vec![], env: vec![], stdin_tty: false, stdout_tty: false, stderr_tty: false,
-            umask: None, size: None, codepages: None, descriptors,
+            umask: None, size: None, codepages: None, descriptors, raw: vec![],
         }
     }
 

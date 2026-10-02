@@ -38,6 +38,35 @@ pub struct ClientInfo {
     pub codepages:   Option<(u32, u32)>,
     // The descriptors the client holds, which the daemon may open as streams.
     pub descriptors: Vec<Descriptor>,
+    // The native bytes of each value whose text form above lost something.
+    pub raw:         Vec<Raw>,
+}
+
+// A value as the operating system gave it, where the text on the wire could not carry it
+// (`spec/launcher.md`, *Text on the wire*): the position among the arguments or environment
+// entries, or none for the working directory.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Raw {
+    pub kind: &'static str,
+    pub index: Option<usize>,
+    pub bytes: Vec<u8>,
+}
+
+impl Raw {
+    // The platform's own representation of an `OsStr`, when it is not UTF-8: on Unix its
+    // bytes, on Windows its UTF-16 code units, little-endian. `None` for a value the text
+    // form carries exactly.
+    pub fn of(kind: &'static str, index: Option<usize>, value: &std::ffi::OsStr) -> Option<Raw> {
+        if value.to_str().is_some() { return None; }
+        #[cfg(unix)]
+        let bytes = { use std::os::unix::ffi::OsStrExt; value.as_bytes().to_vec() };
+        #[cfg(windows)]
+        let bytes = {
+            use std::os::windows::ffi::OsStrExt;
+            value.encode_wide().flat_map(|unit| unit.to_le_bytes()).collect()
+        };
+        Some(Raw { kind, index, bytes })
+    }
 }
 
 // An invocation is one connection: it opens with `init`, written under the composition chosen
@@ -75,6 +104,13 @@ pub fn init_document(info: &ClientInfo, composition: &Composition) -> Vec<u8> {
         inner.scalar(2, descriptor.kind);
         if let Some(path) = &descriptor.path { inner.scalar(3, path); }
         record.record(16, inner);
+    }
+    for raw in &info.raw {
+        let mut inner = Record::new();
+        inner.scalar(0, raw.kind);
+        if let Some(index) = raw.index { inner.scalar(1, &index.to_string()); }
+        inner.bytes_field(2, &raw.bytes);
+        record.record(17, inner);
     }
     bintel::document(variant::INIT, record, composition)
 }

@@ -67,6 +67,16 @@ decodes its own argument vector, so an application sees what it would have seen 
 directly. A re-exec after a self-upgrade passes the original bytes on, since they are still
 the launcher's to give.
 
+The bytes are not lost, though: for every argument, environment entry and working directory
+whose text form made a substitution, `init` also carries a `raw` record — the value's kind,
+its position among the arguments or entries (none for the working directory), and the bytes
+as the operating system gave them: the bytes themselves on Linux and macOS, the UTF-16 code
+units, little-endian, on Windows. A value the text carries exactly has no `raw` record, so
+nothing is sent twice in the ordinary case. What an application can do with the bytes is
+bounded by its runtime: the reference daemon's JVM cannot open a path whose name is not
+valid in its own encoding, so a file named in such bytes can be seen, and passed on to a
+command run on the terminal, but not opened from the daemon.
+
 **Context that does not cross the socket.** The invocation runs in the daemon's process, and
 inherits that process's context, not the client's, for everything not listed above:
 

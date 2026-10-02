@@ -32,9 +32,9 @@ pub const MAGIC: [u8; 4] = [0xB2, 0xC4, 0xB5, 0xBB];
 /// `layer` removed (BinTEL §8.1) — pinned here and in the daemon's tests. The base alone has
 /// the 33-byte signature of this hash followed by its cadence trailer.
 pub const BASE: [u8; 32] = [
-    0x3c, 0xb1, 0x34, 0x10, 0x4a, 0xb9, 0x7c, 0x0c, 0xf5, 0xac, 0x17, 0x83, 0x93, 0x07, 0x69,
-    0x9e, 0xea, 0x72, 0x84, 0x6c, 0xa3, 0x1c, 0x0c, 0x7a, 0x75, 0x5f, 0x5c, 0x91, 0xc2, 0xa4,
-    0x48, 0x0d,
+    0x55, 0xd1, 0x8c, 0x24, 0x7b, 0x88, 0xdb, 0x8f, 0xc6, 0xaf, 0x7a, 0x19, 0x7c, 0x56, 0xee,
+    0x2b, 0x68, 0x00, 0x84, 0xd1, 0x80, 0x0a, 0xfe, 0x89, 0x47, 0xa2, 0xf6, 0x13, 0xc7, 0x04,
+    0x92, 0xe5,
 ];
 
 /// The kind of a record field, per the schema.
@@ -519,20 +519,24 @@ mod tests {
                 crate::descriptors::Descriptor { fd: 0, direction: "r", kind: "file", path: Some("/in".into()) },
                 crate::descriptors::Descriptor { fd: 63, direction: "r", kind: "pipe", path: None },
             ],
+            raw: vec![crate::protocol::Raw { kind: "argument", index: Some(1), bytes: vec![b'b', 0xff] }],
         };
         // pid, uid, username, script, pwd; stdin-tty and stderr-tty flags (5, 7); the two
         // arguments (8); the environment (9); invoked-as (10); umask (11); two descriptor
-        // records (16): fd, direction, kind[, path].
+        // records (16): fd, direction, kind[, path]; one raw record (17): kind, index, bytes —
+        // the second argument's bytes, which are not UTF-8.
         let fields = concat!(
             "000137", "01033530 31", "02 03 6a6f6e", "03 0a 2f7573722f62696e2f78", "04 04 2f746d70",
             "05", "07", "08 01 61", "08 03 622063", "09 03 4b3d56", "0a 01 78", "0b 03 303232",
             "10 04 0001 30 0101 72 0204 66696c65 0303 2f696e",
             "10 03 0002 3633 0101 72 0204 70697065",
+            "11 03 0008 617267756d656e74 0101 31 0202 62ff",
         ).replace(' ', "");
-        let body = format!("01000e{fields}");
-        let length = 1 + 33 + body.len() / 2;
+        let body = format!("01000f{fields}");
+        let mut length = Vec::new();
+        encode_varint(&mut length, (1 + 33 + body.len() / 2) as u64);
         assert_eq!(hex(&crate::protocol::init_document(&info, &base)),
-                   format!("b2c4b5bb{:02x}21{sig}{body}", length));
+                   format!("b2c4b5bb{}21{sig}{body}", hex(&length)));
     }
 
     // Under a deeper composition the frame carries the longer signature, and a layer's
