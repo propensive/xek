@@ -295,7 +295,7 @@ fn intercept(args: &[OsString]) -> (Vec<OsString>, bool) {
     else { (args.to_vec(), requested) }
 }
 
-// The file the runner hands the JVM is its OWN executable — stub, record and JAR are one file
+// The file the client hands the JVM is its OWN executable — stub, record and JAR are one file
 // (spec/ethrcfg.md) — so ask the operating system for it. argv[0] cannot answer: a $PATH
 // lookup leaves a bare name there, and canonicalizing a bare name resolves it against the
 // CURRENT DIRECTORY, so a launcher run beside anything of the same name launched that instead

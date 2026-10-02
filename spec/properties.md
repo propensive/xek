@@ -28,4 +28,4 @@ One label per published stub, used in asset names, manifests and the `xek` scrip
 
 `linux-x64`, `linux-arm64`, `macos-x64`, `macos-arm64`, `windows-x64`.
 
-A stub's published asset name is `runner-<label>`, with `.exe` appended for Windows labels.
+A stub's published asset name is `client-<label>`, with `.exe` appended for Windows labels.

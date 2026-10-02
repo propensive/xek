@@ -53,20 +53,20 @@ object executableOptions:
   // The distributable's basename within the output directory.
   def name(name: Text): Toolchain.Setting = xek(_.copy(name = name))
 
-  // Adds a target platform label (e.g. `linux-x64`); with none, every platform the runner
+  // Adds a target platform label (e.g. `linux-x64`); with none, every platform the client
   // source names is targeted.
   def target(label: Text): Toolchain.Setting = xek: config => config.copy(targets = label :: config.targets)
 
-  object runners:
-    // The published `runners-<version>` release, verified against its committed manifest.
-    def standard: Toolchain.Setting = xek(_.copy(runners = Packaging.RunnerSource.standard))
+  object client:
+    // The published `client-<version>` release, verified against its committed manifest.
+    def standard: Toolchain.Setting = xek(_.copy(client = Packaging.ClientSource.standard))
 
-    // A local directory of prebuilt stubs (e.g. the output of `make runners-build`).
+    // A local directory of prebuilt stubs (e.g. the output of `make client-build`).
     def local(directory: Path on Linux): Toolchain.Setting =
-      xek(_.copy(runners = Packaging.RunnerSource.Local(directory)))
+      xek(_.copy(client = Packaging.ClientSource.Local(directory)))
 
     def remote(baseUrl: Text, hashes: Map[Text, Text]): Toolchain.Setting =
-      xek(_.copy(runners = Packaging.RunnerSource.Remote(baseUrl, hashes)))
+      xek(_.copy(client = Packaging.ClientSource.Remote(baseUrl, hashes)))
 
   def java(minimum: Int, preferred: Int): Toolchain.Setting =
     xek: config =>
@@ -90,7 +90,7 @@ object executableOptions:
   def buildId(id: Long): Toolchain.Setting = xek(_.copy(buildId = id))
 
 // The xek packaging edges of a toolchain: `Jar` to each delivery mode's bundle, all a thin
-// facade over `xek.Packager` — which patches ethereal's reusable runner stubs, appends
+// facade over `xek.Packager` — which patches ethereal's reusable client stubs, appends
 // the JAR, and wraps the result in a polyglot script where the delivery calls for one.
 object executableEdges:
   def apply(): List[Edge] =
@@ -119,17 +119,17 @@ object executableEdges:
 
       val jar = input.product(Executable(delivery))
 
-      val runners = settings.runners.or:
-        abort(Link.Error(Link.Error.Reason.MissingSetting(t"runners")))
+      val client = settings.client.or:
+        abort(Link.Error(Link.Error.Reason.MissingSetting(t"client")))
 
-      // With no explicit targets, target every platform the runner source names; a local
+      // With no explicit targets, target every platform the client source names; a local
       // directory names none, so explicit targets are required there.
       val targets: List[Text] =
-        if !settings.targets.nil then settings.targets else runners.absolve match
-          case Packaging.RunnerSource.Remote(_, hashes) =>
+        if !settings.targets.nil then settings.targets else client.absolve match
+          case Packaging.ClientSource.Remote(_, hashes) =>
             hashes.keys.to[List].order(_.s)
 
-          case Packaging.RunnerSource.Local(_) =>
+          case Packaging.ClientSource.Local(_) =>
             abort(Link.Error(Link.Error.Reason.MissingSetting(t"targets")))
 
       val packaging =
@@ -139,7 +139,7 @@ object executableEdges:
             delivery     = delivery,
             dependencies = Packaging.Dependencies.FatJar(jar),
             output       = unsafely(out / settings.name),
-            runnerSource = runners,
+            clientSource = client,
             java         = settings.java,
             signing      = settings.signing,
             buildId      = settings.buildId )

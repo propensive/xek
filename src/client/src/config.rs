@@ -2,7 +2,7 @@
 // outside this repository is written against.
 //
 // The record is NOT part of the stub. A builder turns a bare stub into an application's
-// launcher by concatenation — `stub ‖ record ‖ jar` — and the runner finds the record at
+// launcher by concatenation — `stub ‖ record ‖ jar` — and the client finds the record at
 // startup by scanning its own executable forwards for the first occurrence of the magic. The
 // stub therefore must contain the magic nowhere, which is why `magic()` reassembles it at run
 // time from an obfuscated constant rather than holding it as a literal the compiler could
@@ -43,7 +43,7 @@ pub const FLAG_DOWNGRADE_PERMITTED: u8 = 0x01;
 pub const DEFAULT_JAVA_MIN: u16  = 21;
 pub const DEFAULT_JAVA_PREF: u16 = 24;
 
-// How far into its own file the runner will look for a record before giving up and using the
+// How far into its own file the client will look for a record before giving up and using the
 // defaults. A bare stub is well under a megabyte, and the record immediately follows it; the
 // bound only limits the cost of a mis-built file that carries no record at all.
 const SCAN_LIMIT: u64 = 16 * 1024 * 1024;
@@ -146,7 +146,7 @@ fn scan_file(path: &Path) -> Option<[u8; RECORD_LEN]> {
 }
 
 // Load the record from the running executable. Called once at startup with the path the
-// runner was invoked as (which is also what the JVM is given as the JAR); later calls are
+// client was invoked as (which is also what the JVM is given as the JAR); later calls are
 // no-ops. The functions below read whatever was loaded, or the defaults.
 pub fn load(path: &Path) -> BuildConfig {
     let record = RECORD.get_or_init(|| {
@@ -173,7 +173,7 @@ pub fn public_key() -> [u8; PUBKEY_LEN] {
 }
 
 // True iff the baked-in public key is all zeros — the safe "no signing
-// configured" state. A runner in this state rejects every upgrade.
+// configured" state. A client in this state rejects every upgrade.
 #[cfg(test)]
 pub fn public_key_is_unset() -> bool {
     public_key().iter().all(|&b| b == 0)
@@ -278,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn unloaded_runner_reports_defaults_and_no_key() {
+    fn unloaded_client_reports_defaults_and_no_key() {
         // `RECORD` may or may not have been initialised by another test in this process; only
         // assert what holds either way for a record-free process.
         if RECORD.get().is_none() {

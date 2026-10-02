@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# The end-to-end check: package the example application around a real runner stub, run the
+# The end-to-end check: package the example application around a real client stub, run the
 # result, and require it to behave as a command should.
 #
 # This is the only stage that exercises the whole chain at once — a stub built (or fetched)
@@ -17,14 +17,14 @@
 #
 # Usage: ./etc/ci/e2e.sh          (or `make e2e`)
 #
-# Requires dist/runners to be populated — `make runners-build`, or `make runners-fetch
+# Requires dist/client to be populated — `make client-build`, or `make client-fetch
 # RUNNERS_VERSION=X` where the Rust toolchain is unavailable.
 
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-if [[ ! -d dist/runners ]]; then
-  echo "e2e: dist/runners not found — run \`make runners-build\` or \`make runners-fetch RUNNERS_VERSION=X\`" >&2
+if [[ ! -d dist/client ]]; then
+  echo "e2e: dist/client not found — run \`make client-build\` or \`make client-fetch RUNNERS_VERSION=X\`" >&2
   exit 1
 fi
 
@@ -36,8 +36,8 @@ case "$(uname -s)-$(uname -m)" in
   *) echo "e2e: unsupported host $(uname -s)-$(uname -m)" >&2; exit 1 ;;
 esac
 
-if [[ ! -f "dist/runners/runner-$LABEL" ]]; then
-  echo "e2e: dist/runners/runner-$LABEL not found (host platform $LABEL)" >&2
+if [[ ! -f "dist/client/client-$LABEL" ]]; then
+  echo "e2e: dist/client/client-$LABEL not found (host platform $LABEL)" >&2
   exit 1
 fi
 
@@ -54,12 +54,12 @@ rm -f "$OUT"
 if [[ "${E2E_DAEMON:-}" == "legacy" ]]; then
   # dist/xek is itself wrapped in the local stub, which the pinned daemon cannot serve (that is
   # what this mode checks below), so the packager runs with no launcher at all.
-  ./mill xek.cli.bootstrap --platform "$LABEL" --runners "$PWD/dist/runners" "$PWD/$JAR" "$PWD/$OUT"
+  ./mill xek.cli.bootstrap --platform "$LABEL" --client "$PWD/dist/client" "$PWD/$JAR" "$PWD/$OUT"
 else
   if [[ ! -x dist/xek ]]; then
     echo "e2e: dist/xek not found — run \`make xek\`" >&2; exit 1
   fi
-  ./dist/xek --platform "$LABEL" --runners "$PWD/dist/runners" "$PWD/$JAR" "$PWD/$OUT"
+  ./dist/xek --platform "$LABEL" --client "$PWD/dist/client" "$PWD/$JAR" "$PWD/$OUT"
 fi
 
 TMP=$(mktemp -d)
@@ -106,7 +106,7 @@ expect_status() {  # expect_status <description> <expected> <actual>
 
 echo "e2e: running $OUT"
 
-# A daemon that predates this runner's protocol base cannot serve it, and must say so rather
+# A daemon that predates this client's protocol base cannot serve it, and must say so rather
 # than hang or loop: the launcher connects, the daemon closes on `init`, and the launcher
 # reports the mismatch with status 2. That is the whole check while the pinned Soundness
 # release is such a daemon (see the Makefile); the cases below wait for the release that
@@ -236,7 +236,7 @@ fi
 # A launcher must run its OWN bytes whatever the working directory holds. The shell leaves a
 # bare name in argv[0] after a $PATH lookup, and resolving that name against the working
 # directory picks up any same-named neighbour instead — which the JVM then rejects as an
-# invalid JAR. See `resolve_script` in src/runner/src/main.rs.
+# invalid JAR. See `resolve_script` in src/client/src/main.rs.
 echo "e2e: checking a \$PATH invocation shadowed by a same-named directory"
 
 SHADOW=$(mktemp -d)

@@ -1,7 +1,7 @@
 # The XEK specification
 
 XEK is a way of shipping a JVM application as a single executable file. An XEK executable is a
-small native *runner stub* with the application's JAR appended to it: running it starts (or
+small native *client stub* with the application's JAR appended to it: running it starts (or
 reuses) a background daemon holding a warm JVM, forwards the invocation's arguments,
 environment, streams and signals to that daemon, and returns its exit status. The stub is
 generic and reusable — it is the same bytes for every application on a given platform — so
@@ -11,7 +11,7 @@ not compiling.
 This directory is the contract between the two halves, which live in different repositories and
 release on different cadences:
 
-- **the launcher** — the Rust runner in this repository (`src/runner`), published as reusable
+- **the launcher** — the Rust client in this repository (`src/client`), published as reusable
   per-platform stubs, plus the builder which joins them to an application (`src/core`), which is
   published with them as the `xek` command (`src/cli`) and reached from Scala through the
   packaging front ends (`src/packager`, `src/toolchain`);
@@ -30,7 +30,7 @@ the artefacts of the other that it tests against.
 | [`properties.md`](properties.md) | The `-Dethereal.*` and `-Dbuild.id` system properties the launcher passes to the JVM |
 | [`layout.md`](layout.md) | The files and directories the launcher and daemon share |
 | [`launcher.md`](launcher.md) | What the launcher does around an invocation: reserved arguments, the terminal, the session and its flow control, the client's descriptors, end of input and output, signals and exit status |
-| [`COMPATIBILITY.md`](COMPATIBILITY.md) | Which runner release speaks which protocol, and against which daemon |
+| [`COMPATIBILITY.md`](COMPATIBILITY.md) | Which client release speaks which protocol, and against which daemon |
 
 ## Why "ethereal" appears in a specification owned by XEK
 
@@ -54,7 +54,7 @@ hash and leaves the base's signature untouched; each invocation is written under
 composition of base and layers that both sides hold, which the launcher learns from the
 acceptance the daemon publishes (BinTEL §8.3–8.4; [`layout.md`](layout.md), *Negotiating the
 composition*), and the daemon answers under the same. A launcher and a daemon that hold
-different layers therefore still talk, using what they share, and the runner and the daemon
+different layers therefore still talk, using what they share, and the client and the daemon
 may adopt a layer **in either order**, each on its own cadence. What a layer may contain, and
 why, is in [`COMPATIBILITY.md`](COMPATIBILITY.md).
 
@@ -63,15 +63,15 @@ why, is in [`COMPATIBILITY.md`](COMPATIBILITY.md).
 A new message kind, a required field, or a change to what an existing field means alters the
 base, and so its signature. The rollout order is then strict:
 
-1. **This repository first.** Change the contract here, change the runner, and publish a new
+1. **This repository first.** Change the contract here, change the client, and publish a new
    `xek-<version>` release. Nothing depends on the daemon, so this can ship alone.
-2. **The daemon next.** Update its copy of the schema, its pinned signature, and the runner
+2. **The daemon next.** Update its copy of the schema, its pinned signature, and the client
    version its tests fetch; release.
 3. **The packager last**, if it needs anything from the new daemon release.
 
 Between 1 and 2 the two are incompatible by construction, which is why every entry in
 `COMPATIBILITY.md` names both sides.
 
-A change that does not touch a contract — a runner bug fix, a new target platform, a faster
+A change that does not touch a contract — a client bug fix, a new target platform, a faster
 JVM search — needs only step 1, and a daemon built months earlier keeps working. That
 independence is the point of the split.

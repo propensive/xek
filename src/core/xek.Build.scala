@@ -53,7 +53,7 @@ case class Options
     exclude:  List[Shell]             = Nil,
     dispatch: Optional[Path on Local] = Unset,
     record:   Record                  = Record(),
-    source:   Stubs.Source            = Runners.standard )
+    source:   Stubs.Source            = Client.standard )
 
 // Deciding what to build, and building it. `plan` applies the defaults and checks the request as
 // a whole, before anything is downloaded or written; `execute` does the work.
@@ -155,7 +155,7 @@ object Build:
     if options.download then
       options.source match
         case Stubs.Source.Directory(_) =>
-          abort(usage(m"--download needs stubs published at a URL, not a local --runners directory"))
+          abort(usage(m"--download needs stubs published at a URL, not a local --client directory"))
 
         case _ =>
           Plan.OnlineLauncher(jar, targets, output, options.record, options.source, shells)
@@ -168,7 +168,7 @@ object Build:
 
     val targets: List[Target] =
       if !options.targets.nil then options.targets
-      else List(host.lest(usage(m"this platform has no runner stub; name one with --platform")))
+      else List(host.lest(usage(m"this platform has no client stub; name one with --platform")))
 
     def exe(path: Path on Local, target: Target): Path on Local =
       if target.windows && !path.name.lower.ends(t".exe") then Files.sibling(path, t"${path.name}.exe")

@@ -34,8 +34,8 @@ import gossamer.*
 import rudiments.*
 import vacuous.*
 
-// The target platforms a runner stub is published for. The label is the name every other part of the
-// system uses — the stub's asset name (`runner-<label>[.exe]`), the key of the published hash
+// The target platforms a client stub is published for. The label is the name every other part of the
+// system uses — the stub's asset name (`client-<label>[.exe]`), the key of the published hash
 // manifest, and the payload name the polyglot launchers select by — so it is the one spelling a
 // user types, too.
 enum Target(val label: Text, val description: Text):
@@ -48,7 +48,7 @@ enum Target(val label: Text, val description: Text):
   def windows: Boolean = this == Target.WindowsX64
 
   // The published filename of this platform's bare stub; Windows stubs carry `.exe`.
-  def stub: Text = if windows then t"runner-$label.exe" else t"runner-$label"
+  def stub: Text = if windows then t"client-$label.exe" else t"client-$label"
 
 object Target:
   val all: List[Target] = List(LinuxX64, LinuxArm64, MacosX64, MacosArm64, WindowsX64)

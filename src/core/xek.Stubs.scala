@@ -45,15 +45,15 @@ import vacuous.*
 
 import systems.javaBaseSystem
 
-// Where the bare runner stubs come from, and how one is made available as a local file.
+// Where the bare client stubs come from, and how one is made available as a local file.
 object Stubs:
   enum Source:
-    // `<directory>/runner-<label>[.exe]`, as `make runners-build` writes them: for development
+    // `<directory>/client-<label>[.exe]`, as `make client-build` writes them: for development
     // and testing, so neither downloaded nor verified.
     case Directory(directory: Path on Local)
 
-    // `<baseUrl>/runner-<label>[.exe]`, verified against `hashes(label)` — lowercase SHA-256
-    // hex, as in `etc/runners/<version>.tsv`. The production source.
+    // `<baseUrl>/client-<label>[.exe]`, verified against `hashes(label)` — lowercase SHA-256
+    // hex, as in `etc/client/<version>.tsv`. The production source.
     case Remote(baseUrl: Text, hashes: Map[Text, Text])
 
   // Where downloaded stubs are cached: `$XEK_CACHE`, else `$XDG_CACHE_HOME/xek`, else
@@ -66,7 +66,7 @@ object Stubs:
     else if xdg.present then Files.child(Files.path(xdg.or(t"")), t"xek")
     else Files.child(Files.child(Files.path(home), t".cache"), t"xek")
 
-  // A manifest of `label<TAB>sha256` lines, as `etc/runners/<version>.tsv` holds, or of
+  // A manifest of `label<TAB>sha256` lines, as `etc/client/<version>.tsv` holds, or of
   // `label=sha256` lines; blank lines and `#` comments are ignored.
   def manifest(text: Text): Map[Text, Text] =
     text.cut(t"\n").map(_.trim).filter { line => line != t"" && !line.starts(t"#") }.map: line =>
@@ -96,7 +96,7 @@ object Stubs:
 
         case Source.Remote(_, hashes) =>
           if hashes(target.label).absent
-          then abort(Assembler.Error(Assembler.Fault.Format, m"no runner hash is known for ${target.label}"))
+          then abort(Assembler.Error(Assembler.Fault.Format, m"no client hash is known for ${target.label}"))
 
   // A local path to the stub for `target`: from a local directory directly; otherwise from the
   // cache when a copy with the right hash is there, or else downloaded, verified and cached. The
@@ -111,9 +111,9 @@ object Stubs:
 
       case Source.Remote(baseUrl, hashes) =>
         val expected: Text =
-          hashes(target.label).lest(Assembler.Error(Assembler.Fault.Format, m"no runner hash is known for ${target.label}"))
+          hashes(target.label).lest(Assembler.Error(Assembler.Fault.Format, m"no client hash is known for ${target.label}"))
 
-        val cached: Path on Local = Files.child(Files.child(Files.child(cache, t"runners"), expected), target.stub)
+        val cached: Path on Local = Files.child(Files.child(Files.child(cache, t"client"), expected), target.stub)
 
         if Files.exists(cached) && Files.sha256(Files.read(cached)) == expected then cached else
           val location: Text = url(source, target).or(t"")

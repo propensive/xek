@@ -12,10 +12,10 @@ for %%E in ("!assets:,=" "!") do (
         if "%%K"=="!label!" set "value=%%L"
     )
 )
-if not defined value (echo No runner for !label!>&2 & exit /b 1)
+if not defined value (echo No client for !label!>&2 & exit /b 1)
 for /f "tokens=1,2 delims=|" %%U in ("!value!") do (set "url=%%U" & set "hash=%%V")
 set "t=%TEMP%\~zigdl%RANDOM%.tmp"
-call :xek_msg 33 ████████ 0 "Downloading runner…"
+call :xek_msg 33 ████████ 0 "Downloading client…"
 where curl >nul 2>&1
 if %errorlevel% equ 0 (curl -fsSL "!url!" -o "!t!") else (powershell -NoProfile -Command "Invoke-WebRequest -Uri '!url!' -OutFile '!t!'")
 if not exist "!t!" exit /b 1

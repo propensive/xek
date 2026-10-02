@@ -280,7 +280,7 @@ function Stop-DaemonHard {
   }
 }
 
-# ----- test runner ---------------------------------------------------------
+# ----- test client ---------------------------------------------------------
 
 $script:CurrentSuite = ''
 $script:Pass         = 0
