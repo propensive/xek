@@ -14,6 +14,12 @@ static SAVED_TTY: OnceLock<TtyState> = OnceLock::new();
 // was not entitled to reconfigure (a background job).
 static RAW_MODE_OWNED: AtomicBool = AtomicBool::new(false);
 static TIMEOUT_MS: AtomicU32 = AtomicU32::new(250);
+// Set while a command the daemon asked for owns the terminal: the terminal is in the user's
+// cooked mode, so Ctrl-C reaches the whole foreground group, and the launcher — like a shell
+// waiting on a foreground child — leaves INT and QUIT to the child.
+static CHILD_RUNNING: AtomicBool = AtomicBool::new(false);
+
+pub fn child_running(running: bool) { CHILD_RUNNING.store(running, Ordering::SeqCst); }
 
 const DEFAULT_TIMEOUT_MS: u32 = 250;
 
@@ -228,6 +234,7 @@ extern "C" fn handler(signal: libc::c_int) {
     match signal {
         libc::SIGTSTP => suspend(),
         libc::SIGCONT => resume(),
+        libc::SIGINT | libc::SIGQUIT if CHILD_RUNNING.load(Ordering::SeqCst) => {}
         _ => match request_from_handler(signal) {
             SignalAck::Accept                      => {}
             SignalAck::Reject | SignalAck::Timeout => fallback(signal),
