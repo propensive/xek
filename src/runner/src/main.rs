@@ -1,6 +1,6 @@
 use std::env;
 use std::ffi::OsString;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -220,11 +220,10 @@ fn main() {
     // a cooked (canonical) terminal, ordinary echo and line editing, instead of the raw mode
     // set above, and for raw mode back afterwards — apply only to a terminal we are entitled
     // to reconfigure.
-    let stdin: Option<Box<dyn Read + Send>> = if attached || !stdin_tty {
-        Some(Box::new(std::io::Cursor::new(leftover).chain(std::io::stdin())))
-    } else {
-        None
-    };
+    let stdin: session::Stdin =
+        if attached { session::Stdin::Terminal { leftover } }
+        else if !stdin_tty { session::Stdin::Reader(Box::new(std::io::stdin())) }
+        else { session::Stdin::Ended };
     let session = session::open(socket, &info, composition, session::Options {
         tty: if attached { Some(saved_tty) } else { None },
         stdin,
@@ -380,7 +379,7 @@ fn run_non_interactive(socket_file: &Path, script: &Path, args: &[OsString], com
 
     // Nothing is forwarded from stdin, so the invocation sees it at end-of-file at once; the
     // terminal is never touched.
-    let session = session::open(socket, &info, composition.clone(), session::Options { tty: None, stdin: None });
+    let session = session::open(socket, &info, composition.clone(), session::Options { tty: None, stdin: session::Stdin::Ended });
     let outcome = session.wait();
     debug_log(format!("session over: {:?}", outcome));
     conclude(outcome, name)

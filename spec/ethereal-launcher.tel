@@ -17,6 +17,8 @@ select Message
   variant verify Verify
   variant verdict Verdict
   variant shutdown Shutdown
+  variant run Run
+  variant exited Exited
 
 scalar Bytes
   description
@@ -127,8 +129,12 @@ record SignalAck
 record Mode
   description
       Asks the launcher to put the client's terminal into canonical
-      (cooked) mode, or back into raw mode when the flag is absent.
+      (cooked) mode, or back into raw mode when the flag is absent,
+      and to echo what is typed, or not when that flag is absent:
+      canonical without echo is how a password is read. The launcher
+      answers nothing; a terminal it does not own is left as it is.
   field canonical Flag optional
+  field echo Flag optional
 
 record Closed
   description
@@ -164,3 +170,23 @@ record Shutdown
       connection is closed. A launcher whose daemon is gone starts a
       fresh one, so this reclaims a warm JVM without leaving anything
       broken.
+
+record Run
+  description
+      Asks the launcher to run a command on the client's terminal:
+      an editor, a pager, ssh or sudo, which the daemon's own process
+      cannot reach. The launcher stops carrying the terminal's input
+      and holds the invocation's output, restores the terminal's
+      saved state, runs the command with the client's environment
+      and standard streams — in pwd, if given — and, when it ends,
+      puts the terminal back as it was and answers with exited. A
+      client whose stdin is not a terminal it owns answers exited
+      with 127 at once. One command runs at a time.
+  field command String required
+  field argument String optional repeatable
+  field pwd String optional
+
+record Exited
+  description
+      The status the command the daemon asked to run ended with.
+  field code String required

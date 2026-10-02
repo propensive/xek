@@ -18,6 +18,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, Read, Write};
 use std::net::Shutdown;
+use std::process::Command;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -182,6 +183,9 @@ struct InletState {
     // Set once the client's side cannot be written: chunks are consumed and dropped, so the
     // daemon is never blocked on a stream nobody reads.
     discard: bool,
+    // Set while a command the daemon asked for owns the terminal: chunks wait, so the
+    // invocation's output does not interleave with the command's.
+    held: bool,
 }
 
 /// The chunks of one inbound stream, between the reader thread and the thread that writes
@@ -197,7 +201,7 @@ impl Inlet {
     fn new(stream: &str) -> Arc<Inlet> {
         Arc::new(Inlet {
             stream: stream.to_owned(),
-            state: Mutex::new(InletState { queue: VecDeque::new(), ended: false, discard: false }),
+            state: Mutex::new(InletState { queue: VecDeque::new(), ended: false, discard: false, held: false }),
             ready: Condvar::new(),
         })
     }
@@ -218,6 +222,11 @@ impl Inlet {
         self.state.lock().unwrap().discard = true;
     }
 
+    fn hold(&self, held: bool) {
+        self.state.lock().unwrap().held = held;
+        self.ready.notify_all();
+    }
+
     // Writes the stream to `sink` as chunks arrive, granting credit as it goes, until the
     // stream ends. On the first failed write the daemon is told the stream is closed and the
     // rest is drained and dropped.
@@ -227,8 +236,10 @@ impl Inlet {
             let chunk = {
                 let mut state = self.state.lock().unwrap();
                 loop {
-                    if let Some(chunk) = state.queue.pop_front() { break Some((chunk, state.discard)); }
-                    if state.ended { break None; }
+                    if !state.held {
+                        if let Some(chunk) = state.queue.pop_front() { break Some((chunk, state.discard)); }
+                        if state.ended { break None; }
+                    }
                     state = self.ready.wait(state).unwrap();
                 }
             };
@@ -259,6 +270,52 @@ impl Write for FdSink {
         descriptors::write_all(self.0, bytes).map(|_| bytes.len())
     }
     fn flush(&mut self) -> io::Result<()> { Ok(()) }
+}
+
+// ── Pausing the terminal's pump ───────────────────────────────────────────────
+
+// The terminal's pump reads stdin; a command the daemon asks to run on the terminal must
+// read it instead, uncontested. The pump never sits inside `read` without input to take:
+// it waits for input in short polls, and between polls it parks here when asked, so `pause`
+// returns only once the pump is out of the way.
+struct Gate {
+    state: Mutex<(bool, bool)>, // (pause requested, pump parked)
+    changed: Condvar,
+}
+
+impl Gate {
+    fn new() -> Gate { Gate { state: Mutex::new((false, false)), changed: Condvar::new() } }
+
+    fn pause(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.0 = true;
+        self.changed.notify_all();
+        while !state.1 { state = self.changed.wait(state).unwrap(); }
+    }
+
+    fn resume(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.0 = false;
+        self.changed.notify_all();
+    }
+
+    // Parks if a pause is requested, until resumed; otherwise returns at once.
+    fn park(&self) {
+        let mut state = self.state.lock().unwrap();
+        if state.0 {
+            state.1 = true;
+            self.changed.notify_all();
+            while state.0 { state = self.changed.wait(state).unwrap(); }
+            state.1 = false;
+        }
+    }
+
+    // Lets `pause` through when there is no pump to wait for.
+    fn vacate(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.1 = true;
+        self.changed.notify_all();
+    }
 }
 
 // ── Signals ───────────────────────────────────────────────────────────────────
@@ -296,12 +353,24 @@ impl Signaler {
 
 // ── The session ───────────────────────────────────────────────────────────────
 
+/// What the invocation's stdin is carried from.
+pub enum Stdin {
+    /// The terminal the launcher owns, read by a pump that can be paused while a command the
+    /// daemon asked for owns the terminal; `leftover` is what the user typed during the
+    /// handshake, sent first.
+    Terminal { leftover: Vec<u8> },
+    /// A pipe or a file, read until it ends.
+    Reader(Box<dyn Read + Send>),
+    /// Nothing: presented to the daemon as already ended.
+    Ended,
+}
+
 pub struct Options {
     /// The terminal's saved state when the launcher owns the terminal's mode and so applies
-    /// `mode` documents; `None` for a pipe, a background job, or an internal invocation.
+    /// `mode` documents and runs commands on it; `None` for a pipe, a background job, or an
+    /// internal invocation.
     pub tty: Option<TtyState>,
-    /// What to send as the invocation's stdin, or `None` to present it as already ended.
-    pub stdin: Option<Box<dyn Read + Send>>,
+    pub stdin: Stdin,
 }
 
 pub struct Session {
@@ -314,6 +383,9 @@ pub struct Session {
     signaler: Arc<Signaler>,
     composition: Composition,
     tty: Option<TtyState>,
+    gate: Gate,
+    // One command on the terminal at a time.
+    child: Mutex<()>,
     outcome: Mutex<Option<Outcome>>,
     done: Condvar,
     socket: UnixStream,
@@ -343,6 +415,8 @@ pub fn open(socket: UnixStream, info: &ClientInfo, composition: Composition, opt
         signaler,
         composition,
         tty: options.tty,
+        gate: Gate::new(),
+        child: Mutex::new(()),
         outcome: Mutex::new(None),
         done: Condvar::new(),
         socket: socket.try_clone().expect("clone the session socket"),
@@ -357,11 +431,19 @@ pub fn open(socket: UnixStream, info: &ClientInfo, composition: Composition, opt
 
     session.credits.open("stdin");
     match options.stdin {
-        Some(reader) => {
+        Stdin::Terminal { leftover } => {
+            let pump = session.clone();
+            std::thread::spawn(move || pump.pump_terminal(leftover));
+        }
+        Stdin::Reader(reader) => {
+            session.gate.vacate();
             let pump = session.clone();
             std::thread::spawn(move || pump.pump("stdin", reader));
         }
-        None => outbox.send_data(protocol::end_document("stdin", &session.composition)),
+        Stdin::Ended => {
+            session.gate.vacate();
+            outbox.send_data(protocol::end_document("stdin", &session.composition));
+        }
     }
 
     let reader = session.clone();
@@ -407,6 +489,42 @@ impl Session {
         }
     }
 
+    // The terminal's stdin, carried as `stdin`: what was typed during the handshake first,
+    // then the terminal, waited for in short polls rather than inside `read`, so the pump can
+    // be parked while a command the daemon asked for owns the terminal.
+    fn pump_terminal(&self, leftover: Vec<u8>) {
+        let mut pending = leftover;
+        let mut buffer = vec![0u8; MAXIMUM_CHUNK];
+        let mut ended = false;
+        while !ended {
+            let Some(allowed) = self.credits.allowance("stdin", MAXIMUM_CHUNK) else { break };
+            if !pending.is_empty() {
+                let take = allowed.min(pending.len());
+                let chunk: Vec<u8> = pending.drain(..take).collect();
+                self.credits.spend("stdin", chunk.len());
+                self.outbox.send_data(protocol::data_document("stdin", &chunk, &self.composition));
+                continue;
+            }
+            loop {
+                self.gate.park();
+                if crate::tty::wait_input(100) { break; }
+            }
+            match crate::descriptors::read(0, &mut buffer[..allowed]) {
+                Ok(0) => ended = true,
+                Err(error) => { crate::debug!("session: the terminal cannot be read: {}", error); ended = true }
+                Ok(count) => {
+                    self.credits.spend("stdin", count);
+                    self.outbox.send_data(protocol::data_document("stdin", &buffer[..count], &self.composition));
+                }
+            }
+        }
+        self.gate.vacate();
+        if self.credits.active("stdin") {
+            crate::debug!("session: the terminal's input ended");
+            self.outbox.send_data(protocol::end_document("stdin", &self.composition));
+        }
+    }
+
     // The reader thread: the only caller of `read` on the socket. Deposits each document where
     // it belongs and never waits on anything but the socket.
     fn read(self: Arc<Self>, mut socket: UnixStream) {
@@ -427,11 +545,14 @@ impl Session {
                 Some(Message::Credit { stream, bytes }) => self.credits.grant(&stream, bytes),
                 Some(Message::Open { stream }) => self.open_descriptor(&stream),
                 Some(Message::Closed { stream }) => self.credits.revoke(&stream),
-                Some(Message::Mode { canonical }) => match self.tty {
-                    Some(saved) if canonical => crate::tty::set_cooked_mode(&saved),
-                    Some(_) => crate::tty::set_raw_mode(),
-                    None => {}
+                Some(Message::Mode { canonical, echo }) => if let Some(saved) = self.tty {
+                    if canonical { crate::tty::set_cooked_mode(&saved) } else { crate::tty::set_raw_mode() }
+                    crate::tty::set_echo(echo);
                 },
+                Some(Message::Run { command, arguments, pwd }) => {
+                    let session = self.clone();
+                    std::thread::spawn(move || session.run_command(command, arguments, pwd));
+                }
                 Some(Message::SignalAck { accept }) => self.signaler.acknowledge(accept),
                 Some(Message::ExitStatus { code }) => break Outcome::Exited(code),
                 other => crate::debug!("session: unexpected document {:?}", other),
@@ -471,6 +592,43 @@ impl Session {
         }
     }
 
+    // Runs a command on the client's terminal for the daemon (`spec/launcher.md`, *Running a
+    // command on the client's terminal*): the terminal's pump parked and the invocation's
+    // output held, the terminal in its saved state, the command on the launcher's own
+    // standard streams and environment; then the terminal back in raw mode, everything
+    // resumed, and `exited` with the status. Not interactive: `exited` 127 at once.
+    fn run_command(&self, command: String, arguments: Vec<String>, pwd: Option<String>) {
+        let _one_at_a_time = self.child.lock().unwrap();
+        let code = match self.tty {
+            None => 127,
+            Some(saved) => {
+                self.gate.pause();
+                for stream in ["stdout", "stderr"] {
+                    if let Some(inlet) = self.inlets.lock().unwrap().get(stream) { inlet.hold(true); }
+                }
+                let _ = io::stdout().flush();
+                crate::tty::restore_tty_state(&saved);
+                crate::signals::child_running(true);
+                let mut child = Command::new(&command);
+                child.args(&arguments);
+                if let Some(pwd) = pwd { child.current_dir(pwd); }
+                let code = match child.status() {
+                    Ok(status) => exit_code(status),
+                    Err(error) => { crate::debug!("session: cannot run {}: {}", command, error); 127 }
+                };
+                crate::signals::child_running(false);
+                if crate::tty::in_foreground() { crate::tty::set_raw_mode(); }
+                for stream in ["stdout", "stderr"] {
+                    if let Some(inlet) = self.inlets.lock().unwrap().get(stream) { inlet.hold(false); }
+                }
+                self.gate.resume();
+                code
+            }
+        };
+        crate::debug!("session: the command {} exited with {}", command, code);
+        self.outbox.send(protocol::exited_document(code, &self.composition));
+    }
+
     /// Stops writing the invocation's stdout to the client, dropping what still arrives:
     /// after an accepted termination, nothing more of it is wanted.
     pub fn discard_stdout(&self) {
@@ -493,6 +651,16 @@ impl Session {
         for drain in drains { let _ = drain.join(); }
         outcome
     }
+}
+
+// A command's status as a shell reports it: its exit code, or 128 plus the signal it died of.
+fn exit_code(status: std::process::ExitStatus) -> i32 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() { return 128 + signal; }
+    }
+    status.code().unwrap_or(127)
 }
 
 // A client descriptor as a `Read`, for a descriptor the daemon opened to read.
@@ -560,6 +728,7 @@ mod tests {
             variant::CREDIT => Message::Credit { stream: text(0), bytes: text(1).parse().unwrap() },
             variant::CLOSED => Message::Closed { stream: text(0) },
             variant::SIGNAL => Message::Open { stream: text(0) }, // the name, reusing a variant with one text field
+            variant::EXITED => Message::ExitStatus { code: text(0).parse().unwrap() },
             variant::INIT => Message::Open { stream: "init".into() },
             other => panic!("unexpected outbound variant {other}"),
         }
@@ -576,7 +745,7 @@ mod tests {
         let (socket, mut peer) = pair();
         let input: Vec<u8> = (0..200_000u32).map(|i| i as u8).collect();
         let session = open(socket, &info(vec![]), Composition::base(),
-                           Options { tty: None, stdin: Some(Box::new(io::Cursor::new(input.clone()))) });
+                           Options { tty: None, stdin: Stdin::Reader(Box::new(io::Cursor::new(input.clone()))) });
         assert_eq!(peer.next(), Message::Open { stream: "init".into() });
 
         let mut received = Vec::new();
@@ -612,7 +781,7 @@ mod tests {
     #[test]
     fn a_signal_is_acknowledged_inline() {
         let (socket, mut peer) = pair();
-        let session = open(socket, &info(vec![]), Composition::base(), Options { tty: None, stdin: None });
+        let session = open(socket, &info(vec![]), Composition::base(), Options { tty: None, stdin: Stdin::Ended });
         assert_eq!(peer.next(), Message::Open { stream: "init".into() });
         assert_eq!(peer.next(), Message::End { stream: "stdin".into() });
 
@@ -632,10 +801,26 @@ mod tests {
         assert_eq!(session.wait(), Outcome::Exited(0));
     }
 
+    // With no terminal of its own, a `run` is refused at once with 127, as a shell reports a
+    // command it could not run.
+    #[test]
+    fn a_run_without_a_terminal_is_refused() {
+        let (socket, mut peer) = pair();
+        let session = open(socket, &info(vec![]), Composition::base(), Options { tty: None, stdin: Stdin::Ended });
+        assert_eq!(peer.next(), Message::Open { stream: "init".into() });
+        assert_eq!(peer.next(), Message::End { stream: "stdin".into() });
+        let mut record = Record::new();
+        record.scalar(0, "vi");
+        peer.send(variant::RUN, record);
+        assert_eq!(peer.next(), Message::ExitStatus { code: 127 });
+        peer.exit(0);
+        assert_eq!(session.wait(), Outcome::Exited(0));
+    }
+
     #[test]
     fn a_connection_closed_before_any_document_is_a_refusal() {
         let (socket, peer) = pair();
-        let session = open(socket, &info(vec![]), Composition::base(), Options { tty: None, stdin: None });
+        let session = open(socket, &info(vec![]), Composition::base(), Options { tty: None, stdin: Stdin::Ended });
         drop(peer);
         assert_eq!(session.wait(), Outcome::Refused);
     }
@@ -643,7 +828,7 @@ mod tests {
     #[test]
     fn a_connection_dropped_mid_session_is_reported() {
         let (socket, mut peer) = pair();
-        let session = open(socket, &info(vec![]), Composition::base(), Options { tty: None, stdin: None });
+        let session = open(socket, &info(vec![]), Composition::base(), Options { tty: None, stdin: Stdin::Ended });
         let mut record = Record::new();
         record.scalar(0, "stdout");
         record.scalar(1, "1");
@@ -659,7 +844,7 @@ mod tests {
         assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
         let descriptor = Descriptor { fd: pipe[0], direction: "r", kind: "pipe", path: None };
         let (socket, mut peer) = pair();
-        let session = open(socket, &info(vec![descriptor]), Composition::base(), Options { tty: None, stdin: None });
+        let session = open(socket, &info(vec![descriptor]), Composition::base(), Options { tty: None, stdin: Stdin::Ended });
         assert_eq!(peer.next(), Message::Open { stream: "init".into() });
         assert_eq!(peer.next(), Message::End { stream: "stdin".into() });
 

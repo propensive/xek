@@ -32,9 +32,9 @@ pub const MAGIC: [u8; 4] = [0xB2, 0xC4, 0xB5, 0xBB];
 /// `layer` removed (BinTEL §8.1) — pinned here and in the daemon's tests. The base alone has
 /// the 33-byte signature of this hash followed by its cadence trailer.
 pub const BASE: [u8; 32] = [
-    0xa7, 0x72, 0xbc, 0xe7, 0x0d, 0xb9, 0x51, 0xb9, 0x57, 0xbe, 0xc1, 0xcb, 0x86, 0xad, 0xa5,
-    0x51, 0x72, 0x28, 0xcc, 0x11, 0xf5, 0xe6, 0xcc, 0x0d, 0x2c, 0x9f, 0x3a, 0x52, 0x28, 0x1b,
-    0xdc, 0x93,
+    0x3c, 0xb1, 0x34, 0x10, 0x4a, 0xb9, 0x7c, 0x0c, 0xf5, 0xac, 0x17, 0x83, 0x93, 0x07, 0x69,
+    0x9e, 0xea, 0x72, 0x84, 0x6c, 0xa3, 0x1c, 0x0c, 0x7a, 0x75, 0x5f, 0x5c, 0x91, 0xc2, 0xa4,
+    0x48, 0x0d,
 ];
 
 /// The kind of a record field, per the schema.
@@ -116,6 +116,8 @@ pub mod variant {
     // Sent by tooling, never by the launcher itself; listed so the indices stay complete.
     #[allow(dead_code)]
     pub const SHUTDOWN: u64 = 12;
+    pub const RUN: u64 = 13;
+    pub const EXITED: u64 = 14;
 }
 
 /// The daemon reads documents from a peer it did not choose; so does the runner. A document
@@ -223,8 +225,9 @@ pub enum Message {
     Credit { stream: String, bytes: u64 },
     Open { stream: String },
     SignalAck { accept: bool },
-    Mode { canonical: bool },
+    Mode { canonical: bool, echo: bool },
     Closed { stream: String },
+    Run { command: String, arguments: Vec<String>, pwd: Option<String> },
     ExitStatus { code: i32 },
     Verdict { fresh: bool },
 }
@@ -266,8 +269,10 @@ fn base_field_kind(variant: u64, index: u64) -> Option<Kind> {
         (variant::DATA, 0) | (variant::DATA, 1) => Some(Kind::Scalar),
         (variant::END, 0) | (variant::OPEN, 0) | (variant::CLOSED, 0) => Some(Kind::Scalar),
         (variant::CREDIT, 0) | (variant::CREDIT, 1) => Some(Kind::Scalar),
-        (variant::SIGNAL_ACK, 0) | (variant::VERDICT, 0) | (variant::MODE, 0) => Some(Kind::Flag),
+        (variant::SIGNAL_ACK, 0) | (variant::VERDICT, 0) => Some(Kind::Flag),
+        (variant::MODE, 0) | (variant::MODE, 1) => Some(Kind::Flag),
         (variant::EXIT_STATUS, 0) => Some(Kind::Scalar),
+        (variant::RUN, 0) | (variant::RUN, 1) | (variant::RUN, 2) => Some(Kind::Scalar),
         _ => None,
     }
 }
@@ -275,9 +280,10 @@ fn base_field_kind(variant: u64, index: u64) -> Option<Kind> {
 /// How many members the base declares on an inbound record.
 fn base_field_count(variant: u64) -> u64 {
     match variant {
-        variant::DATA | variant::CREDIT => 2,
+        variant::RUN => 3,
+        variant::DATA | variant::CREDIT | variant::MODE => 2,
         variant::END | variant::OPEN | variant::CLOSED | variant::EXIT_STATUS => 1,
-        variant::SIGNAL_ACK | variant::VERDICT | variant::MODE => 1,
+        variant::SIGNAL_ACK | variant::VERDICT => 1,
         _ => 0,
     }
 }
@@ -356,6 +362,10 @@ fn parse_with(layers: &[Layer], document: &[u8], composition: &Composition) -> O
     let text = |index: u64| -> Option<String> {
         raw(index).and_then(|bytes| String::from_utf8(bytes.to_vec()).ok())
     };
+    let texts = |index: u64| -> Option<Vec<String>> {
+        scalars.iter().filter(|(i, _)| *i == index)
+            .map(|(_, bytes)| String::from_utf8(bytes.to_vec()).ok()).collect()
+    };
 
     match variant {
         variant::DATA => {
@@ -367,7 +377,8 @@ fn parse_with(layers: &[Layer], document: &[u8], composition: &Composition) -> O
         variant::CREDIT => Some(Message::Credit { stream: text(0)?, bytes: text(1)?.trim().parse().ok()? }),
         variant::OPEN => Some(Message::Open { stream: text(0)? }),
         variant::SIGNAL_ACK => Some(Message::SignalAck { accept: flag(0) }),
-        variant::MODE => Some(Message::Mode { canonical: flag(0) }),
+        variant::MODE => Some(Message::Mode { canonical: flag(0), echo: flag(1) }),
+        variant::RUN => Some(Message::Run { command: text(0)?, arguments: texts(1)?, pwd: text(2) }),
         variant::CLOSED => Some(Message::Closed { stream: text(0)? }),
         variant::EXIT_STATUS => Some(Message::ExitStatus { code: text(0)?.trim().parse().ok()? }),
         variant::VERDICT => Some(Message::Verdict { fresh: flag(0) }),
@@ -536,26 +547,26 @@ mod tests {
         assert_eq!(doc[5], 37);
         assert_eq!(&doc[6..43], &two.signature[..]);
 
-        // Mode under the first fixture layer: base flag 0, layer flag 1.
+        // Mode under the first fixture layer: base flags 0 and 1, layer flag 2.
         let mut record = Record::new();
         record.flag(0);
-        record.flag(1);
+        record.flag(2);
         let doc = document(variant::MODE, record, &two);
-        assert_eq!(parse_with(fixtures::LAYERS, &doc, &two), Some(Message::Mode { canonical: true }));
+        assert_eq!(parse_with(fixtures::LAYERS, &doc, &two), Some(Message::Mode { canonical: true, echo: false }));
         // The same bytes are not a base document: wrong signature.
         assert_eq!(parse_with(fixtures::LAYERS, &doc, &Composition::base()), None);
         // Nor a depth-3 one, whose signature is longer still.
         assert_eq!(parse_with(fixtures::LAYERS, &doc, &three), None);
 
-        // Index 2 exists only from the second layer on.
+        // Index 3 exists only from the second layer on.
         let mut record = Record::new();
-        record.flag(2);
+        record.flag(3);
         let doc = document(variant::MODE, record, &two);
         assert_eq!(parse_with(fixtures::LAYERS, &doc, &two), None);
         let mut record = Record::new();
-        record.flag(2);
+        record.flag(3);
         let doc = document(variant::MODE, record, &three);
-        assert_eq!(parse_with(fixtures::LAYERS, &doc, &three), Some(Message::Mode { canonical: false }));
+        assert_eq!(parse_with(fixtures::LAYERS, &doc, &three), Some(Message::Mode { canonical: false, echo: false }));
     }
 
     #[test]
@@ -569,7 +580,29 @@ mod tests {
         let mut record = Record::new();
         record.flag(0);
         let doc = document(variant::MODE, record, &base);
-        assert_eq!(parse(&doc, &base), Some(Message::Mode { canonical: true }));
+        assert_eq!(parse(&doc, &base), Some(Message::Mode { canonical: true, echo: false }));
+        let mut record = Record::new();
+        record.flag(0);
+        record.flag(1);
+        let doc = document(variant::MODE, record, &base);
+        assert_eq!(parse(&doc, &base), Some(Message::Mode { canonical: true, echo: true }));
+
+        // run: a command, two arguments, a directory; then one with neither.
+        let mut record = Record::new();
+        record.scalar(0, "vi");
+        record.scalar(1, "-R");
+        record.scalar(1, "notes.txt");
+        record.scalar(2, "/home/jon");
+        let doc = document(variant::RUN, record, &base);
+        assert_eq!(parse(&doc, &base), Some(Message::Run {
+            command: "vi".into(), arguments: vec!["-R".into(), "notes.txt".into()], pwd: Some("/home/jon".into()) }));
+        let mut record = Record::new();
+        record.scalar(0, "less");
+        let doc = document(variant::RUN, record, &base);
+        assert_eq!(parse(&doc, &base), Some(Message::Run { command: "less".into(), arguments: vec![], pwd: None }));
+        // exited: body 01 0e 01 | 00 03 "127" = 8 bytes; 1 + 33 + 8 = 42.
+        assert_eq!(hex(&crate::protocol::exited_document(127, &base)),
+                   format!("b2c4b5bb2a21{}010e010003313237", signature()));
 
         let doc = document(variant::VERDICT, Record::new(), &base);
         assert_eq!(parse(&doc, &base), Some(Message::Verdict { fresh: false }));

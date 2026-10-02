@@ -132,6 +132,7 @@ traffic travels on it as framed documents, in both directions:
 | `closed` | both | The named stream has lost its reader; see *End of output* |
 | `signal`, `signal-ack` | launcher, daemon | A signal and the invocation's answer; see *Signals* |
 | `mode` | daemon | A terminal-mode request; see *The terminal* |
+| `run`, `exited` | daemon, launcher | A command to run on the client's terminal, and the status it ended with; see *Running a command on the client's terminal* |
 
 Everything on the connection is a document; there are no raw bytes. A document larger than
 1 MiB is a protocol error on either side. `verify`, `verdict` and `shutdown` are not part of
@@ -209,9 +210,10 @@ the launcher:
    (`WT_SESSION` set), since the classic console leaves an unanswered query in the input;
 4. measures the terminal's size and delivers it as `COLUMNS` and `LINES`, and as the `columns`
    and `rows` fields;
-5. applies the `mode` documents the daemon sends on the session, by which a command that
-   wants the driver's own line editing asks for the terminal to be put into canonical (cooked)
-   mode, and back into raw mode afterwards.
+5. applies the `mode` documents the daemon sends on the session: `canonical` asks for the
+   driver's own line editing (cooked mode), and `echo` for what is typed to be shown; each
+   is set as the document says, so the four combinations are reachable, and canonical
+   without echo is how a password is read. A `mode` without either flag is raw mode again.
 
 When stdin is a terminal but the launcher is **not in the foreground** — a background job under
 job control, `mytool > log &` — none of the above happens, since any of it would stop the job
@@ -224,6 +226,35 @@ forwarded until it ends.
 
 An MSYS2, Cygwin or mintty pseudo-terminal on Windows is reported as a terminal but cannot be
 reconfigured through the console API, so it stays in whatever mode the pseudo-terminal is in.
+
+## Running a command on the client's terminal
+
+An application sometimes needs a program run *on the user's terminal* — an editor for a
+message, a pager, `ssh`, `sudo`, `gpg` — which the daemon's process, detached from any
+terminal, cannot do. The daemon sends `run`, naming the command, its arguments and
+optionally a working directory, and the launcher:
+
+1. stops carrying the terminal's input — its pump parks once it is out of `read`, so the
+   command's keystrokes are never contested — and holds the invocation's stdout and stderr,
+   so nothing of the invocation's output interleaves with the command's;
+2. restores the terminal's saved attributes, so the command finds an ordinary cooked
+   terminal;
+3. runs the command with the launcher's own standard streams — the terminal — and the
+   client's environment, in `pwd` if one was given, and waits for it; while it runs, `INT` and
+   `QUIT` from the terminal are the command's, and the launcher leaves them alone, as a shell
+   waiting on a foreground child does;
+4. puts the terminal back into raw mode if it is in the foreground, releases the output,
+   resumes the pump, and answers `exited` with the status: the command's exit code, or 128
+   plus the signal it died of, or 127 if it could not be run at all.
+
+A launcher whose stdin is not a terminal it owns — a pipe, a background job, an internal
+invocation — answers `exited` with 127 at once and runs nothing: the refusal is clean rather
+than a hang. One command runs at a time; a second `run` waits for the first to end. The
+command's output goes to the terminal; an application that wants to capture a program's
+output runs it in the daemon's own process, as it always could.
+
+The command runs with the client's privileges, which is what the user asked for by invoking
+the application; a `run` is bound to its invocation by the session it arrives on.
 
 ## End of input
 

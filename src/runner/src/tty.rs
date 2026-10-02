@@ -510,3 +510,49 @@ pub fn restore_tty_state(state: &TtyState) {
     }
 }
 
+// Echo, on its own: canonical mode without it is how a password is read, with the driver's
+// line editing but nothing shown. Only the one flag is touched, so the mode set before —
+// canonical or raw — stands.
+#[cfg(unix)]
+pub fn set_echo(enabled: bool) {
+    if !stdin_is_tty() { return; }
+    unsafe {
+        let mut t: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(libc::STDIN_FILENO, &mut t) != 0 { return; }
+        if enabled { t.c_lflag |= libc::ECHO; } else { t.c_lflag &= !libc::ECHO; }
+        if libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &t) != 0 {
+            crate::debug!("tty: set_echo — tcsetattr failed: {}", std::io::Error::last_os_error());
+        }
+    }
+}
+
+#[cfg(windows)]
+pub fn set_echo(enabled: bool) {
+    use windows_sys::Win32::System::Console::{GetConsoleMode, GetStdHandle, SetConsoleMode, STD_INPUT_HANDLE, ENABLE_ECHO_INPUT};
+    if !stdin_is_tty() { return; }
+    unsafe {
+        let h_in = GetStdHandle(STD_INPUT_HANDLE);
+        let mut in_mode: u32 = 0;
+        if GetConsoleMode(h_in, &mut in_mode) == 0 { return; }
+        if enabled { in_mode |= ENABLE_ECHO_INPUT; } else { in_mode &= !ENABLE_ECHO_INPUT; }
+        SetConsoleMode(h_in, in_mode);
+    }
+}
+
+// Whether stdin has input to read within `timeout_ms`: what lets the terminal's pump wait
+// without being inside `read`, so it can be paused while a command the daemon asked for
+// owns the terminal. True on error too, so a broken stdin is read, and its error seen.
+#[cfg(unix)]
+pub fn wait_input(timeout_ms: i32) -> bool {
+    let mut descriptor = libc::pollfd { fd: libc::STDIN_FILENO, events: libc::POLLIN, revents: 0 };
+    let ready = unsafe { libc::poll(&mut descriptor, 1, timeout_ms) };
+    ready != 0
+}
+
+#[cfg(windows)]
+pub fn wait_input(timeout_ms: i32) -> bool {
+    use windows_sys::Win32::System::Console::{GetStdHandle, STD_INPUT_HANDLE};
+    use windows_sys::Win32::Foundation::WAIT_TIMEOUT;
+    use windows_sys::Win32::System::Threading::WaitForSingleObject;
+    unsafe { WaitForSingleObject(GetStdHandle(STD_INPUT_HANDLE), timeout_ms as u32) != WAIT_TIMEOUT }
+}
