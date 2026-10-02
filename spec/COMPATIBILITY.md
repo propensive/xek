@@ -7,7 +7,7 @@ at the first message rather than misreading fields. Above the base, the schema m
 
 | Release | Protocol | Base signature (BLAKE3-256 + cadence) | `ETHRCFG` | Reference daemon |
 |---|---|---|---|---|
-| `xek-1.0.0` | `ethereal-launcher` BinTEL | `55d18c247b88db8fc6af7a197c56ee2b680084d1800afe8947a2f613c70492e563` | v3 | none yet: the Soundness release after 0.69.0 |
+| `1.0.0` | `ethereal-launcher` BinTEL | `55d18c247b88db8fc6af7a197c56ee2b680084d1800afe8947a2f613c70492e563` | v3 | none yet: the Soundness release after 0.69.0 |
 | `xek-0.10` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
 | `xek-0.9` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
 | `xek-0.8` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
@@ -55,8 +55,8 @@ negotiation described under *Layers and acceptances* below: the launcher reads t
 acceptance before its first connection and writes under the richest composition both hold.
 Against a daemon that publishes no acceptance it behaves exactly as `xek-0.8` does.
 
-`xek-1.0.0` — versions are `X.Y.Z` from here, a third part marking a client fix that changes
-no contract — revises the base: an invocation becomes **one connection**, a session of framed
+`1.0.0` — versions are `X.Y.Z` from here, tagged bare, a third part marking a client fix that
+changes no contract — revises the base: an invocation becomes **one connection**, a session of framed
 documents in both directions, where before it was an `init` connection carrying raw stdin and
 stdout, a `stderr` connection, a `control` connection, a connection per `signal` and one for
 `exit`. Those three variants go; `data`, `end`, `credit` and `open` arrive, with a `Bytes`
