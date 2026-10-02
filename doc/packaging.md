@@ -83,7 +83,7 @@ directory instead — the output of `make runners-build` or `make runners-fetch`
 the test suite and `make e2e` use.
 
 The stubs are not built by the Scala build and are never stored in a jar. They are released on
-their own cadence, by tagging `xek-X.Y`, with the `xek` command, and the release opens a pull
+their own cadence, by tagging `xek-X.Y.Z`, with the `xek` command, and the release opens a pull
 request rewriting the resources the builder reads, so adopting a new runner is a data change.
 `Packager` builds with `xek-core` — the one implementation of the byte format, which the `xek`
 command runs too — so an Anthology build and a user at a shell produce the same bytes.

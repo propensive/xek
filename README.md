@@ -129,7 +129,7 @@ Stubs are released on their own cadence, and only when the Rust source changes, 
 every repository in the ecosystem is released:
 
 ```sh
-git tag -s xek-0.10 && git push --tags
+git tag -s xek-1.0.0 && git push --tags
 ```
 
 The tag fires `.github/workflows/release.yml`, which runs the shared `release.sh` from
@@ -137,18 +137,28 @@ The tag fires `.github/workflows/release.yml`, which runs the shared `release.sh
 gates on a verified signed tag and on CI already being green on that commit; cross-compiles the
 five stubs and builds the `xek` command around them, as a polyglot `xek` and a native
 `xek-<platform>` for each platform (`etc/ci/runners-assemble.sh`); uploads them to the
-`xek-0.10` release, with `0.10.SHA256SUMS`, and checks every digest; and, if anything fails,
+`xek-1.0.0` release, with `1.0.0.SHA256SUMS`, and checks every digest; and, if anything fails,
 deletes the release and the tag. Once the release is public it opens two draft pull requests: one
-here recording the hashes in `etc/runners/0.10.tsv` and `etc/runners/0.10.SHA256SUMS` and
+here recording the hashes in `etc/runners/1.0.0.tsv` and `etc/runners/1.0.0.SHA256SUMS` and
 rewriting `res/core/xek/runners.{tsv,version,url}`, the resources the builder reads
 (`etc/ci/runners-record.sh`); and one in Soundness moving its `etc/xeq.tsv` to the release
 (`etc/downstream`). Adopting a release is therefore a data change, not a code change, and an
 application picks up a runner fix without anything being rebuilt.
 
+The `xek` command is itself an XEK executable, run by a daemon built from the Soundness release
+pinned in `etc/refs`. When the protocol base has moved since that daemon was written, the
+command is wrapped in the stubs of the last release that daemon speaks — `etc/command-stubs`
+says which — while packaging applications with the new ones; the pull request that moves
+`etc/refs` to a daemon speaking the new base sets it back to `current`.
+
+Versions are `X.Y.Z` from `1.0.0`: the first two-part versions, up to `xek-0.10`, predate the
+protocol's settling, and a third part now distinguishes a runner fix, which changes no contract,
+from a release that revises `spec/`.
+
 To rehearse a release without publishing anything, from a checkout of the commit to be tagged:
 
 ```sh
-RELEASE_DRY_RUN=1 ./etc/shared release.sh xek-0.10
+RELEASE_DRY_RUN=1 ./etc/shared release.sh xek-1.0.0
 ```
 
 ## Status
@@ -157,7 +167,8 @@ Extracted from Soundness, where this machinery grew as the `ziggurat` library an
 runner inside `ethereal`. Runner releases up to `runners-0.5` were published from that
 repository under the `runners-` tag prefix; releases from here use `xek-`, and `xek-0.6` — the
 first made from this repository — supersedes them and adds the builder as a release asset: a
-polyglot shell script up to `xek-0.9`, and the `xek` command after it.
+polyglot shell script up to `xek-0.9`, and the `xek` command after it. `xek-1.0.0` is the first
+three-part version, and the first whose base signature the daemon side adopted after release.
 
 ## Licence
 

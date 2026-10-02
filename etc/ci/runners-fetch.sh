@@ -4,11 +4,12 @@
 # `dist/runners`, verifying each against the committed `etc/runners/<version>.tsv` manifest.
 #
 # Use this when the Rust toolchain isn't available to `make runners-build`: it fetches the
-# exact bytes published by a release (`git tag -s xek-X.Y`). The runners are never stored in a
+# exact bytes published by a release (`git tag -s xek-X.Y.Z`). The runners are never stored in a
 # JAR — builds and tests read them from `dist/runners` (or download them here first).
 #
-# Usage: ./etc/ci/runners-fetch.sh <version> [owner/repo]
-#         (or `make runners-fetch RUNNERS_VERSION=X [REPO=owner/repo]`)
+# Usage: ./etc/ci/runners-fetch.sh <version> [owner/repo] [directory]
+#         (or `make runners-fetch RUNNERS_VERSION=X [REPO=owner/repo]`); the directory
+#         defaults to dist/runners
 
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -24,7 +25,7 @@ if [[ ! -f "$MANIFEST" ]]; then
   echo "runners-fetch: manifest $MANIFEST not found (was version $VERSION published?)" >&2; exit 1
 fi
 
-OUT="dist/runners"
+OUT="${3:-dist/runners}"
 mkdir -p "$OUT"
 # Releases from before the project was renamed (0.6 to 0.9) are tagged `xeq-<version>`; later
 # ones `xek-<version>`. Probe for the new name and fall back to the old.

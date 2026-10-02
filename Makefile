@@ -2,7 +2,7 @@
 #
 # The Scala modules are built by Mill; the runner stubs are built by Cargo. The two are
 # deliberately separate: Mill never compiles Rust, and the stubs are released on their own
-# cadence, by tagging (`git tag -s xek-X.Y && git push --tags`), rather than with the jars.
+# cadence, by tagging (`git tag -s xek-X.Y.Z && git push --tags`), rather than with the jars.
 
 MILL = ./mill
 
@@ -39,11 +39,11 @@ runners-fetch:
 # being green on that commit, builds the stubs and the `xek` command (etc/ci/runners-assemble.sh),
 # publishes them, and then opens pull requests recording the hashes here and pinning the release
 # in Soundness. If anything fails, the release and the tag are both deleted. See etc/release. To
-# rehearse without publishing: RELEASE_DRY_RUN=1 ./etc/shared release.sh xek-X.Y
+# rehearse without publishing: RELEASE_DRY_RUN=1 ./etc/shared release.sh xek-X.Y.Z
 runners-release:
 	@echo "Releases are triggered by tags, not by make:" >&2
 	@echo "" >&2
-	@echo "    git tag -s xek-X.Y && git push --tags" >&2
+	@echo "    git tag -s xek-X.Y.Z && git push --tags" >&2
 	@echo "" >&2
 	@echo "See propensive/.github." >&2
 	@exit 1

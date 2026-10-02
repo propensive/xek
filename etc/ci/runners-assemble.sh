@@ -13,7 +13,7 @@
 # it writes only the three `res/core/xek/runners.*` resources, and restores them when it exits,
 # so a dry run leaves the checkout as it found it:
 #
-#   PROPENSIVE_GITHUB=… RELEASE_DRY_RUN=1 ./etc/shared release.sh xek-X.Y
+#   PROPENSIVE_GITHUB=… RELEASE_DRY_RUN=1 ./etc/shared release.sh xek-X.Y.Z
 #
 # The stubs are version-independent and reusable, so they are released separately from — and far
 # less often than — the applications packaged with them: only when the Rust runner source
@@ -58,15 +58,26 @@ printf '%s\n' "$BASE_URL" > res/core/xek/runners.url
 # nothing from Soundness resolves on a fresh runner.
 ./etc/shared sync-deps.sh
 
-# `xek` built by `xek`, from its own JAR and the stubs just built: once as a polyglot file for
-# every platform, and once as a native executable for each, which is what a build that knows its
-# platform — Soundness's, say — should fetch, since a polyglot file replaces itself on first run.
+# `xek` built by `xek`, from its own JAR: once as a polyglot file for every platform, and once as
+# a native executable for each, which is what a build that knows its platform — Soundness's, say
+# — should fetch, since a polyglot file replaces itself on first run. It packages applications
+# with the stubs just built, which its resources name; what it is itself wrapped in is whatever
+# etc/command-stubs says, since its own daemon — from the Soundness release pinned in etc/refs —
+# may not yet speak the base the new stubs do.
 export XEK_RELEASE_VERSION="$RELEASE_VERSION"
 ./mill xek.cli.assembly
 JAR="$PWD/out/xek/cli/assembly.dest/out.jar"
 PLATFORMS=$(cut -f1 "$MANIFEST" | paste -sd, -)
-./mill xek.cli.bootstrap --polyglot --runners "$WORK/runners" "$JAR" "$WORK/xek"
-./mill xek.cli.bootstrap --platform "$PLATFORMS" --runners "$WORK/runners" "$JAR" "$WORK/xek"
+COMMAND_STUBS=$(grep -v '^#' etc/command-stubs | grep -v '^$' | head -1)
+if [[ "$COMMAND_STUBS" == "current" ]]; then
+  WRAP="$WORK/runners"
+else
+  echo "runners-assemble: wrapping the xek command in the $COMMAND_STUBS stubs (etc/command-stubs)"
+  ./etc/ci/runners-fetch.sh "$COMMAND_STUBS" "$REPO" "$WORK/command-runners"
+  WRAP="$WORK/command-runners"
+fi
+./mill xek.cli.bootstrap --polyglot --runners "$WRAP" "$JAR" "$WORK/xek"
+./mill xek.cli.bootstrap --platform "$PLATFORMS" --runners "$WRAP" "$JAR" "$WORK/xek"
 cp "$WORK/xek" "$WORK/xek.cmd"
 
 # The installer served from https://propensive.dev/xek, which redirects to the latest release's

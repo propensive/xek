@@ -35,9 +35,9 @@ object settings:
   // depends on XEK, and nothing here depends on `ethereal`, the daemon: the two halves of an XEK
   // executable meet at `spec/`, not at a coordinate.
 
-  // The version XEK's own jars are published under. Snapshots override it through
-  // `publishVersion` (in `Component`), never here.
-  val xekVersion = "0.1.0"
+  // The version XEK's own jars are published under, kept equal to the release's (`X.Y.Z` from
+  // 1.0.0). Snapshots override it through `publishVersion` (in `Component`), never here.
+  val xekVersion = "1.0.0"
 
   val scalaOptions = Seq(
     // The fork's opt-in behaviours, enabled by name, exactly as the Soundness build enables
@@ -338,8 +338,8 @@ trait Component(dependencies: PublishModule*) extends Forked, PublishModule:
   // A `Task.Input` reading `Task.env`, not a plain value: `XEK_RELEASE_VERSION` is how
   // `make snapshot` (snapshot.sh in propensive/.github) drives the snapshot version through a
   // Mill daemon that is already running — the daemon freezes `sys.env` at its own start, while
-  // `Task.env` is the environment of each `./mill` invocation. A release never sets it: the
-  // released version is `settings.xekVersion`, and the release script insists on it.
+  // `Task.env` is the environment of each `./mill` invocation. A release sets it to the tag's
+  // version, which an assembled release is versioned by; `settings.xekVersion` is kept equal.
   def publishVersion = Task.Input:
     Task.env.get("XEK_RELEASE_VERSION").filter(_.nonEmpty).getOrElse(settings.xekVersion)
   def artifactSuffix = Task("")

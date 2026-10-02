@@ -1,0 +1,11 @@
+# The stubs the `xek` command itself is wrapped in when a release is assembled: `current` for
+# the stubs of the release being made, or the version of an earlier release.
+#
+# `xek` is an XEK executable whose daemon is built from the Soundness release pinned in
+# etc/refs. When the protocol base has moved since that release's daemon was written, a `xek`
+# wrapped in the current stubs cannot start — the launcher and its own daemon refuse each other
+# — so it is wrapped in the stubs of the last release that daemon speaks, and still packages
+# applications with the current ones, which `res/core/xek/runners.*` name. Set it back to
+# `current` in the pull request that moves etc/refs to a Soundness release whose daemon speaks
+# the current base (spec/COMPATIBILITY.md says which).
+0.10

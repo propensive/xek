@@ -6,7 +6,7 @@
 # binary is built by concatenating a stub, an ETHRCFG record and the app's JAR; the stubs
 # themselves are reusable across applications and versions. This build is deliberately
 # *separate* from the Mill build, which never compiles Rust: the stubs are data to it, and are
-# released independently (`runners-assemble.sh`, run by the release a `xek-X.Y` tag starts).
+# released independently (`runners-assemble.sh`, run by the release a `xek-X.Y.Z` tag starts).
 #
 # Two things are checked and done here that the format depends on (spec/ethrcfg.md):
 #
