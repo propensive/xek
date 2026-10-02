@@ -17,7 +17,6 @@ who launched it, and the daemon may rely on every one of them being present.
 | `ethereal.payloadSize` | Reserved; currently always `0` |
 | `ethereal.jarSize` | The length in bytes of the whole executable file (stub, record and JAR) |
 | `ethereal.command` | The path `PATH` resolution finds for `ethereal.name`, or empty |
-| `ethereal.fpath` | zsh's `$fpath`, newline-separated, or empty where zsh is absent — for installing completions |
 | `burdock.progress` | A file the JVM may append dependency-download progress lines to, which the launcher tails and renders |
 
 Adding a property is compatible; removing or repurposing one is a protocol change and follows
