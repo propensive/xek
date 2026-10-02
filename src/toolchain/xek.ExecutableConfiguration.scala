@@ -34,14 +34,14 @@ import gossamer.*
 import vacuous.*
 
 // The xek packaging configuration `executableEdges`' tools fold settings into: the distributable's
-// basename, the platforms it targets (defaulting to every platform its runner source names),
-// where the bare runner stubs come from, the Java runtime policy recorded in each stub's
-// ETHRCFG block, self-upgrade signing, and the build number that orders upgrades. A runner
-// source must be specified: `executableOptions.runners.standard` names the published release.
+// basename, the platforms it targets (defaulting to every platform its client source names),
+// where the bare client stubs come from, the Java runtime policy recorded in each stub's
+// ETHRCFG block, self-upgrade signing, and the build number that orders upgrades. A client
+// source must be specified: `executableOptions.client.standard` names the published release.
 case class ExecutableConfiguration
   ( name:    Text                             = t"app",
     targets: List[Text]                       = Nil,
-    runners: Optional[Packaging.RunnerSource] = Unset,
+    client: Optional[Packaging.ClientSource] = Unset,
     java:    Packaging.JavaPolicy             = Packaging.JavaPolicy(),
     signing: Optional[Packaging.Signing]      = Unset,
     buildId: Long                             = 0L )

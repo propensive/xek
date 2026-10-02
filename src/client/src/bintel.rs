@@ -1,7 +1,7 @@
 //! The subset of BinTEL the launcher protocol needs — §4 varints, §6.1 framing, the §7.1
 //! node forms and the §8.2 palimpsest signature — written against one fixed schema,
 //! `ethereal-launcher`, whose TEL text is `spec/ethereal-launcher.tel`, the contract between
-//! this runner and any daemon.
+//! this client and any daemon.
 //!
 //! The schema's keyword order is compiled in: the document root has a single `select Message`
 //! member, so a message is the root node (child count 1) containing one variant node whose
@@ -16,11 +16,11 @@
 //! document is written under, and its signature (BinTEL §8.2, a palimpsest of the components'
 //! hashes) travels in every frame. Which composition an invocation uses is settled before its
 //! first connection from the daemon's acceptance (`acceptance.rs`); a document carrying any
-//! other signature is rejected before a field is read, so a runner and a daemon that disagree
+//! other signature is rejected before a field is read, so a client and a daemon that disagree
 //! fail loudly rather than misread each other.
 //!
 //! No general TEL machinery is here — no schema parsing, no hashing, no BASE-256 alphabet —
-//! because the runner is a size-optimised launcher and the contract is fixed at build time.
+//! because the client is a size-optimised launcher and the contract is fixed at build time.
 //! The component hashes are pinned constants, and a signature is a few XORs over them.
 
 use std::io::{self, Read};
@@ -50,7 +50,7 @@ pub struct Layer {
     pub fields: &'static [(u64, Kind)],
 }
 
-/// The layers of the schema, in the order the schema file declares them. The runner's
+/// The layers of the schema, in the order the schema file declares them. The client's
 /// library is exactly the chain of prefixes of this list: the base, the base with the first
 /// layer, and so on.
 pub static LAYERS: &[Layer] = &[];
@@ -120,7 +120,7 @@ pub mod variant {
     pub const EXITED: u64 = 14;
 }
 
-/// The daemon reads documents from a peer it did not choose; so does the runner. A document
+/// The daemon reads documents from a peer it did not choose; so does the client. A document
 /// larger than this is not one of ours. Pinned in `spec/launcher.md`, and the daemon's limit
 /// too.
 pub const MAXIMUM_LENGTH: u64 = 1 << 20;
@@ -262,7 +262,7 @@ pub fn read_document(reader: &mut impl Read) -> io::Result<Vec<u8>> {
     Ok(out)
 }
 
-/// The fields of the base's inbound records: `(variant, index)` to kind. The runner reads
+/// The fields of the base's inbound records: `(variant, index)` to kind. The client reads
 /// only what the daemon sends, so the launcher-to-daemon records are not tabled.
 fn base_field_kind(variant: u64, index: u64) -> Option<Kind> {
     match (variant, index) {

@@ -106,7 +106,7 @@ object settings:
       mvn"dev.propensive:ambience-core:$v",      // the system properties paths are read with
       mvn"dev.propensive:gossamer-core:$v",      // text
       mvn"dev.propensive:hieroglyph-core:$v",    // UTF-8 for resources
-      mvn"dev.propensive:hellenism-core:$v",     // classpath resources (templates, `Runners`)
+      mvn"dev.propensive:hellenism-core:$v",     // classpath resources (templates, `Client`)
       mvn"dev.propensive:turbulence-core:$v")    // reading resources
 
     // `xek.cli`: the `xek` command itself, an XEK executable daemonized through `ethereal`, with
@@ -126,7 +126,7 @@ object settings:
       mvn"dev.propensive:guillotine-core:$v",    // running the files it builds
       mvn"dev.propensive:eucalyptus-core:$v",    // logging for those subprocesses
       mvn"dev.propensive:probably-cli:$v",       // Suite
-      mvn"dev.propensive:probably-events:$v",    // the BinTEL event stream a host runner reads
+      mvn"dev.propensive:probably-events:$v",    // the BinTEL event stream a host client reads
       mvn"dev.propensive:spectacular-core:$v",   // `show`
       mvn"dev.propensive:escapade-core:$v",      // Teletype
       mvn"dev.propensive:profanity-core:$v",     // termcaps
@@ -148,7 +148,7 @@ object settings:
 object proscala extends Module:
   //
   // The API call is authenticated when a `GITHUB_TOKEN` is given: unauthenticated, it shares the
-  // rate limit of every job on a hosted runner's address, and a release job was refused (403) by
+  // rate limit of every job on a hosted client's address, and a release job was refused (403) by
   // it. The header reaches `curl` on stdin, so the token appears in no process's arguments.
   def downloadRelease(tag: String, token: Option[String] = None): os.Path =
     val root = os.home / ".cache" / "soundness" / "proscala" / tag
@@ -357,7 +357,7 @@ trait Component(dependencies: PublishModule*) extends Forked, PublishModule:
 object xek extends Module:
   override def moduleDir = super.moduleDir / os.up / "src"
 
-  // The builder: the ETHRCFG record, the runner stubs (resolved from a local directory, or
+  // The builder: the ETHRCFG record, the client stubs (resolved from a local directory, or
   // downloaded, verified and cached), native assembly, and the polyglot launchers — a single
   // file that is at once a valid `sh` script, a `.bat` file and a PowerShell script, which
   // unpacks or downloads the executable for the platform it finds itself on. The single
@@ -413,7 +413,7 @@ object xek extends Module:
     // Runs `xek` from this module's assembly with no launcher, through its `bootstrap` entry
     // point, on the JVM Mill runs with: `xek` built by `xek`. Takes the command line `xek` takes,
     // with paths relative to the repository, as in `./mill xek.cli.bootstrap --polyglot
-    // --runners dist/runners out/xek/cli/assembly.dest/out.jar dist/xek`.
+    // --client dist/client out/xek/cli/assembly.dest/out.jar dist/xek`.
     def bootstrap(arguments: mainargs.Leftover[String]) = Task.Command:
       val jar = assembly().path
       val java = mill.util.Jvm.javaExe(javaHome().map(_.path))
@@ -425,17 +425,17 @@ object xek extends Module:
 
     // Writes `dist/xek`, the `xek` command as an embed-all polyglot file for every platform
     // (and `dist/xek.cmd`, the same bytes, for cmd.exe). The stubs are the ones in
-    // `dist/runners` when that exists (`make runners-build`, or `make runners-fetch`), and
-    // otherwise the published release named in `res/core/xek/runners.*`, downloaded and
-    // verified. A command rather than a target, since `dist/runners` is outside the build: it
+    // `dist/client` when that exists (`make client-build`, or `make client-fetch`), and
+    // otherwise the published release named in `res/core/xek/client.*`, downloaded and
+    // verified. A command rather than a target, since `dist/client` is outside the build: it
     // is cheap once the assembly is cached.
     def executable() = Task.Command:
       val root = mill.api.BuildCtx.workspaceRoot
       val jar = assembly().path
       val java = mill.util.Jvm.javaExe(javaHome().map(_.path))
-      val runners = root / "dist" / "runners"
+      val client = root / "dist" / "client"
       val output = root / "dist" / "xek"
-      val local = if os.exists(runners) then Seq("--runners", runners.toString) else Nil
+      val local = if os.exists(client) then Seq("--client", client.toString) else Nil
       val arguments = Seq("--polyglot", jar.toString, output.toString) ++ local
 
       os.proc(java, "-cp", jar.toString, "xek.bootstrap", arguments)
@@ -444,7 +444,7 @@ object xek extends Module:
       os.copy.over(output, root / "dist" / "xek.cmd")
       PathRef(output)
 
-  // Suites have no `main` of their own: a host runner discovers them from the
+  // Suites have no `main` of their own: a host client discovers them from the
   // `META-INF/services/probably.Suite` index the beneficence plugin writes, and drives them
   // over the BinTEL test-event protocol. `make test` assembles this module and runs
   // `fume run -c …` over the assembly, exactly as Soundness runs its own suites.
@@ -452,16 +452,16 @@ object xek extends Module:
     def mvnDeps = Task(settings.Soundness(deps.soundness()).test)
     override def artifactName = Task("xek-test")
 
-    // The protocol schema and the runner's copy of its signature are read off the classpath,
-    // so the suite can compare them wherever its host runner's working directory happens
+    // The protocol schema and the client's copy of its signature are read off the classpath,
+    // so the suite can compare them wherever its host client's working directory happens
     // to be.
     def contract = Task.Sources(
       mill.api.BuildCtx.workspaceRoot / "spec",
-      mill.api.BuildCtx.workspaceRoot / "src" / "runner" / "src")
+      mill.api.BuildCtx.workspaceRoot / "src" / "client" / "src")
     override def resources = Task(super.resources() ++ contract())
 
   // The end-to-end fixture: a real daemonized application, packaged by the modules above and run
-  // through a real runner stub. This is the ONE module that depends on a daemon implementation
+  // through a real client stub. This is the ONE module that depends on a daemon implementation
   // (Soundness's `ethereal`), because the other end of the protocol has to be *something* for an
   // end-to-end test to exist. It is deliberately outside every aggregate — nothing published
   // from this repository depends on it, and `mill xek.packager.compile` and the test suite never

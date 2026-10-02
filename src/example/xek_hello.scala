@@ -55,7 +55,7 @@ import threading.virtualThreading
 
 // The end-to-end fixture: the smallest possible daemonized application. Packaging this with
 // `Packager`, running the result, and seeing `Hello world` exercises everything at once — a
-// real runner stub, a patched ETHRCFG block, an appended JAR, a daemon started over the
+// real client stub, a patched ETHRCFG block, an appended JAR, a daemon started over the
 // launcher protocol, and a reply carried back to the invoking terminal.
 //
 // The subcommands beyond the greeting exist for `etc/ci/e2e.sh`, which needs an application

@@ -42,35 +42,35 @@ object Packaging:
   enum Delivery:
     case EmbedAll
     // Online: the JAR is embedded once and each bare stub is downloaded at runtime from the
-    // `RunnerSource.Remote` base URL (so `Download` requires a `Remote` runner source).
+    // `ClientSource.Remote` base URL (so `Download` requires a `Remote` client source).
     case Download
     case Native
 
-  // Where each platform's bare reusable runner stub comes from. The stubs are published
+  // Where each platform's bare reusable client stub comes from. The stubs are published
   // independently (by tagging `xek-X.Y`); a build never compiles them.
-  enum RunnerSource:
-    // Read `<directory>/runner-<label>[.exe]` from a local directory (e.g. the output of
-    // `make runners-build`). For development and testing — no download, no hash check.
+  enum ClientSource:
+    // Read `<directory>/client-<label>[.exe]` from a local directory (e.g. the output of
+    // `make client-build`). For development and testing — no download, no hash check.
     case Local(directory: Path on Linux)
 
-    // Download each stub from `<baseUrl>/runner-<label>[.exe]` and verify it against
-    // `hashes(label)` (lowercase SHA-256 hex, from the committed `etc/runners/<v>.tsv`
+    // Download each stub from `<baseUrl>/client-<label>[.exe]` and verify it against
+    // `hashes(label)` (lowercase SHA-256 hex, from the committed `etc/client/<v>.tsv`
     // manifest). The production source.
     case Remote(baseUrl: Text, hashes: Map[Text, Text])
 
-  object RunnerSource:
-    // The published stubs named in `res/core/xek/runners.*`.
-    def standard: RunnerSource = Remote(Runners.baseUrl, Runners.hashes)
+  object ClientSource:
+    // The published stubs named in `res/core/xek/client.*`.
+    def standard: ClientSource = Remote(Client.baseUrl, Client.hashes)
 
   // The bundled Java runtime *preference* recorded in the ETHRCFG block. Records
-  // a preference only — the runner downloads a JRE/JDK at runtime; nothing is
+  // a preference only — the client downloads a JRE/JDK at runtime; nothing is
   // embedded in the artifact.
   enum Bundle:
     case Jre, Jdk
 
   // How the application's classes reach the runtime.
   enum Dependencies:
-    case FatJar(jar: Path on Linux)         // the fat jar, appended to the runner as-is
+    case FatJar(jar: Path on Linux)         // the fat jar, appended to the client as-is
     case BurdockRemote(jar: Path on Linux)  // a macro-built thin jar that fetches deps (Stage C)
 
   case class JavaPolicy(minimum: Int = 21, preferred: Int = 24, bundle: Bundle = Bundle.Jre)
@@ -87,7 +87,7 @@ case class Packaging
    delivery:     Packaging.Delivery,
    dependencies: Packaging.Dependencies,
    output:       Path on Linux,
-   runnerSource: Packaging.RunnerSource,
+   clientSource: Packaging.ClientSource,
    java:         Packaging.JavaPolicy        = Packaging.JavaPolicy(),
    signing:      Optional[Packaging.Signing] = Unset,
    buildId:      Long                        = 0L )

@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use ml_dsa::{B32, Keypair, MlDsa44, Signature, SigningKey, signature::Signer};
 use rand::{TryRngCore, rngs::OsRng};
 
-// Layout — specified in spec/ethrcfg.md; read by src/runner/src/config.rs.
+// Layout — specified in spec/ethrcfg.md; read by src/client/src/config.rs.
 const MAGIC: [u8; 8]            = *b"ETHRCFG\x03";
 const RECORD_LEN: usize         = 3764;
 const SIGNATURE_OFFSET: usize   = 1344;

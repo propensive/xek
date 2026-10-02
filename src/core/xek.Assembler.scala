@@ -76,8 +76,8 @@ object Assembler:
 
     output
 
-  // Checks that a file is a JAR a runner can launch with `java -jar`: a ZIP whose manifest names
-  // a `Main-Class`. The runner never names a class itself, so without one the daemon cannot
+  // Checks that a file is a JAR a client can launch with `java -jar`: a ZIP whose manifest names
+  // a `Main-Class`. The client never names a class itself, so without one the daemon cannot
   // start, and this is the last point at which that can be said clearly.
   def checkJar(jar: Path on Local): Unit raises Error =
     val file = ji.File(jar.encode.s)

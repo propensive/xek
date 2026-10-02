@@ -45,7 +45,7 @@ pub fn launch(
     };
 
     // Re-invoke ourselves in wrapper mode so the daemon process appears under
-    // the client's name (the launcher binary is this runner with the JAR
+    // the client's name (the launcher binary is this client with the JAR
     // appended). The wrapper exec's java synchronously and forwards signals.
     // The mode is selected by an environment variable, not an argument, so
     // that the application's own argv has no reserved values.

@@ -7,7 +7,7 @@ out/
 # Cargo
 target/
 
-# Build outputs: runner stubs and packaged executables, neither of which is source
+# Build outputs: client stubs and packaged executables, neither of which is source
 dist/
 
 # Editors

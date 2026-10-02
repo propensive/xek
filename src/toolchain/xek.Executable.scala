@@ -34,10 +34,10 @@ import anthology.*
 import gossamer.*
 
 // A command-line-runnable XEK executable: an application JAR packaged for direct invocation
-// from a shell, built on the reusable runner stubs and the polyglot scripts. The
+// from a shell, built on the reusable client stubs and the polyglot scripts. The
 // delivery mode is part of the node's identity, since each is a different distributable: an
-// installer script embedding every platform's runner (`EmbedAll`), a launcher script that
-// downloads the right runner on first run (`Download`), or a single self-contained binary for
+// installer script embedding every platform's client (`EmbedAll`), a launcher script that
+// downloads the right client on first run (`Download`), or a single self-contained binary for
 // one platform (`Native`).
 case class Executable(delivery: Packaging.Delivery) extends Format.Application:
   def id: Text = delivery match

@@ -72,16 +72,16 @@ object Command:
   val BuildId = Spec(t"build-id", Unset, t"number", t"the build number self-upgrades are ordered by")
   val PublicKey = Spec(t"public-key", Unset, t"file", t"the public key self-upgrades are verified against")
   val AllowDowngrade = Spec(t"allow-downgrade", Unset, Unset, t"accept a self-upgrade to a lower build number")
-  val Runners = Spec(t"runners", Unset, t"directory", t"take unverified stubs from a local directory")
-  val RunnersUrl = Spec(t"runners-url", Unset, t"url", t"download stubs from this URL instead")
-  val RunnersManifest = Spec(t"runners-manifest", Unset, t"file", t"verify downloaded stubs against this manifest")
+  val Client = Spec(t"client", Unset, t"directory", t"take unverified stubs from a local directory")
+  val ClientUrl = Spec(t"client-url", Unset, t"url", t"download stubs from this URL instead")
+  val ClientManifest = Spec(t"client-manifest", Unset, t"file", t"verify downloaded stubs against this manifest")
   val Help = Spec(t"help", 'h', Unset, t"show this help")
   val Version = Spec(t"version", 'v', Unset, t"show the version")
 
   val specs: List[Spec] =
     List
       ( Platform, Polyglot, Download, Exclude, Dispatch, Java, JavaMin, Jdk, BuildId, PublicKey,
-        AllowDowngrade, Runners, RunnersUrl, RunnersManifest, Help, Version )
+        AllowDowngrade, Client, ClientUrl, ClientManifest, Help, Version )
 
   // The words of a command line, sorted: each option given, with its value if it takes one, in
   // order, and the operands.
@@ -193,24 +193,24 @@ object Command:
   // Stubs from a local directory; or from a URL and a manifest, either of which may be given
   // alone to replace the published release's.
   private def source(parsed: Parsed, path: Text => Path on Local): Stubs.Source raises Assembler.Error =
-    val directory: Optional[Text] = parsed.value(Runners)
-    val url: Optional[Text] = parsed.value(RunnersUrl)
-    val manifest: Optional[Text] = parsed.value(RunnersManifest)
+    val directory: Optional[Text] = parsed.value(Client)
+    val url: Optional[Text] = parsed.value(ClientUrl)
+    val manifest: Optional[Text] = parsed.value(ClientManifest)
 
     if directory.present then
       if url.present || manifest.present
-      then abort(usage(m"--runners cannot be combined with --runners-url or --runners-manifest"))
+      then abort(usage(m"--client cannot be combined with --client-url or --client-manifest"))
 
       Stubs.Source.Directory(path(directory.or(t"")))
 
     else if url.present || manifest.present then
       val hashes: Map[Text, Text] =
-        if manifest.absent then xek.Runners.hashes
+        if manifest.absent then xek.Client.hashes
         else Stubs.manifest(String(Files.read(path(manifest.or(t""))), "UTF-8").tt)
 
-      Stubs.Source.Remote(url.or(xek.Runners.baseUrl), hashes)
+      Stubs.Source.Remote(url.or(xek.Client.baseUrl), hashes)
 
-    else xek.Runners.standard
+    else xek.Client.standard
 
   private def target(label: Text): Target raises Assembler.Error =
     Target.parse(label).lest:

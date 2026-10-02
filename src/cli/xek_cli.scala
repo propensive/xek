@@ -79,9 +79,9 @@ object ui:
   val BuildId = Flag[Text](t"build-id", false, Nil, Command.BuildId.description)
   val PublicKey = Flag[Text](t"public-key", false, Nil, Command.PublicKey.description)
   val AllowDowngrade = Flag[Unit](t"allow-downgrade", false, Nil, Command.AllowDowngrade.description)
-  val Runners = Flag[Text](t"runners", false, Nil, Command.Runners.description)
-  val RunnersUrl = Flag[Text](t"runners-url", false, Nil, Command.RunnersUrl.description)
-  val RunnersManifest = Flag[Text](t"runners-manifest", false, Nil, Command.RunnersManifest.description)
+  val Client = Flag[Text](t"client", false, Nil, Command.Client.description)
+  val ClientUrl = Flag[Text](t"client-url", false, Nil, Command.ClientUrl.description)
+  val ClientManifest = Flag[Text](t"client-manifest", false, Nil, Command.ClientManifest.description)
   val Help = Flag[Unit](t"help", false, flag(Command.Help), Command.Help.description)
   val Version = Flag[Unit](t"version", false, flag(Command.Version), Command.Version.description)
 
@@ -134,11 +134,11 @@ private def complete(arguments: List[Argument])(using Cli, Interpreter, WorkingD
     given (Text is Discoverable) = (operand, tab) => Pathname.complete(operand, tab)
     ui.Dispatch.present
     ui.PublicKey.present
-    ui.Runners.present
-    ui.RunnersManifest.present
+    ui.Client.present
+    ui.ClientManifest.present
 
   ui.BuildId.present
-  ui.RunnersUrl.present
+  ui.ClientUrl.present
   ui.Polyglot.present
   ui.Download.present
   ui.Jdk.present
@@ -204,7 +204,7 @@ object Driver:
         out(help)
         Exit.Ok
       else if parsed.has(Command.Version) then
-        out(t"xek $version (runners ${Runners.version})")
+        out(t"xek $version (client ${xek.Client.version})")
         Exit.Ok
       else if words.nil then
         err(help)

@@ -62,9 +62,9 @@ object Packager:
 
     val targets: List[Target] = config.targets.map(target(_))
 
-    val source: Stubs.Source = config.runnerSource.absolve match
-      case Packaging.RunnerSource.Local(directory)      => Stubs.Source.Directory(local(directory))
-      case Packaging.RunnerSource.Remote(baseUrl, hashes) => Stubs.Source.Remote(baseUrl, hashes)
+    val source: Stubs.Source = config.clientSource.absolve match
+      case Packaging.ClientSource.Local(directory)      => Stubs.Source.Directory(local(directory))
+      case Packaging.ClientSource.Remote(baseUrl, hashes) => Stubs.Source.Remote(baseUrl, hashes)
 
     val publicKey: Optional[Data] =
       config.signing.let(_.publicKey).let { path => Array.unsafeFrozen(jnf.Files.readAllBytes(javaPath(path)).nn) }
