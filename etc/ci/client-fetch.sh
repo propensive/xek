@@ -37,7 +37,7 @@ for candidate in "$VERSION" "xek-$VERSION" "xeq-$VERSION"; do
 done
 base="https://github.com/$REPO/releases/download/$TAG"
 
-# Releases up to `xek-0.10` published the stubs as `runner-<label>`; from `xek-1.0.0` they are
+# Releases up to `xek-0.10` published the stubs as `runner-<label>`; from `1.0.0` they are
 # `client-<label>`. Whatever a release called them, they are saved under the current name, which
 # is what everything here looks for.
 case "$VERSION" in
