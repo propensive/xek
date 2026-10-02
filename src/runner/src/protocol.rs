@@ -118,6 +118,13 @@ pub fn closed_document(stream: &str, composition: &Composition) -> Vec<u8> {
     bintel::document(variant::CLOSED, stream_record(stream), composition)
 }
 
+// The status a command the daemon asked to run on the client's terminal ended with.
+pub fn exited_document(code: i32, composition: &Composition) -> Vec<u8> {
+    let mut record = Record::new();
+    record.scalar(0, &code.to_string());
+    bintel::document(variant::EXITED, record, composition)
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Verdict {
     Fresh,
