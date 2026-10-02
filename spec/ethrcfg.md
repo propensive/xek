@@ -6,8 +6,8 @@ An XEK executable is three files joined end to end:
 stub ‖ record ‖ jar
 ```
 
-The *stub* is a bare, generic runner for one platform, published as-is and never modified. The
-*record* is a fixed 3764-byte block, written by the builder, that configures the runner for
+The *stub* is a bare, generic client for one platform, published as-is and never modified. The
+*record* is a fixed 3764-byte block, written by the builder, that configures the client for
 one application: the build id that orders upgrades, the Java version policy, and the public
 key upgrades are verified against. The *jar* is the application, unmodified.
 
@@ -17,18 +17,18 @@ without a signing tool.
 
 ## Finding the record
 
-The runner reads its own executable — the path it was invoked as, which is also the path it
+The client reads its own executable — the path it was invoked as, which is also the path it
 hands the JVM as the JAR — forwards from byte 0, and takes the first occurrence of the 8-byte
 magic `ETHRCFG\x03` as the start of the record, provided 3764 bytes remain from there. A
 verifier checking an upgrade does exactly the same on the candidate file.
 
 Because the record precedes the JAR, "first occurrence" is the record whatever the JAR
-contains. That rests on one invariant: **a stub contains the magic nowhere**. The runner
+contains. That rests on one invariant: **a stub contains the magic nowhere**. The client
 reassembles the magic at run time from an obfuscated constant so that the compiler cannot
-place a literal copy in the binary, and the stub build (`etc/ci/runners-build.sh`) refuses to
+place a literal copy in the binary, and the stub build (`etc/ci/client-build.sh`) refuses to
 publish a stub in which the bytes `ETHRCFG` occur at all.
 
-A runner that finds no record — a bare stub run directly, or a mis-built file — uses the
+A client that finds no record — a bare stub run directly, or a mis-built file — uses the
 defaults in the table below, under which self-upgrade is disabled.
 
 ## Layout
@@ -64,7 +64,7 @@ Total: 3764 bytes.
 
 That is all. In a POSIX shell the whole of step 3 is `cat stub record app.jar > mytool`, and in
 `cmd.exe` it is `copy /b stub+record+app.jar mytool.exe`. The reference builder is the `xek`
-command published with every runner release (`src/core`, behind `src/cli`), which does steps 1–4
+command published with every client release (`src/core`, behind `src/cli`), which does steps 1–4
 and generates the polyglot launcher scripts.
 
 ### Why nothing is signed
@@ -95,19 +95,19 @@ mismatch, on a build id that does not advance, or when the running binary's key 
 ## Changing the layout
 
 Any change to the field layout or to the placement rule increments the version byte in the
-magic (`ETHRCFG\x04`), which makes every existing builder, runner and verifier fail to find
+magic (`ETHRCFG\x04`), which makes every existing builder, client and verifier fail to find
 its magic in a file of the other version. Adding a meaning to a reserved byte, where zero
 keeps the old behaviour, does not.
 
 Version 2, used by releases up to `runners-0.5`, held the record as a static inside the stub
-that a builder byte-patched in place. A v2 runner never finds a v3 record and a v3 runner
+that a builder byte-patched in place. A v2 client never finds a v3 record and a v3 client
 never finds a v2 record, so the two cannot upgrade into each other; see
 [`COMPATIBILITY.md`](COMPATIBILITY.md).
 
 ## Implementations
 
-- `src/runner/src/config.rs` — the reader, in the stub.
-- `src/runner/src/verify.rs` — the verifier.
+- `src/client/src/config.rs` — the reader, in the stub.
+- `src/client/src/verify.rs` — the verifier.
 - `src/sign/src/main.rs` — the signer.
 - `src/core` — the builder: `xek.Record` writes the record and `xek.Assembler` the executable,
   for the `xek` command (`src/cli`) published with each release, and for `xek.Packager`.

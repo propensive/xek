@@ -20,7 +20,7 @@ pub fn check_updates(script: &Path, args: &[OsString], name: &str) {
     if metadata.len() == 0 { return; }
 
     // Read the pending binary and verify its ML-DSA-44 signature against the
-    // public key baked into THIS running runner. A failure here means the
+    // public key baked into THIS running client. A failure here means the
     // file was either unsigned, signed by an unknown key, or tampered with;
     // in any of those cases we delete `.pending` and continue with the
     // existing binary. Verification is authoritative: nothing past this

@@ -19,14 +19,14 @@ pub struct VerifiedBinary {
     pub flags:    u8,
 }
 
-// Verify a candidate upgrade binary against the runner's baked-in public key.
+// Verify a candidate upgrade binary against the client's baked-in public key.
 //
 // Algorithm:
 //   1. Locate the ETHRCFG record in `pending` — the first magic, which is the record a
 //      builder appended after the stub (a stub itself contains no magic).
 //   2. Extract the embedded signature bytes from that block.
 //   3. Make a working copy of the binary with the signature slot zeroed.
-//   4. Verify the signature over the zeroed copy using the running runner's
+//   4. Verify the signature over the zeroed copy using the running client's
 //      public key.
 //
 // Returns the embedded `build_id` and `flags` on success so the caller can
@@ -174,7 +174,7 @@ mod tests {
     fn tampered_build_id_rejected() {
         // Same defence for build_id — flipping it after signing must
         // invalidate the signature, so an attacker cannot lift a low
-        // build_id past the runner's downgrade gate.
+        // build_id past the client's downgrade gate.
         let (sk, pk) = fresh_keypair();
         let mut bin = make_fake_binary(0x100, 1, 0, &pk);
         sign_in_place(&mut bin, &sk, 0x100);
@@ -235,12 +235,12 @@ mod tests {
     }
 
     #[test]
-    fn unset_runner_public_key_rejects_everything() {
+    fn unset_client_public_key_rejects_everything() {
         let (sk, pk) = fresh_keypair();
         let mut bin = make_fake_binary(0x100, 42, 0, &pk);
         sign_in_place(&mut bin, &sk, 0x100);
 
-        // The runner is configured with an all-zero pubkey (no signing
+        // The client is configured with an all-zero pubkey (no signing
         // configured): every upgrade is rejected upfront.
         let zeros = [0u8; PUBKEY_LEN];
         assert!(matches!(verify_pending(&bin, &zeros),

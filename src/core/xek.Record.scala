@@ -34,9 +34,9 @@ import contingency.*
 import fulminate.*
 import vacuous.*
 
-// The 3764-byte ETHRCFG v3 record which configures a runner stub for one application, laid out
+// The 3764-byte ETHRCFG v3 record which configures a client stub for one application, laid out
 // exactly as `spec/ethrcfg.md` describes. A builder writes it between the stub and the JAR; the
-// runner finds it by its magic.
+// client finds it by its magic.
 case class Record
   ( buildId:        Long            = 0L,
     javaMinimum:    Int             = Record.javaMinimum,
@@ -71,7 +71,7 @@ case class Record
     Array.unsafeFrozen(buffer.array().nn)
 
 object Record:
-  // The defaults a runner reads for an unset (zero) field.
+  // The defaults a client reads for an unset (zero) field.
   val javaMinimum: Int = 21
   val javaPreferred: Int = 24
 

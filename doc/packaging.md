@@ -5,8 +5,8 @@
 Shipping a JVM application to someone who just wants to run it starts with distribution: a JAR
 becomes a self-contained executable — a native launcher per platform, or a single polyglot
 installer script that runs as shell script, batch file and PowerShell alike. Building one is
-joining a bare runner stub, a 3764-byte configuration record and the JAR (`stub ‖ record ‖
-jar`); the reference implementation is the `xek` script published with each runner release.
+joining a bare client stub, a 3764-byte configuration record and the JAR (`stub ‖ record ‖
+jar`); the reference implementation is the `xek` script published with each client release.
 
 ### On distribution
 
@@ -35,7 +35,7 @@ launcher on demand and verifying it by hash:
 ```scala
 val jarPath = t"/tmp/mytool.jar".as[Path on Linux]
 val outputPath = t"/tmp/mytool".as[Path on Linux]
-val runnerSource = Runners.standard
+val clientSource = Client.standard
 
 val packaging = Packaging
   ( name         = t"mytool",
@@ -43,7 +43,7 @@ val packaging = Packaging
     delivery     = Packaging.Delivery.EmbedAll,
     dependencies = Packaging.Dependencies.FatJar(jarPath),
     output       = outputPath,
-    runnerSource = runnerSource )
+    clientSource = clientSource )
 
 Packager.pack(packaging)
 ```
@@ -64,27 +64,27 @@ Toolchain(jarEdges(), executableEdges()).produce
     Universe.Classfile,
     Executable(Packaging.Delivery.EmbedAll),
     destination,
-    List(executableOptions.name(t"mytool"), executableOptions.runners.standard),
+    List(executableOptions.name(t"mytool"), executableOptions.client.standard),
     List(EntryPoint(fqcn"com.example.Main")) )
 ```
 
-`executableOptions.runners.standard` names the published runner release, verified against its
-committed manifest, while `runners.local` reads prebuilt stubs from a directory instead. Targets
-default to every platform the runner source names, and `executableOptions.target` adds one
+`executableOptions.client.standard` names the published client release, verified against its
+committed manifest, while `client.local` reads prebuilt stubs from a directory instead. Targets
+default to every platform the client source names, and `executableOptions.target` adds one
 explicitly. `executableOptions.java` sets the minimum and preferred JVM versions, `bundle.jre`
 and `bundle.jdk` ship one alongside, and `signing` and `buildId` configure the self-upgrade
 signing and upgrade ordering recorded in each stub.
 
 ### Where the stubs come from
 
-`Runners.standard` is the published release recorded in this repository's resources, verified
-against its committed manifest; `Packaging.RunnerSource.Local` reads prebuilt stubs from a
-directory instead — the output of `make runners-build` or `make runners-fetch` — which is what
+`Client.standard` is the published release recorded in this repository's resources, verified
+against its committed manifest; `Packaging.ClientSource.Local` reads prebuilt stubs from a
+directory instead — the output of `make client-build` or `make client-fetch` — which is what
 the test suite and `make e2e` use.
 
 The stubs are not built by the Scala build and are never stored in a jar. They are released on
-their own cadence, by tagging `xek-X.Y`, with the `xek` command, and the release opens a pull
-request rewriting the resources the builder reads, so adopting a new runner is a data change.
+their own cadence, by tagging `xek-X.Y.Z`, with the `xek` command, and the release opens a pull
+request rewriting the resources the builder reads, so adopting a new client is a data change.
 `Packager` builds with `xek-core` — the one implementation of the byte format, which the `xek`
 command runs too — so an Anthology build and a user at a shell produce the same bytes.
 

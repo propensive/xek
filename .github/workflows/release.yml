@@ -1,16 +1,16 @@
 name: Release
 
-# A release of xek is cut by tagging — `git tag -s xek-X.Y && git push --tags` — as every other
+# A release of xek is cut by tagging — `git tag -s xek-X.Y.Z && git push --tags` — as every other
 # repository's is, and runs the same script: propensive/.github's release.sh, through etc/shared
 # at the commit pinned in etc/github-ref, configured by etc/release. It gates on a verified signed
 # tag, on CI already green on the tagged commit and on no release of that version existing;
-# assembles the assets with etc/ci/runners-assemble.sh; uploads them to a draft, checks every
-# digest and publishes; then records the hashes in a pull request here (etc/ci/runners-record.sh)
+# assembles the assets with etc/ci/client-assemble.sh; uploads them to a draft, checks every
+# digest and publishes; then records the hashes in a pull request here (etc/ci/client-record.sh)
 # and proposes the release to the repositories in etc/downstream. If anything fails before it is
 # published, the release and the tag are deleted, and the retry is
-# `git tag -d xek-X.Y && git tag -s xek-X.Y && git push --tags`.
+# `git tag -d xek-X.Y.Z && git tag -s xek-X.Y.Z && git push --tags`.
 #
-# What differs from the other repositories is only what is built, and so where: the runner stubs
+# What differs from the other repositories is only what is built, and so where: the client stubs
 # are cross-compiled for five platforms with the pinned nightly and cargo-zigbuild on macOS, where
 # they have always been built, and where Apple's `codesign` ad-hoc signs the macOS stubs.
 
@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: The version to rehearse, as X.Y — the tag would be xek-X.Y
+        description: The version to rehearse, as X.Y.Z — the tag would be xek-X.Y.Z
         required: true
 
 jobs:

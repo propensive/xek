@@ -2,7 +2,7 @@
 
 XEK was built because the JVM is a poor fit for a command line: its startup cost is paid on
 every invocation, and nothing about a JAR behaves like a command. The daemon absorbs the first
-problem and the runner stub the second. This note records how much of that is actually about
+problem and the client stub the second. This note records how much of that is actually about
 the JVM — very little — and which other ecosystems have the same problems, so that the question
 need not be researched twice. It proposes no change; the seam a second runtime would use is
 described at the end, for when one is wanted.
@@ -16,9 +16,9 @@ Three things, and each is easy to delimit:
   one from (Adoptium): five bytes of 3764.
 - **The payload.** A JAR, found by scanning back from the end of the file for the ZIP
   end-of-central-directory record, with the ZIP64 locator fixed up at build time.
-- **The spawn.** The runner starts the daemon as `java -jar <self>`, with the `-Dethereal.*`
+- **The spawn.** The client starts the daemon as `java -jar <self>`, with the `-Dethereal.*`
   properties of [`spec/properties.md`](../spec/properties.md), and the JVM discovery and
-  download that precede it are the one large JVM-only module in the runner.
+  download that precede it are the one large JVM-only module in the client.
 
 Nothing else mentions Java. The wire protocol
 ([`spec/ethereal-launcher.tel`](../spec/ethereal-launcher.tel)), the shared layout and its
@@ -73,7 +73,7 @@ their tools are daemons already, for state rather than startup: Bazel's client a
 Gradle's daemon, the sbt and Mill servers, watchman, rust-analyzer, ghcid, Nx. Each has its own
 client protocol, and each has carried a long tail of bugs around precisely the things in
 `launcher.md`: Gradle daemons going stale, Bazel's interrupt handling, nobody doing `TSTP` and
-`CONT` properly. Bazel's C++ client is the closest existing thing to the XEK runner — find or
+`CONT` properly. Bazel's C++ client is the closest existing thing to the XEK client — find or
 start the server, forward arguments, environment and directory, stream the output, forward
 interrupts — and it is gRPC and bespoke. A tool whose daemon should *feel like a command* could
 adopt `ethereal-launcher.tel` and have the semantics for free. The protocol's name is frozen on

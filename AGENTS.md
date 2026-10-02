@@ -43,37 +43,37 @@ version it declares for its next release. The build reads the file through the `
    Scala here — `src/example`, the end-to-end fixture, included — uses only that release's API.
    When a protocol change needs new daemon behaviour, do not teach the fixture about it: the
    assertion belongs in Soundness's `ethereal` suite, run with `XEK` pointing at an `xek` built
-   from this checkout (`make runners-build`, then `make xek`, which writes `dist/xek`). The order is
+   from this checkout (`make client-build`, then `make xek`, which writes `dist/xek`). The order is
    then fixed: this repository merges and releases first, Soundness bumps `etc/xek.tsv` to the
    new release, and only afterwards may `etc/refs` here move up to the Soundness release that
    followed.
 
 ## The Rust toolchain is a pinned nightly
 
-`rust-toolchain.toml` pins a *nightly by date*, and `etc/ci/runners-build.sh` builds the stubs
+`rust-toolchain.toml` pins a *nightly by date*, and `etc/ci/client-build.sh` builds the stubs
 with unstable flags. This is deliberate: compiling the standard library for size
 (`-Zbuild-std`, `-Cpanic=immediate-abort`) is what takes a stub from ~0.5 MB to 0.2–0.3 MB,
 and nothing stable can reach that because the weight is inside stable's precompiled std (the
 panic backtrace printer and its DWARF reader). The stubs themselves are ordinary native
 binaries; nothing links against them, so the nightly costs users nothing. What it costs is
 that the *build recipe* can rot: a nightly promises nothing about its `-Z` flags, and the pin
-is what keeps `make runners-build` reproducible.
+is what keeps `make client-build` reproducible.
 
 ### Rules
 
 1. **Keep the pin current.** Bump the date in `rust-toolchain.toml` as a matter of course when
-   touching the Rust source, and at the latest before each release (`git tag -s xek-X.Y`), so the stubs
+   touching the Rust source, and at the latest before each release (`git tag -s xek-X.Y.Z`), so the stubs
    are not built by a nightly months behind the compiler's fixes. A bump is its own commit;
    CI's `cargo test` runs on the pinned toolchain and validates it.
 2. **Expect a bump to disturb the flags**, and fix them in the same PR. Everything unstable
-   lives in `runners-build.sh`, each flag with its purpose in a comment, and in
+   lives in `client-build.sh`, each flag with its purpose in a comment, and in
    `etc/ci/zigcc-aarch64-linux.sh`, a shim that drops a linker argument zig rejects. It has
    already happened once: the `panic_immediate_abort` std feature became the
    `-Cpanic=immediate-abort` strategy. When a flag is renamed, replace it; when one stops
    helping, drop it; do not pile up alternatives.
 3. **Measure before and after any change to the flags or the profile**, on all five targets,
-   and put the numbers in the PR. The ready reckoner is `make runners-build` followed by
-   `ls -l dist/runners`; for what is inside a stub, `cargo install cargo-bloat` and run it with
+   and put the numbers in the PR. The ready reckoner is `make client-build` followed by
+   `ls -l dist/client`; for what is inside a stub, `cargo install cargo-bloat` and run it with
    `CARGO_PROFILE_RELEASE_STRIP=false` and the same `-Z` arguments. Compare gzipped sizes too:
    that is what the embed-all polyglot pays. A change that does not save at least ~1% on most
    targets is not worth its churn.

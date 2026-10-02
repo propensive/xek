@@ -38,29 +38,33 @@ import turbulence.*
 import vacuous.*
 
 import charsets.utf8Charset
-import classloaders.threadContextClassloader
 import textSanitizers.skipSanitizer
 
-// The reusable native runner stubs are published independently of any application, as a
+// The reusable native client stubs are published independently of any application, as a
 // GitHub release whose assets are one bare stub per platform, and are verified against a
 // manifest of their SHA-256 hashes. Which release that is, and where it lives, is not
 // compiled in: each release's record pull request writes the three resources read below, so
 // publishing a new set of stubs changes data, not code.
 //
-// The manifest is the same tab-separated format as `etc/runners/<version>.tsv` — one
+// The manifest is the same tab-separated format as `etc/client/<version>.tsv` — one
 // `<label>\t<sha256>` line per platform — so the archived manifests and the embedded one
-// are interchangeable, and `etc/ci/runners-fetch.sh` reads either.
-object Runners:
+// are interchangeable, and `etc/ci/client-fetch.sh` reads either.
+object Client:
+  // The resources travel with this class, so they are read through the classloader that
+  // defines it: the thread's may be another application's — a test runner's, say — holding
+  // another copy of xek with other resources of the same names.
+  private given classloader: Classloader = Classloader[Client.type]
+
   // The published release these hashes came from.
-  lazy val version: Text = cp"/xek/runners.version".read[Text].trim
+  lazy val version: Text = cp"/xek/client.version".read[Text].trim
 
   // Where that release's assets are downloaded from, without a trailing slash. Held as data
   // rather than derived from `version`, so that a set of stubs can be republished — or
   // mirrored — without changing this code.
-  lazy val baseUrl: Text = cp"/xek/runners.url".read[Text].trim
+  lazy val baseUrl: Text = cp"/xek/client.url".read[Text].trim
 
   // Lowercase SHA-256 hex of each published stub, by platform label.
-  lazy val hashes: Map[Text, Text] = Stubs.manifest(cp"/xek/runners.tsv".read[Text])
+  lazy val hashes: Map[Text, Text] = Stubs.manifest(cp"/xek/client.tsv".read[Text])
 
   // The published stubs, as a source to build from.
   def standard: Stubs.Source = Stubs.Source.Remote(baseUrl, hashes)
@@ -68,9 +72,9 @@ object Runners:
   // Every platform the published release names.
   def labels: List[Text] = hashes.keys.to[List]
 
-  // The published filename for a platform's bare runner stub (Windows stubs carry `.exe`).
-  def runnerName(label: Text): Text =
-    if label.starts(t"windows") then t"runner-$label.exe" else t"runner-$label"
+  // The published filename for a platform's bare client stub (Windows stubs carry `.exe`).
+  def clientName(label: Text): Text =
+    if label.starts(t"windows") then t"client-$label.exe" else t"client-$label"
 
-  // The URL a platform's bare runner stub is published at.
-  def url(label: Text): Text = t"$baseUrl/${runnerName(label)}"
+  // The URL a platform's bare client stub is published at.
+  def url(label: Text): Text = t"$baseUrl/${clientName(label)}"

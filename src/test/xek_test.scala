@@ -111,8 +111,8 @@ object Tests extends Suite(m"XEK tests"):
     def stubOf(dir: Path on Linux, target: Target): Path on Linux = sub(dir, target.stub)
 
     // A directory of fake "stubs": shell scripts that echo and exit before the appended record
-    // and JAR are ever reached, so the whole chain runs with no daemon and no real runner.
-    def fakeRunners(): Path on Linux =
+    // and JAR are ever reached, so the whole chain runs with no daemon and no real client.
+    def fakeClient(): Path on Linux =
       val dir = tempDir()
       Target.all.each: target =>
         val stub = stubOf(dir, target)
@@ -187,15 +187,15 @@ object Tests extends Suite(m"XEK tests"):
         fault(Record(publicKey = Array.unsafeFrozen(scala.Array.fill[Byte](10)(1))).data)
       .assert(_ == Assembler.Fault.Format)
 
-    // The schema in `spec/ethereal-launcher.tel` is the contract, and `src/runner/src/bintel.rs`
-    // pins the hash of its base as the constant from which the runner derives every signature
+    // The schema in `spec/ethereal-launcher.tel` is the contract, and `src/client/src/bintel.rs`
+    // pins the hash of its base as the constant from which the client derives every signature
     // it writes and compares on the wire. Derive the one from the other, so that neither can
     // change without the other: a schema edit that forgets the constant, or a constant edited
     // by hand, fails here rather than at the first document. The base's hash is taken with the
     // schema's layers removed (BinTEL §8.1), so adding a layer must leave it unchanged.
     suite(m"Launcher protocol"):
       import stratiform.*
-      // Read from the jar this suite was loaded from: the host runner's classloader does
+      // Read from the jar this suite was loaded from: the host client's classloader does
       // not expose the jar's resources by name.
       def resource(name: String): Text =
         val location = Tests.getClass.nn.getProtectionDomain.nn.getCodeSource.nn.getLocation.nn
@@ -230,71 +230,71 @@ object Tests extends Suite(m"XEK tests"):
           i = source.indexOf("0x", i + 4)
         builder.toString.tt
 
-      // The runner writes the base's signature as the pinned hash followed by a trailer that
+      // The client writes the base's signature as the pinned hash followed by a trailer that
       // makes every byte XOR to the cadence 0x79 (BinTEL §8.2); the same arithmetic, here,
       // must reproduce what Stratiform derives, or the two sides' framing differs.
-      def runnerSignature: Text =
+      def clientSignature: Text =
         val hash = pinned.s.grouped(2).map(Integer.parseInt(_, 16)).toList
         val trailer = hash.foldLeft(0x79)(_ ^ _) & 0xff
         (hash :+ trailer).map { byte => String.format("%02x", Integer.valueOf(byte)) }.mkString.tt
 
-      test(m"the runner pins the hash of the base schema in spec/"):
+      test(m"the client pins the hash of the base schema in spec/"):
         derived.s.take(64).tt
       .check(_ == pinned)
 
-      test(m"the runner's palimpsest arithmetic reproduces the base signature"):
+      test(m"the client's palimpsest arithmetic reproduces the base signature"):
         derived
-      .check(_ == runnerSignature)
+      .check(_ == clientSignature)
 
     suite(m"native"):
       test(m"output equals stub ‖ record ‖ jar, byte for byte"):
-        val dir = tempDir(); val runners = fakeRunners(); val jar = fakeJar(dir)
+        val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir)
         val out = dir/t"tool"
-        build(Options(jar = local(jar), output = local(out), source = Stubs.Source.Directory(local(runners))), dir)
-        sha(out) == sha(cat(dir, stubOf(runners, host), record(dir), jar))
+        build(Options(jar = local(jar), output = local(out), source = Stubs.Source.Directory(local(client))), dir)
+        sha(out) == sha(cat(dir, stubOf(client, host), record(dir), jar))
       .assert(_ == true)
 
       test(m"runs, and is executable"):
-        val dir = tempDir(); val runners = fakeRunners(); val jar = fakeJar(dir)
-        build(Options(jar = local(jar), source = Stubs.Source.Directory(local(runners))), dir)
+        val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir)
+        build(Options(jar = local(jar), source = Stubs.Source.Directory(local(client))), dir)
         sh"${dir/t"app"}".exec[Text]().trim
       .assert(_ == t"ran-$hostLabel")
 
       test(m"rebases a ZIP64 JAR's locator, so the result still opens as a ZIP"):
-        val dir = tempDir(); val runners = fakeRunners(); val jar = fakeJar(dir, 65600)
+        val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir, 65600)
         val out = dir/t"tool"
-        build(Options(jar = local(jar), output = local(out), source = Stubs.Source.Directory(local(runners))), dir)
+        build(Options(jar = local(jar), output = local(out), source = Stubs.Source.Directory(local(client))), dir)
         val zip = juz.ZipFile(out.encode.s)
         try (Zip64.locator(bytes(jar)).present, zip.size) finally zip.close()
       .assert(_ == (true, 65601))
 
       test(m"refuses a JAR with no main class"):
-        val dir = tempDir(); val runners = fakeRunners(); val jar = dir/t"app.jar"
+        val dir = tempDir(); val client = fakeClient(); val jar = dir/t"app.jar"
         writeText(jar, t"JARBYTES\n")
-        fault(build(Options(jar = local(jar), source = Stubs.Source.Directory(local(runners))), dir))
+        fault(build(Options(jar = local(jar), source = Stubs.Source.Directory(local(client))), dir))
       .assert(_ == Assembler.Fault.Format)
 
       test(m"writes one executable per platform, named for each"):
-        val dir = tempDir(); val runners = fakeRunners(); val jar = fakeJar(dir)
+        val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir)
         val options =
-          Options(jar = local(jar), targets = List(Target.LinuxX64, Target.WindowsX64), source = Stubs.Source.Directory(local(runners)))
+          Options(jar = local(jar), targets = List(Target.LinuxX64, Target.WindowsX64), source = Stubs.Source.Directory(local(client)))
         build(options, dir).map(_.name)
       .assert(_ == List(t"app-linux-x64", t"app-windows-x64.exe"))
 
     suite(m"polyglot"):
       test(m"unpacks to the native executable for the host, record and all"):
-        val dir = tempDir(); val runners = fakeRunners(); val jar = fakeJar(dir); val out = dir/t"tool"
-        build(Options(jar = local(jar), output = local(out), polyglot = true, source = Stubs.Source.Directory(local(runners))), dir)
+        val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir); val out = dir/t"tool"
+        build(Options(jar = local(jar), output = local(out), polyglot = true, source = Stubs.Source.Directory(local(client))), dir)
         val ran = sh"$out".exec[Text]().trim
-        (ran, sha(out) == sha(cat(dir, stubOf(runners, host), record(dir), jar)))
+        (ran, sha(out) == sha(cat(dir, stubOf(client, host), record(dir), jar)))
       .assert(_ == (t"ran-$hostLabel", true))
 
       test(m"leaves out an excluded shell's section, and still runs in sh"):
-        val dir = tempDir(); val runners = fakeRunners(); val jar = fakeJar(dir); val out = dir/t"tool"
+        val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir); val out = dir/t"tool"
         val options =
           Options
             ( jar = local(jar), output = local(out), polyglot = true, exclude = List(Shell.Bat),
-              source = Stubs.Source.Directory(local(runners)) )
+              source = Stubs.Source.Directory(local(client)) )
 
         build(options, dir)
         val text = String(bytes(out), "UTF-8").tt
@@ -302,11 +302,11 @@ object Tests extends Suite(m"XEK tests"):
       .assert(_ == (true, false, t"ran-$hostLabel"))
 
       test(m"includes only the stubs for the platforms asked for"):
-        val dir = tempDir(); val runners = fakeRunners(); val jar = fakeJar(dir); val out = dir/t"tool"
+        val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir); val out = dir/t"tool"
         val options =
           Options
             ( jar = local(jar), output = local(out), polyglot = true, targets = List(Target.LinuxX64, host),
-              source = Stubs.Source.Directory(local(runners)) )
+              source = Stubs.Source.Directory(local(client)) )
 
         build(options, dir)
         String(bytes(out), "UTF-8").tt.cut(t"\n").filter(_.starts(t"index:")).prim.or(t"")
@@ -314,28 +314,28 @@ object Tests extends Suite(m"XEK tests"):
 
       if safely(sh"pwsh -Version".exec[Exit]()) == Exit.Ok then
         test(m"unpacks in PowerShell to the same native executable"):
-          val dir = tempDir(); val runners = fakeRunners(); val jar = fakeJar(dir); val out = dir/t"tool.ps1"
-          build(Options(jar = local(jar), output = local(out), polyglot = true, source = Stubs.Source.Directory(local(runners))), dir)
+          val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir); val out = dir/t"tool.ps1"
+          build(Options(jar = local(jar), output = local(out), polyglot = true, source = Stubs.Source.Directory(local(client))), dir)
           // The installer registers tab-completions in the PowerShell profile, which is kept in a
           // scratch directory, not the user's own.
           val config: Text = tempDir().encode
           val ran = sh"env XDG_CONFIG_HOME=$config pwsh -NoProfile -File $out".exec[Text]().trim
-          (ran, sha(dir/t"tool") == sha(cat(dir, stubOf(runners, host), record(dir), jar)))
+          (ran, sha(dir/t"tool") == sha(cat(dir, stubOf(client, host), record(dir), jar)))
         .assert(_ == (t"ran-$hostLabel", true))
 
     suite(m"download (online launcher)"):
       test(m"fetches the stub over file://, appends record and jar, runs"):
-        val dir = tempDir(); val runners = fakeRunners(); val jar = fakeJar(dir); val out = dir/t"tool"
-        val hashes: Map[Text, Text] = Target.all.map { target => (target.label, sha(stubOf(runners, target))) }.to[Map]
-        val source = Stubs.Source.Remote(t"file://${runners.encode}", hashes)
+        val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir); val out = dir/t"tool"
+        val hashes: Map[Text, Text] = Target.all.map { target => (target.label, sha(stubOf(client, target))) }.to[Map]
+        val source = Stubs.Source.Remote(t"file://${client.encode}", hashes)
         build(Options(jar = local(jar), output = local(out), download = true, source = source), dir)
         val ran = sh"$out".exec[Text]().trim
-        (ran, sha(out) == sha(cat(dir, stubOf(runners, host), record(dir), jar)))
+        (ran, sha(out) == sha(cat(dir, stubOf(client, host), record(dir), jar)))
       .assert(_ == (t"ran-$hostLabel", true))
 
       test(m"needs stubs at a URL"):
-        val dir = tempDir(); val runners = fakeRunners(); val jar = fakeJar(dir)
-        fault(plan(Options(jar = local(jar), download = true, source = Stubs.Source.Directory(local(runners)))))
+        val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir)
+        fault(plan(Options(jar = local(jar), download = true, source = Stubs.Source.Directory(local(client)))))
       .assert(_ == Assembler.Fault.Usage)
 
     suite(m"dispatch"):
@@ -354,16 +354,16 @@ object Tests extends Suite(m"XEK tests"):
 
     suite(m"stubs"):
       test(m"a download whose hash differs is refused"):
-        val runners = fakeRunners()
-        val source = Stubs.Source.Remote(t"file://${runners.encode}", Map(host.label -> t"00"))
+        val client = fakeClient()
+        val source = Stubs.Source.Remote(t"file://${client.encode}", Map(host.label -> t"00"))
         fault(Stubs.resolve(source, host, local(tempDir()))(_ => ()))
       .assert(_ == Assembler.Fault.Format)
 
       test(m"a cached stub is used without downloading it again"):
-        val runners = fakeRunners()
-        val hashes: Map[Text, Text] = Map(host.label -> sha(stubOf(runners, host)))
+        val client = fakeClient()
+        val hashes: Map[Text, Text] = Map(host.label -> sha(stubOf(client, host)))
         val directory = local(tempDir())
-        Stubs.resolve(Stubs.Source.Remote(t"file://${runners.encode}", hashes), host, directory)(_ => ())
+        Stubs.resolve(Stubs.Source.Remote(t"file://${client.encode}", hashes), host, directory)(_ => ())
         val unreachable = Stubs.Source.Remote(t"file:///nonexistent", hashes)
         Stubs.resolve(unreachable, host, directory)(_ => ()).name
       .assert(_ == host.stub)
@@ -443,12 +443,12 @@ object Tests extends Suite(m"XEK tests"):
     def config
        (delivery:     Packaging.Delivery,
         dependencies: Packaging.Dependencies,
-        runnerSource: Packaging.RunnerSource = Packaging.RunnerSource.Remote(t"https://x.test/", Map()),
+        clientSource: Packaging.ClientSource = Packaging.ClientSource.Remote(t"https://x.test/", Map()),
         targets:      List[Text]             = List(t"linux-x64"))
     :   Packaging =
       val dir = tempDir()
       Packaging(name = t"hello", targets = targets, delivery = delivery, dependencies = dependencies,
-                output = dir/t"hello", runnerSource = runnerSource)
+                output = dir/t"hello", clientSource = clientSource)
 
     val fatJar: Packaging.Dependencies = Packaging.Dependencies.FatJar(fakeJar(tempDir()))
 
@@ -458,9 +458,9 @@ object Tests extends Suite(m"XEK tests"):
           Packaging.Dependencies.BurdockRemote(tempDir()/t"app.jar"))))
       .assert(_ => true)
 
-      test(m"remote runner with no hash for the target is rejected"):
+      test(m"remote client with no hash for the target is rejected"):
         capture[Packager.Error](Packager.pack(config(Packaging.Delivery.Native, fatJar,
-          Packaging.RunnerSource.Remote(t"https://example.invalid/", Map()))))
+          Packaging.ClientSource.Remote(t"https://example.invalid/", Map()))))
       .assert(_ => true)
 
       test(m"native delivery with multiple targets is rejected"):
@@ -470,12 +470,12 @@ object Tests extends Suite(m"XEK tests"):
 
     suite(m"Packager assembly"):
       test(m"Native delivery builds a byte-correct host binary"):
-        val dir = tempDir(); val runners = fakeRunners()
+        val dir = tempDir(); val client = fakeClient()
         val jar = fakeJar(dir)
         val out = dir/t"hello"
         Packager.pack(Packaging(name = t"hello", targets = List(hostLabel),
           delivery = Packaging.Delivery.Native, dependencies = Packaging.Dependencies.FatJar(jar),
-          output = out, runnerSource = Packaging.RunnerSource.Local(runners)))
+          output = out, clientSource = Packaging.ClientSource.Local(client)))
         sh"$out".exec[Text]().trim
       .assert(_ == t"ran-$hostLabel")
 
@@ -483,12 +483,12 @@ object Tests extends Suite(m"XEK tests"):
     val dockerOk = safely(sh"docker info".exec[Exit]()) == Exit.Ok
     if dockerOk then
       def linuxCheck(platform: Text, label: Text): Boolean =
-        val dir = tempDir(); val runners = fakeRunners(); val jar = fakeJar(dir); val out = dir/t"tool"
-        build(Options(jar = local(jar), output = local(out), polyglot = true, source = Stubs.Source.Directory(local(runners))), dir)
+        val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir); val out = dir/t"tool"
+        build(Options(jar = local(jar), output = local(out), polyglot = true, source = Stubs.Source.Directory(local(client))), dir)
         val mount = t"${dir.encode}:/work"
         sh"docker run --rm --platform $platform -v $mount -w /work ubuntu:24.04 ./tool".exec[Text]().trim == t"ran-$label"
       // Docker being installed does not mean every platform can run under it: linux/arm64 on
-      // an x86-64 host needs QEMU binfmt registered, which GitHub's runners do not have. Probe
+      // an x86-64 host needs QEMU binfmt registered, which GitHub's client do not have. Probe
       // each platform and step aside where it cannot run, rather than reporting the
       // environment as a failure.
       def dockerRuns(platform: Text): Boolean =

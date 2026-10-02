@@ -2,7 +2,7 @@
 
 **A JVM application as a single executable file.**
 
-XEK is the Cross-platform Executable Kit. An XEK executable is a small native *runner stub*
+XEK is the Cross-platform Executable Kit. An XEK executable is a small native *client stub*
 with the application's JAR appended to it. Running it starts — or reuses — a background daemon
 holding a warm JVM, forwards the invocation's arguments, environment, streams and signals to it,
 and returns its exit status. So the JVM's startup cost is paid once rather than once per
@@ -45,7 +45,7 @@ xek --java 25 --java-min 21 --jdk app.jar
 ```
 
 Options may come before or after the JAR, and `xek --help` lists them all. The `--java` options
-record which runtime an executable wants: the runner uses a suitable installed Java, and
+record which runtime an executable wants: the client uses a suitable installed Java, and
 otherwise downloads the preferred version from Adoptium on first run. `xek '{admin}' install`
 installs tab-completions for `xek`, as for any XEK executable.
 
@@ -53,10 +53,10 @@ installs tab-completions for `xek`, as for any XEK executable.
 
 | Path | |
 |---|---|
-| `src/runner` | The runner stub, in Rust: platform detection, JVM discovery, the daemon handshake, terminal modes, signals, and signed self-upgrade. 0.2–0.3 MB per platform |
+| `src/client` | The client stub, in Rust: platform detection, JVM discovery, the daemon handshake, terminal modes, signals, and signed self-upgrade. 0.2–0.3 MB per platform |
 | `src/sign` | `ethereal-sign` — keygen and signing for the self-upgrade path |
 | `src/core` | The builder: the configuration record, stubs (local, or downloaded, verified and cached), native assembly, and the polyglot launchers (`res/core/xek`) — one file valid as `sh`, `.bat` and PowerShell |
-| `src/cli` | The `xek` command: `core` behind a command line with tab-completions, and an XEK executable itself. Published with the runners |
+| `src/cli` | The `xek` command: `core` behind a command line with tab-completions, and an XEK executable itself. Published with the client |
 | `src/packager` | `Packager` — turns a `Packaging` into a distributable with `core` |
 | `src/toolchain` | The same packaging as an [Anthology](https://github.com/propensive/soundness) toolchain format, so an application compiles and packages in one pass |
 | `spec/` | **The contract** between a launcher and a daemon, and the reason the two can be developed apart |
@@ -110,11 +110,11 @@ describes.
 ```sh
 make build           # the Scala modules
 make xek             # dist/xek, the `xek` command, built by itself
-make test            # the test suite, through the `fume` runner
-make cargo-test      # the runner's own unit tests
+make test            # the test suite, through the `fume` client
+make cargo-test      # the client's own unit tests
 
-make runners-build   # cross-compile the five stubs into dist/runners
-make runners-fetch RUNNERS_VERSION=0.5   # or download them, hash-verified
+make client-build   # cross-compile the five stubs into dist/client
+make client-fetch RUNNERS_VERSION=0.5   # or download them, hash-verified
 
 make e2e             # package the example app around a real stub and run it
 ```
@@ -123,41 +123,52 @@ The Scala side resolves Soundness components from `~/.ivy2/local`; `make sync-re
 VERSION=X.Y.Z` in a Soundness checkout puts them there. The compiler is the
 [proscala](https://github.com/propensive/proscala) fork, downloaded and cached automatically.
 
-## Releasing runner stubs
+## Releasing client stubs
 
 Stubs are released on their own cadence, and only when the Rust source changes, by tagging — as
 every repository in the ecosystem is released:
 
 ```sh
-git tag -s xek-0.10 && git push --tags
+git tag -s xek-1.0.0 && git push --tags
 ```
 
 The tag fires `.github/workflows/release.yml`, which runs the shared `release.sh` from
 [propensive/.github](https://github.com/propensive/.github) as configured by `etc/release`. It
 gates on a verified signed tag and on CI already being green on that commit; cross-compiles the
 five stubs and builds the `xek` command around them, as a polyglot `xek` and a native
-`xek-<platform>` for each platform (`etc/ci/runners-assemble.sh`); uploads them to the
-`xek-0.10` release, with `0.10.SHA256SUMS`, and checks every digest; and, if anything fails,
+`xek-<platform>` for each platform (`etc/ci/client-assemble.sh`); uploads them to the
+`xek-1.0.0` release, with `1.0.0.SHA256SUMS`, and checks every digest; and, if anything fails,
 deletes the release and the tag. Once the release is public it opens two draft pull requests: one
-here recording the hashes in `etc/runners/0.10.tsv` and `etc/runners/0.10.SHA256SUMS` and
-rewriting `res/core/xek/runners.{tsv,version,url}`, the resources the builder reads
-(`etc/ci/runners-record.sh`); and one in Soundness moving its `etc/xeq.tsv` to the release
+here recording the hashes in `etc/client/1.0.0.tsv` and `etc/client/1.0.0.SHA256SUMS` and
+rewriting `res/core/xek/client.{tsv,version,url}`, the resources the builder reads
+(`etc/ci/client-record.sh`); and one in Soundness moving its `etc/xeq.tsv` to the release
 (`etc/downstream`). Adopting a release is therefore a data change, not a code change, and an
-application picks up a runner fix without anything being rebuilt.
+application picks up a client fix without anything being rebuilt.
+
+The `xek` command is itself an XEK executable, run by a daemon built from the Soundness release
+pinned in `etc/refs`. When the protocol base has moved since that daemon was written, the
+command is wrapped in the stubs of the last release that daemon speaks — `etc/command-stubs`
+says which — while packaging applications with the new ones; the pull request that moves
+`etc/refs` to a daemon speaking the new base sets it back to `current`.
+
+Versions are `X.Y.Z` from `1.0.0`: the first two-part versions, up to `xek-0.10`, predate the
+protocol's settling, and a third part now distinguishes a client fix, which changes no contract,
+from a release that revises `spec/`.
 
 To rehearse a release without publishing anything, from a checkout of the commit to be tagged:
 
 ```sh
-RELEASE_DRY_RUN=1 ./etc/shared release.sh xek-0.10
+RELEASE_DRY_RUN=1 ./etc/shared release.sh xek-1.0.0
 ```
 
 ## Status
 
 Extracted from Soundness, where this machinery grew as the `ziggurat` library and the Rust
-runner inside `ethereal`. Runner releases up to `runners-0.5` were published from that
-repository under the `runners-` tag prefix; releases from here use `xek-`, and `xek-0.6` — the
+client inside `ethereal`. Client releases up to `runners-0.5` were published from that
+repository under the `client-` tag prefix; releases from here use `xek-`, and `xek-0.6` — the
 first made from this repository — supersedes them and adds the builder as a release asset: a
-polyglot shell script up to `xek-0.9`, and the `xek` command after it.
+polyglot shell script up to `xek-0.9`, and the `xek` command after it. `xek-1.0.0` is the first
+three-part version, and the first whose base signature the daemon side adopted after release.
 
 ## Licence
 

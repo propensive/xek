@@ -7,7 +7,7 @@ at the first message rather than misreading fields. Above the base, the schema m
 
 | Release | Protocol | Base signature (BLAKE3-256 + cadence) | `ETHRCFG` | Reference daemon |
 |---|---|---|---|---|
-| `xek-0.11` | `ethereal-launcher` BinTEL | `55d18c247b88db8fc6af7a197c56ee2b680084d1800afe8947a2f613c70492e563` | v3 | none yet: the Soundness release after 0.69.0 |
+| `xek-1.0.0` | `ethereal-launcher` BinTEL | `55d18c247b88db8fc6af7a197c56ee2b680084d1800afe8947a2f613c70492e563` | v3 | none yet: the Soundness release after 0.69.0 |
 | `xek-0.10` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
 | `xek-0.9` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
 | `xek-0.8` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
@@ -18,16 +18,16 @@ at the first message rather than misreading fields. Above the base, the schema m
 | `runners-0.3` and earlier | line-oriented (`i`/`e`/`m`/`s`/`x`/`v` opcodes) | — | v2 | Soundness ≤ 0.64.0 |
 
 Releases up to and including `runners-0.5` were published from the Soundness repository, at
-`propensive/soundness`, before this project was extracted, under the tag prefix `runners-`.
+`propensive/soundness`, before this project was extracted, under the tag prefix `client-`.
 Releases from this repository use the prefix `xek-`, and each carries the five stubs and the
 `xek` builder. Up to `xek-0.9` the builder was a polyglot shell script (as `xek` and `xek.cmd`,
 the same bytes); from `xek-0.10` it is the `xek` command, itself an XEK executable, published as
 a polyglot `xek` (and `xek.cmd`) and as a native `xek-<platform>` for each platform. Their hashes
-are recorded in `etc/runners/`.
+are recorded in `etc/client/`.
 
 The signature is pinned in three places, which the test suites check against each other:
 
-- `src/runner/src/bintel.rs`, as the `BASE` hash from which the runner derives every
+- `src/client/src/bintel.rs`, as the `BASE` hash from which the client derives every
   signature it writes and compares on the wire;
 - `spec/ethereal-launcher.tel`, from which it is derived;
 - the daemon's own tests (`ethereal_test.scala` in Soundness, "the schema signature is pinned").
@@ -55,7 +55,8 @@ negotiation described under *Layers and acceptances* below: the launcher reads t
 acceptance before its first connection and writes under the richest composition both hold.
 Against a daemon that publishes no acceptance it behaves exactly as `xek-0.8` does.
 
-`xek-0.11` revises the base: an invocation becomes **one connection**, a session of framed
+`xek-1.0.0` — versions are `X.Y.Z` from here, a third part marking a client fix that changes
+no contract — revises the base: an invocation becomes **one connection**, a session of framed
 documents in both directions, where before it was an `init` connection carrying raw stdin and
 stdout, a `stderr` connection, a `control` connection, a connection per `signal` and one for
 `exit`. Those three variants go; `data`, `end`, `credit` and `open` arrive, with a `Bytes`
@@ -99,7 +100,7 @@ same base:
 | holds layer 1 | holds layers 1–2 | both use the base with layer 1 |
 | any | another base | the launcher reports the mismatch before connecting |
 
-So a layer is a **compatible** change — the runner and the daemon may adopt it in either order,
+So a layer is a **compatible** change — the client and the daemon may adopt it in either order,
 on their own cadences — and a base revision remains the **breaking** one, released as
 `spec/README.md` describes. What may go in a layer is constrained by what makes the launcher's
 prefix rule sound and its compiled-in keyword indices stable, and by TEL itself:
@@ -120,7 +121,7 @@ check. The layers, their hashes and the signature of each prefix belong in the t
 they are released, pinned in the same three places as the base.
 
 No layer exists yet: the base is the whole schema, and the mechanism is exercised by the
-runner's tests against fixture hashes until the first feature that needs a layer arrives.
+client's tests against fixture hashes until the first feature that needs a layer arrives.
 
 ## Record versions
 

@@ -1,10 +1,10 @@
-# The Rust toolchain for everything Cargo builds here: the runner stubs and their unit tests.
+# The Rust toolchain for everything Cargo builds here: the client stubs and their unit tests.
 #
 # A *nightly*, pinned by date, because the stubs are built with `-Zbuild-std` (see
-# etc/ci/runners-build.sh): compiling the standard library for size, without the panic
+# etc/ci/client-build.sh): compiling the standard library for size, without the panic
 # backtrace printer that stable's precompiled std always links, roughly halves every stub. A
 # nightly promises nothing about its unstable flags, so the pin is what keeps the build
-# reproducible. Bump it deliberately, and expect to adjust the flags in runners-build.sh when
+# reproducible. Bump it deliberately, and expect to adjust the flags in client-build.sh when
 # you do — AGENTS.md says how. `rust-src` is what `-Zbuild-std` compiles; the targets are the
 # five platforms the stubs are cross-compiled for.
 [toolchain]
