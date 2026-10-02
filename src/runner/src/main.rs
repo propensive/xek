@@ -1,7 +1,6 @@
 use std::env;
 use std::ffi::OsString;
-use std::io::{self, Read, Write};
-use std::net::Shutdown;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -10,6 +9,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 mod acceptance;
 mod bintel;
 mod config;
+mod descriptors;
+mod session;
 mod state;
 mod java;
 mod launch;
@@ -42,12 +43,10 @@ macro_rules! debug {
 use protocol::ClientInfo;
 use uds::UnixStream;
 
-const FORWARD_BUFFER_SIZE: usize = 4096;
 const TERMINATION_POLL: Duration = Duration::from_millis(50);
-// After a termination signal, how long the invocation's stderr is drained before the
-// launcher gives up on it and dies. The daemon closes the stderr connection when the
-// invocation ends, so this bounds only an invocation that accepted the signal and then
-// failed to act on it.
+// After a termination signal, how long the session is given to end — the invocation's
+// stderr to drain and its exit status to arrive — before the launcher gives up on it and
+// dies. This bounds only an invocation that accepted the signal and then failed to act on it.
 const TERMINATION_GRACE: Duration = Duration::from_secs(2);
 const STARTUP_FAILURE_EXIT_CODE: i32 = 2;
 
@@ -178,7 +177,7 @@ fn main() {
     let composition = negotiate(&acceptance_file, &name);
 
     if internal {
-        std::process::exit(run_non_interactive(&socket_file, &script, &args, &composition));
+        std::process::exit(run_non_interactive(&socket_file, &script, &args, &composition, &name));
     }
 
     // The terminal is ours to reconfigure only when stdin is a terminal *and* this process is
@@ -206,8 +205,8 @@ fn main() {
 
     let info = ClientInfo::collect(&script, invoked_as, &args, attached, bg_color.as_deref());
     debug!("main: connecting to daemon (pid={})", info.pid);
-    let (main_socket, stderr_socket) = match connect_to_daemon(&socket_file, &info, &composition) {
-        Ok(connections) => { debug!("main: connected to daemon"); connections },
+    let socket = match UnixStream::connect(&socket_file) {
+        Ok(socket) => { debug!("main: connected to daemon"); socket },
         Err(e) => {
             debug!("main: connect failed: {}", e);
             tty::restore_tty_state(&saved_tty);
@@ -215,75 +214,69 @@ fn main() {
         }
     };
 
-    // The control channel lets the running command ask for a cooked (canonical) terminal —
-    // ordinary echo and line editing — instead of the raw mode set above, and ask for raw
-    // mode back afterwards. Only opened for a terminal we are entitled to reconfigure: with
-    // a pipe there is nothing to switch, and the extra connection would be pure cost.
-    if attached {
-        match UnixStream::connect(&socket_file) {
-            Ok(mut control) => {
-                protocol::send_control_request(&mut control, info.pid, &composition);
-                debug!("main: control channel open");
-                spawn_control(control, saved_tty, composition.clone());
-            }
-
-            Err(error) => debug!("main: control channel unavailable: {}", error),
-        }
-    }
-
     // Stdin is forwarded from a foreground terminal or from anything that is not a terminal
     // (a pipe, a file). A terminal we may not read — a background job — is presented to the
-    // daemon as already at end-of-file. Either way the write half of the connection is shut
-    // down once stdin is exhausted, which is how the invocation's stdin reaches EOF: dropping
-    // the forwarder's clone of the socket is not enough while other clones stay open.
-    let stdin_socket = main_socket.try_clone().expect("clone main socket");
-    if attached || !stdin_tty {
-        let stdin_reader = std::io::Cursor::new(leftover).chain(std::io::stdin());
-        spawn_stdin_forwarder(stdin_reader, stdin_socket);
+    // daemon as already at end-of-file. The session's `mode` documents — a command asking for
+    // a cooked (canonical) terminal, ordinary echo and line editing, instead of the raw mode
+    // set above, and for raw mode back afterwards — apply only to a terminal we are entitled
+    // to reconfigure.
+    let stdin: Option<Box<dyn Read + Send>> = if attached || !stdin_tty {
+        Some(Box::new(std::io::Cursor::new(leftover).chain(std::io::stdin())))
     } else {
-        let _ = stdin_socket.shutdown(Shutdown::Write);
-    }
-    let stdout_thread = spawn_output_forwarder(
-        main_socket.try_clone().expect("clone main socket"),
-        std::io::stdout(),
-        socket_file.clone(), info.pid, "stdout", composition.clone(),
-    );
-    let stderr_thread = spawn_output_forwarder(
-        stderr_socket.try_clone().expect("clone stderr socket"),
-        std::io::stderr(),
-        socket_file.clone(), info.pid, "stderr", composition.clone(),
-    );
+        None
+    };
+    let session = session::open(socket, &info, composition, session::Options {
+        tty: if attached { Some(saved_tty) } else { None },
+        stdin,
+    });
 
     // Set to the terminating signal's number (or, on Windows, the exit code for the console
     // event) once the daemon has accepted a termination the launcher must follow.
     let termination = Arc::new(AtomicI32::new(0));
-    signals::install(socket_file.clone(), composition.clone(), info.pid, termination.clone(), saved_tty, attached);
+    signals::install(session.signaler(), termination.clone(), saved_tty, attached);
     #[cfg(windows)]
     if info.stdout_tty { signals::watch_for_resize(); }
 
-    // When termination is flagged, shut down the main socket so the stdout forwarder
-    // unblocks at once, then bound the stderr drain: the daemon closes that connection when
-    // the invocation ends, but an invocation that accepted the signal and then ignored it
-    // must not keep the launcher alive.
-    let socket_for_shutdown = main_socket.try_clone().expect("clone main socket");
+    // When termination is flagged, stop writing the invocation's stdout at once, then bound
+    // the wait for the session to end: the daemon ends it when the invocation does, but an
+    // invocation that accepted the signal and then ignored it must not keep the launcher
+    // alive.
+    let monitor_session = session.clone();
     let monitor_flag = termination.clone();
     std::thread::spawn(move || {
         while monitor_flag.load(Ordering::SeqCst) == 0 { std::thread::sleep(TERMINATION_POLL); }
-        let _ = socket_for_shutdown.shutdown(Shutdown::Both);
+        monitor_session.discard_stdout();
         std::thread::sleep(TERMINATION_GRACE);
-        let _ = stderr_socket.shutdown(Shutdown::Both);
+        monitor_session.close();
     });
 
-    let _ = stdout_thread.join();
+    let outcome = session.wait();
     tty::restore_tty_state(&saved_tty);
-    let _ = stderr_thread.join();
 
     let signal = termination.load(Ordering::SeqCst);
     if signal != 0 {
         debug!("main: terminated by signal {}; dying by it", signal);
         signals::die(signal);
     }
-    std::process::exit(protocol::terminate(&socket_file, info.pid, &composition));
+    std::process::exit(conclude(outcome, &name));
+}
+
+// The launcher's exit status from the session's end. A daemon that closed the connection
+// without a word did not understand `init`: it speaks another protocol, which is said here
+// since a daemon that publishes no acceptance cannot be told apart from one before connecting.
+fn conclude(outcome: session::Outcome, name: &str) -> i32 {
+    match outcome {
+        session::Outcome::Exited(code) => code,
+        session::Outcome::Refused => {
+            xek::clear();
+            eprintln!("\nThe {name} daemon speaks another launcher protocol: it ended the session without answering.");
+            STARTUP_FAILURE_EXIT_CODE
+        }
+        session::Outcome::Dropped => {
+            eprintln!("\nThe {name} daemon ended the session without reporting the exit status.");
+            STARTUP_FAILURE_EXIT_CODE
+        }
+    }
 }
 
 fn parse_arguments(raw: Vec<OsString>) -> (PathBuf, Vec<OsString>, bool) {
@@ -351,102 +344,6 @@ fn strip_extended_prefix(path: PathBuf) -> PathBuf {
     path
 }
 
-fn connect_to_daemon(socket_path: &Path, info: &ClientInfo, composition: &bintel::Composition)
--> io::Result<(UnixStream, UnixStream)> {
-    let mut main_socket = UnixStream::connect(socket_path)?;
-    protocol::send_init(&mut main_socket, info, composition);
-    let mut stderr_socket = UnixStream::connect(socket_path)?;
-    protocol::send_stderr_request(&mut stderr_socket, info.pid, composition);
-    Ok((main_socket, stderr_socket))
-}
-
-fn spawn_forwarder(
-    reader: impl Read + Send + 'static,
-    writer: impl Write + Send + 'static,
-    flush_each_chunk: bool,
-) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || forward(reader, writer, flush_each_chunk))
-}
-
-// The stdin direction: copy until stdin is exhausted, then half-close the connection so
-// the daemon's read of the invocation's stdin returns end-of-file while the other
-// direction — the invocation's stdout — stays open.
-fn spawn_stdin_forwarder(
-    reader: impl Read + Send + 'static,
-    socket: UnixStream,
-) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || {
-        forward(reader, &socket, false);
-        debug!("main: stdin exhausted; half-closing");
-        let _ = socket.shutdown(Shutdown::Write);
-    })
-}
-
-// Apply terminal-mode commands from the daemon as they arrive. The thread ends when the
-// daemon closes the connection at client exit; the main path's `restore_tty_state` remains
-// the backstop for whatever mode we were left in.
-fn spawn_control(mut reader: UnixStream, saved: tty::TtyState, composition: bintel::Composition) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || {
-        loop {
-            match bintel::read_document(&mut reader) {
-                Err(_) => break,
-                Ok(document) => match bintel::parse_reply(&document, &composition) {
-                    Some(bintel::Reply::Mode { canonical: true })  => tty::set_cooked_mode(&saved),
-                    Some(bintel::Reply::Mode { canonical: false }) => tty::set_raw_mode(),
-                    other => debug!("main: unrecognised control document {:?}", other),
-                },
-            }
-        }
-    })
-}
-
-fn forward(mut reader: impl Read, mut writer: impl Write, flush_each_chunk: bool) {
-    let mut buffer = [0u8; FORWARD_BUFFER_SIZE];
-    loop {
-        match reader.read(&mut buffer) {
-            Ok(0) | Err(_) => break,
-            Ok(count) => {
-                if writer.write_all(&buffer[..count]).is_err() { break; }
-                if flush_each_chunk { let _ = writer.flush(); }
-            }
-        }
-    }
-    let _ = writer.flush();
-}
-
-// An output direction: the invocation's stdout or stderr, to the client's. When the client's
-// side can no longer be written — `mytool | head -1`, once head has gone — the daemon is told
-// (`closed`) so it can fail the invocation's writes as a broken pipe would, and the socket
-// goes on being drained so that a daemon which does not act on that is never blocked writing
-// it, which would leave the invocation, and so the launcher, waiting forever.
-fn spawn_output_forwarder(
-    mut reader: UnixStream,
-    mut writer: impl Write + Send + 'static,
-    socket_file: PathBuf,
-    pid: u32,
-    stream: &'static str,
-    composition: bintel::Composition,
-) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || {
-        let mut buffer = [0u8; FORWARD_BUFFER_SIZE];
-        let mut open = true;
-        loop {
-            match reader.read(&mut buffer) {
-                Ok(0) | Err(_) => break,
-                Ok(count) => {
-                    if open && writer.write_all(&buffer[..count]).is_err() {
-                        debug!("main: {} has no reader; telling the daemon", stream);
-                        open = false;
-                        protocol::send_closed(&socket_file, pid, stream, &composition);
-                    }
-                    if open { let _ = writer.flush(); }
-                }
-            }
-        }
-        if open { let _ = writer.flush(); }
-    })
-}
-
 // The composition to write under, or a legible failure: a daemon whose acceptance names
 // another base cannot be spoken to at all, and saying so here beats a connection the daemon
 // silently closes. A daemon that published nothing is sent the base alone.
@@ -467,32 +364,26 @@ fn negotiate(acceptance_file: &Path, name: &str) -> bintel::Composition {
     }
 }
 
-fn run_non_interactive(socket_file: &Path, script: &Path, args: &[OsString], composition: &bintel::Composition) -> i32 {
+fn run_non_interactive(socket_file: &Path, script: &Path, args: &[OsString], composition: &bintel::Composition, name: &str) -> i32 {
     debug_log(format!(
         "run_non_interactive socket={} args={:?}", socket_file.display(), args,
     ));
 
     let info = ClientInfo::collect(script, None, args, false, None);
-    let (main_socket, stderr_socket) = match connect_to_daemon(socket_file, &info, composition) {
-        Ok(connections) => { debug_log("connected"); connections }
+    let socket = match UnixStream::connect(socket_file) {
+        Ok(socket) => { debug_log("connected"); socket }
         Err(error) => {
             debug_log(format!("connect failed: {}", error));
             return STARTUP_FAILURE_EXIT_CODE;
         }
     };
 
-    // Nothing is forwarded from stdin, so the invocation sees it at end-of-file at once.
-    let _ = main_socket.shutdown(Shutdown::Write);
-    let stdout_thread = spawn_forwarder(main_socket, std::io::stdout(), true);
-    let stderr_thread = spawn_forwarder(stderr_socket, std::io::stderr(), true);
-
-    let _ = stdout_thread.join();
-    debug_log("stdout joined");
-    let _ = stderr_thread.join();
-    debug_log("stderr joined; calling terminate");
-    let exit_code = protocol::terminate(socket_file, info.pid, composition);
-    debug_log(format!("terminate returned {}", exit_code));
-    exit_code
+    // Nothing is forwarded from stdin, so the invocation sees it at end-of-file at once; the
+    // terminal is never touched.
+    let session = session::open(socket, &info, composition.clone(), session::Options { tty: None, stdin: None });
+    let outcome = session.wait();
+    debug_log(format!("session over: {:?}", outcome));
+    conclude(outcome, name)
 }
 
 impl ClientInfo {
@@ -558,6 +449,7 @@ impl ClientInfo {
             umask: tty::umask(),
             size: if stdout_tty { size } else { None },
             codepages: tty::codepages(),
+            descriptors: descriptors::inherited(),
         }
     }
 }

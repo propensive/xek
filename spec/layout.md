@@ -129,8 +129,8 @@ order `ethereal-launcher.tel` declares them:
    layer of the specification being a published component. A prefix that matches nothing
    the launcher holds — a layer newer than it — denotes nothing, and so does one that matches
    two.
-3. Every document of the invocation, on every connection it opens, is written under that
-   composition and carries its signature.
+3. Every document of the invocation's session, and the `verify` it may ask beforehand, is
+   written under that composition and carries its signature.
 
 **The daemon answers in kind.** Every document the daemon writes on a connection is written
 under the composition of the connection's opening document. In the terms of §8.4, the opening
@@ -138,11 +138,15 @@ document's signature *is* the launcher's acceptance: one alternative, no compone
 flags — "send me exactly this". Layers are per schema, not per direction, so the composition a
 launcher can write is precisely the one it can read.
 
-**When there is nothing to read.** A daemon that predates acceptances writes no file, and a
-file the launcher cannot parse is treated as absent: the launcher writes the base alone, which
-is what such a daemon reads. When no alternative is servable — every one names another base,
-or requires a layer this launcher lacks — the launcher reports, before it connects, that the
-daemon speaks another protocol, naming both bases, and exits with status 2.
+**When there is nothing to read.** A daemon that publishes no acceptance — one that predates
+them, or has not yet implemented them — writes no file, and a file the launcher cannot parse
+is treated as absent: the launcher writes the base alone, which is what such a daemon reads if
+it shares the base. When no alternative is servable — every one names another base, or
+requires a layer this launcher lacks — the launcher reports, before it connects, that the
+daemon speaks another protocol, naming both bases, and exits with status 2. A daemon that
+published nothing and holds another base can only close the connection on reading `init`; the
+launcher takes a session that ends before the daemon has written anything as the same
+mismatch, and reports it the same way.
 
 ## Lifecycle
 
@@ -168,14 +172,13 @@ runs against it is ordinary. The daemon therefore stops accepting and lets in-fl
 invocations finish, as for `shutdown`; the launcher that asked waits for its pid to
 disappear before starting the successor, and after a bounded wait proceeds regardless, since
 a successor bound to a fresh socket path is not disturbed by a predecessor draining on the old
-one. The reference daemon currently exits at once on a stale verdict, ending anything in
-flight; that is the behaviour to change.
+one.
 
 **A daemon that accepts and then hangs.** The launcher bounds every wait for a *reply*: a
-`signal-ack` by `ETHEREAL_SIGNAL_TIMEOUT_MS` (default 250 ms), and a `verdict` or an
-`exit-status` by 10 seconds, after which it reports that the daemon did not answer and exits
-with status 2 (for a missing verdict it proceeds as if fresh). It does *not* bound the
-invocation itself: the streams stay open for as long as the application runs, which may be
-forever by design. A daemon that accepted `init` and then wedges is therefore indistinguishable
-from a long-running command until the client ends its input or sends a signal, and the signal
-path is what surfaces it — a rejected or unanswered `INT` ends the launcher.
+`signal-ack` by `ETHEREAL_SIGNAL_TIMEOUT_MS` (default 250 ms), and a `verdict` by 10 seconds,
+after which it proceeds as if fresh. It does *not* bound the session itself: it stays open for
+as long as the application runs, which may be forever by design, and the `exit-status` that
+ends it comes when the invocation does. A daemon that accepted `init` and then wedges is
+therefore indistinguishable from a long-running command until the client ends its input or
+sends a signal, and the signal path is what surfaces it — a rejected or unanswered `INT` ends
+the launcher.

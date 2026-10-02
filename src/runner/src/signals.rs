@@ -1,15 +1,12 @@
-use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
+use std::time::Duration;
 
-use crate::bintel::Composition;
 use crate::protocol::{SignalAck, SignalDetail};
+use crate::session::Signaler;
 use crate::tty::TtyState;
 
-static SOCKET_PATH: OnceLock<PathBuf> = OnceLock::new();
-// The composition the invocation's documents are written under; see `acceptance.rs`.
-static COMPOSITION: OnceLock<Composition> = OnceLock::new();
-static CLIENT_PID: AtomicU32 = AtomicU32::new(0);
+static SIGNALER: OnceLock<Arc<Signaler>> = OnceLock::new();
 static TERMINATION: OnceLock<Arc<AtomicI32>> = OnceLock::new();
 static SAVED_TTY: OnceLock<TtyState> = OnceLock::new();
 // Whether this launcher put the terminal into raw mode, and so must put it back after a
@@ -20,32 +17,13 @@ static TIMEOUT_MS: AtomicU32 = AtomicU32::new(250);
 
 const DEFAULT_TIMEOUT_MS: u32 = 250;
 
-fn forward_signal(name: &str, detail: SignalDetail) -> SignalAck {
-    if let (Some(path), Some(composition)) = (SOCKET_PATH.get(), COMPOSITION.get()) {
-        // UnixStream::connect is not strictly async-signal-safe (allocates),
-        // but this matches the pre-existing TcpStream::connect behaviour and
-        // has been reliable in practice. Revisit only if signal storms cause
-        // trouble.
-        crate::protocol::send_signal(
-            path.as_path(),
-            CLIENT_PID.load(Ordering::SeqCst),
-            name,
-            detail,
-            TIMEOUT_MS.load(Ordering::SeqCst) as u64,
-            composition,
-        )
-    } else {
-        SignalAck::Timeout
+// Sends the signal over the session and waits for the daemon's answer. On Unix this runs on
+// the courier thread, never in a handler; see below.
+fn forward(name: &str, detail: SignalDetail) -> SignalAck {
+    match SIGNALER.get() {
+        Some(signaler) => signaler.signal(name, detail, Duration::from_millis(TIMEOUT_MS.load(Ordering::SeqCst) as u64)),
+        None => SignalAck::Timeout,
     }
-}
-
-// The terminal's size travels with the signals that say it may have changed: WINCH, and
-// CONT, since the window may have been resized while the job was stopped. A POSIX signal
-// carries no payload and the daemon holds no terminal to ask, so this is the only way it
-// can learn the new size. TIOCGWINSZ is async-signal-safe.
-#[cfg(unix)]
-fn sized() -> SignalDetail {
-    SignalDetail { size: crate::tty::terminal_size(), deadline_ms: None }
 }
 
 // Records that the launcher must die once the invocation's streams are drained: by the
@@ -57,17 +35,8 @@ fn flag_termination(code: i32) {
     }
 }
 
-fn install_state(
-    socket_path: PathBuf,
-    composition: Composition,
-    pid: u32,
-    termination: Arc<AtomicI32>,
-    saved_tty: TtyState,
-    raw_mode_owned: bool,
-) {
-    let _ = SOCKET_PATH.set(socket_path);
-    let _ = COMPOSITION.set(composition);
-    CLIENT_PID.store(pid, Ordering::SeqCst);
+fn install_state(signaler: Arc<Signaler>, termination: Arc<AtomicI32>, saved_tty: TtyState, raw_mode_owned: bool) {
+    let _ = SIGNALER.set(signaler);
     let _ = TERMINATION.set(termination);
     let _ = SAVED_TTY.set(saved_tty);
     RAW_MODE_OWNED.store(raw_mode_owned, Ordering::SeqCst);
@@ -79,6 +48,23 @@ fn install_state(
 }
 
 // ── Unix ──────────────────────────────────────────────────────────────────────
+//
+// A handler may only do what is async-signal-safe, and sending a document on the session is
+// not: it takes the writer queue's lock, which the thread the signal interrupted may hold. So
+// the handler and the session meet through two pipes. The handler writes the signal to the
+// request pipe and waits, with `poll`, for one byte on the answer pipe; a courier thread
+// reads the request, sends the `signal` document and waits for `signal-ack`, and writes the
+// answer back. `write`, `poll` and `read` are all async-signal-safe, and nothing allocates.
+
+#[cfg(unix)]
+static REQUEST_WRITE: AtomicI32 = AtomicI32::new(-1);
+#[cfg(unix)]
+static ANSWER_READ: AtomicI32 = AtomicI32::new(-1);
+
+#[cfg(unix)]
+const ACCEPTED: u8 = 1;
+#[cfg(unix)]
+const REJECTED: u8 = 0;
 
 #[cfg(unix)]
 fn signal_name(signal: libc::c_int) -> Option<&'static str> {
@@ -94,6 +80,73 @@ fn signal_name(signal: libc::c_int) -> Option<&'static str> {
         libc::SIGCONT  => "CONT",
         _ => return None,
     })
+}
+
+#[cfg(unix)]
+const FORWARDED: [libc::c_int; 9] = [
+    libc::SIGINT, libc::SIGQUIT, libc::SIGWINCH, libc::SIGTERM,
+    libc::SIGHUP, libc::SIGUSR1, libc::SIGUSR2, libc::SIGTSTP, libc::SIGCONT,
+];
+
+// The terminal's size travels with the signals that say it may have changed: WINCH, and
+// CONT, since the window may have been resized while the job was stopped. A POSIX signal
+// carries no payload and the daemon holds no terminal to ask, so this is the only way it
+// can learn the new size. TIOCGWINSZ is async-signal-safe, so it is read in the handler.
+#[cfg(unix)]
+fn carries_size(signal: libc::c_int) -> bool { signal == libc::SIGWINCH || signal == libc::SIGCONT }
+
+// The handler's half: a five-byte request (the signal, then the columns and rows, big-endian,
+// zero when not measured), then the answer byte, or none within the timeout.
+#[cfg(unix)]
+fn request_from_handler(signal: libc::c_int) -> SignalAck {
+    let request_fd = REQUEST_WRITE.load(Ordering::SeqCst);
+    let answer_fd = ANSWER_READ.load(Ordering::SeqCst);
+    if request_fd < 0 || answer_fd < 0 { return SignalAck::Timeout; }
+
+    // An answer that arrived after an earlier request timed out would be read as this one's.
+    let mut stale = [0u8; 16];
+    while poll_readable(answer_fd, 0) {
+        if unsafe { libc::read(answer_fd, stale.as_mut_ptr() as *mut libc::c_void, stale.len()) } <= 0 { break; }
+    }
+
+    let (columns, rows) = if carries_size(signal) { crate::tty::terminal_size().unwrap_or((0, 0)) } else { (0, 0) };
+    let request = [signal as u8, (columns >> 8) as u8, columns as u8, (rows >> 8) as u8, rows as u8];
+    if unsafe { libc::write(request_fd, request.as_ptr() as *const libc::c_void, request.len()) } != request.len() as isize {
+        return SignalAck::Timeout;
+    }
+    if !poll_readable(answer_fd, TIMEOUT_MS.load(Ordering::SeqCst) as libc::c_int) { return SignalAck::Timeout; }
+    let mut answer = [0u8; 1];
+    if unsafe { libc::read(answer_fd, answer.as_mut_ptr() as *mut libc::c_void, 1) } != 1 { return SignalAck::Timeout; }
+    if answer[0] == ACCEPTED { SignalAck::Accept } else { SignalAck::Reject }
+}
+
+#[cfg(unix)]
+fn poll_readable(fd: libc::c_int, timeout_ms: libc::c_int) -> bool {
+    let mut descriptor = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
+    loop {
+        let ready = unsafe { libc::poll(&mut descriptor, 1, timeout_ms) };
+        if ready > 0 { return descriptor.revents & libc::POLLIN != 0; }
+        if ready == 0 { return false; }
+        if std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted { return false; }
+    }
+}
+
+// The courier's half: for each request, the document, the wait, the answer byte.
+#[cfg(unix)]
+fn courier(request_read: libc::c_int, answer_write: libc::c_int) {
+    let mut request = [0u8; 5];
+    loop {
+        if !matches!(crate::descriptors::read(request_read, &mut request), Ok(5)) { return; }
+        let signal = request[0] as libc::c_int;
+        let columns = u16::from_be_bytes([request[1], request[2]]);
+        let rows = u16::from_be_bytes([request[3], request[4]]);
+        let Some(name) = signal_name(signal) else { continue };
+        let size = if carries_size(signal) && columns > 0 && rows > 0 { Some((columns, rows)) } else { None };
+        let ack = forward(name, SignalDetail { size, deadline_ms: None });
+        if signal == libc::SIGTERM && ack == SignalAck::Accept { flag_termination(signal); }
+        let answer = [if ack == SignalAck::Accept { ACCEPTED } else { REJECTED }];
+        let _ = crate::descriptors::write_all(answer_write, &answer);
+    }
 }
 
 // Restores the OS default action for `signal` and raises it on this process. For a
@@ -124,7 +177,9 @@ fn fallback(signal: libc::c_int) {
 // never see the signal — and a launcher that overrode it would then, on a rejected forward,
 // restore the default action and die of a signal its caller had asked it to ignore.
 // `sigaction` rather than `signal`, so restart semantics are explicit rather than
-// implementation-defined: the forwarders' blocking reads must resume after a handler runs.
+// implementation-defined: the session's blocking reads must resume after a handler runs.
+// Every forwarded signal is masked while a handler runs, so one request and its answer are
+// never interleaved with another's.
 #[cfg(unix)]
 pub(crate) fn install_handler(signal: libc::c_int, handler: extern "C" fn(libc::c_int)) {
     unsafe {
@@ -138,26 +193,34 @@ pub(crate) fn install_handler(signal: libc::c_int, handler: extern "C" fn(libc::
         action.sa_sigaction = handler as *const () as libc::sighandler_t;
         action.sa_flags = libc::SA_RESTART;
         libc::sigemptyset(&mut action.sa_mask);
+        for forwarded in FORWARDED { libc::sigaddset(&mut action.sa_mask, forwarded); }
         libc::sigaction(signal, &action, std::ptr::null_mut());
     }
 }
 
 #[cfg(unix)]
-pub fn install(
-    socket_path: PathBuf,
-    composition: Composition,
-    pid: u32,
-    termination: Arc<AtomicI32>,
-    saved_tty: TtyState,
-    raw_mode_owned: bool,
-) {
-    install_state(socket_path, composition, pid, termination, saved_tty, raw_mode_owned);
+fn pipe() -> Option<(libc::c_int, libc::c_int)> {
+    let mut fds = [0 as libc::c_int; 2];
+    if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 { return None; }
+    for fd in fds {
+        unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC); }
+    }
+    Some((fds[0], fds[1]))
+}
 
-    let signals = [
-        libc::SIGINT, libc::SIGQUIT, libc::SIGWINCH, libc::SIGTERM,
-        libc::SIGHUP, libc::SIGUSR1, libc::SIGUSR2, libc::SIGTSTP, libc::SIGCONT,
-    ];
-    for signal in signals { install_handler(signal, handler); }
+#[cfg(unix)]
+pub fn install(signaler: Arc<Signaler>, termination: Arc<AtomicI32>, saved_tty: TtyState, raw_mode_owned: bool) {
+    install_state(signaler, termination, saved_tty, raw_mode_owned);
+
+    let (Some((request_read, request_write)), Some((answer_read, answer_write))) = (pipe(), pipe()) else {
+        crate::debug!("signals: no pipes; signals will not be forwarded");
+        return;
+    };
+    REQUEST_WRITE.store(request_write, Ordering::SeqCst);
+    ANSWER_READ.store(answer_read, Ordering::SeqCst);
+    std::thread::spawn(move || courier(request_read, answer_write));
+
+    for signal in FORWARDED { install_handler(signal, handler); }
 }
 
 #[cfg(unix)]
@@ -165,16 +228,10 @@ extern "C" fn handler(signal: libc::c_int) {
     match signal {
         libc::SIGTSTP => suspend(),
         libc::SIGCONT => resume(),
-        _ => {
-            let Some(name) = signal_name(signal) else { return };
-            let detail = if signal == libc::SIGWINCH { sized() } else { SignalDetail::default() };
-            let ack = forward_signal(name, detail);
-            if signal == libc::SIGTERM && ack == SignalAck::Accept { flag_termination(signal); }
-            match ack {
-                SignalAck::Accept                      => {}
-                SignalAck::Reject | SignalAck::Timeout => fallback(signal),
-            }
-        }
+        _ => match request_from_handler(signal) {
+            SignalAck::Accept                      => {}
+            SignalAck::Reject | SignalAck::Timeout => fallback(signal),
+        },
     }
 }
 
@@ -184,7 +241,7 @@ extern "C" fn handler(signal: libc::c_int) {
 // here, and execution resumes here on SIGCONT, when the handler is put back.
 #[cfg(unix)]
 fn suspend() {
-    let _ = forward_signal("TSTP", SignalDetail::default());
+    let _ = request_from_handler(libc::SIGTSTP);
     if RAW_MODE_OWNED.load(Ordering::SeqCst) {
         if let Some(saved) = SAVED_TTY.get() { crate::tty::restore_tty_state(saved); }
     }
@@ -210,7 +267,7 @@ fn resume() {
     if RAW_MODE_OWNED.load(Ordering::SeqCst) && crate::tty::in_foreground() {
         crate::tty::set_raw_mode();
     }
-    let _ = forward_signal("CONT", sized());
+    let _ = request_from_handler(libc::SIGCONT);
 }
 
 // The end of a launcher that was told to terminate: the invocation's streams are drained,
@@ -239,17 +296,12 @@ fn fallback(name: &str) {
     }
 }
 
+// The console handler runs on a thread of its own, with no async-signal-safety rule, so it
+// sends on the session directly.
 #[cfg(windows)]
-pub fn install(
-    socket_path: PathBuf,
-    composition: Composition,
-    pid: u32,
-    termination: Arc<AtomicI32>,
-    saved_tty: TtyState,
-    raw_mode_owned: bool,
-) {
+pub fn install(signaler: Arc<Signaler>, termination: Arc<AtomicI32>, saved_tty: TtyState, raw_mode_owned: bool) {
     use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
-    install_state(socket_path, composition, pid, termination, saved_tty, raw_mode_owned);
+    install_state(signaler, termination, saved_tty, raw_mode_owned);
     unsafe { SetConsoleCtrlHandler(Some(console_handler), 1); }
 }
 
@@ -273,7 +325,7 @@ unsafe extern "system" fn console_handler(ctrl_type: u32) -> windows_sys::Win32:
         size: None,
         deadline_ms: if ending { Some(CONTROL_EVENT_DEADLINE_MS) } else { None },
     };
-    let ack = forward_signal(name, detail);
+    let ack = forward(name, detail);
     if ending && ack == SignalAck::Accept { flag_termination(CONTROL_EXIT_STATUS); }
     match ack {
         SignalAck::Accept                      => {}
@@ -303,7 +355,7 @@ pub fn watch_for_resize() {
             let current = crate::tty::terminal_size();
             if current.is_some() && current != last {
                 last = current;
-                let _ = forward_signal("WINCH", SignalDetail { size: current, deadline_ms: None });
+                let _ = forward("WINCH", SignalDetail { size: current, deadline_ms: None });
             }
         }
     });

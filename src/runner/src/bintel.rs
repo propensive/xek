@@ -6,8 +6,9 @@
 //! The schema's keyword order is compiled in: the document root has a single `select Message`
 //! member, so a message is the root node (child count 1) containing one variant node whose
 //! keyword index is the variant's position in the select, followed by the variant record's
-//! fields in declaration order. Fields are scalars (index, byte length, UTF-8 bytes) or flags
-//! (index alone).
+//! fields in declaration order. A field is a scalar (index, byte length, bytes — UTF-8 for a
+//! `String`, raw for the `base-256` `Bytes`), a flag (index alone) or a record (index, child
+//! count, its own fields).
 //!
 //! The schema is a *base* and, in time, *layers* (TEL §20.3): a layer appends optional members
 //! to existing records, so the base's keyword indices never move and a layer's fields take the
@@ -18,9 +19,9 @@
 //! other signature is rejected before a field is read, so a runner and a daemon that disagree
 //! fail loudly rather than misread each other.
 //!
-//! No general TEL machinery is here — no schema parsing, no hashing, no BASE-256 — because
-//! the runner is a size-optimised launcher and the contract is fixed at build time. The
-//! component hashes are pinned constants, and a signature is a few XORs over them.
+//! No general TEL machinery is here — no schema parsing, no hashing, no BASE-256 alphabet —
+//! because the runner is a size-optimised launcher and the contract is fixed at build time.
+//! The component hashes are pinned constants, and a signature is a few XORs over them.
 
 use std::io::{self, Read};
 
@@ -29,11 +30,11 @@ pub const MAGIC: [u8; 4] = [0xB2, 0xC4, 0xB5, 0xBB];
 
 /// The BLAKE3-256 value hash of the `ethereal-launcher` base schema — the schema with every
 /// `layer` removed (BinTEL §8.1) — pinned here and in the daemon's tests. The base alone has
-/// the 33-byte signature `e50b7e82…1e59e5`.
+/// the 33-byte signature of this hash followed by its cadence trailer.
 pub const BASE: [u8; 32] = [
-    0xe5, 0x0b, 0x7e, 0x82, 0xc1, 0x1b, 0x06, 0x78, 0x3d, 0xaf, 0xa8, 0xa2, 0xec, 0xc4, 0xe3,
-    0x5f, 0x7b, 0xa3, 0x10, 0x44, 0xec, 0xd3, 0x8f, 0xc5, 0xd9, 0xfe, 0x9e, 0x47, 0xa7, 0xc1,
-    0x1e, 0x59,
+    0xa7, 0x72, 0xbc, 0xe7, 0x0d, 0xb9, 0x51, 0xb9, 0x57, 0xbe, 0xc1, 0xcb, 0x86, 0xad, 0xa5,
+    0x51, 0x72, 0x28, 0xcc, 0x11, 0xf5, 0xe6, 0xcc, 0x0d, 0x2c, 0x9f, 0x3a, 0x52, 0x28, 0x1b,
+    0xdc, 0x93,
 ];
 
 /// The kind of a record field, per the schema.
@@ -101,24 +102,29 @@ impl Composition {
 /// Variant indices of `select Message`, in the schema's declaration order.
 pub mod variant {
     pub const INIT: u64 = 0;
-    pub const STDERR: u64 = 1;
-    pub const CONTROL: u64 = 2;
-    pub const SIGNAL: u64 = 3;
-    pub const EXIT: u64 = 4;
-    pub const VERIFY: u64 = 5;
+    pub const DATA: u64 = 1;
+    pub const END: u64 = 2;
+    pub const CREDIT: u64 = 3;
+    pub const OPEN: u64 = 4;
+    pub const SIGNAL: u64 = 5;
     pub const SIGNAL_ACK: u64 = 6;
-    pub const VERDICT: u64 = 7;
-    pub const MODE: u64 = 8;
+    pub const MODE: u64 = 7;
+    pub const CLOSED: u64 = 8;
     pub const EXIT_STATUS: u64 = 9;
-    pub const CLOSED: u64 = 10;
+    pub const VERIFY: u64 = 10;
+    pub const VERDICT: u64 = 11;
     // Sent by tooling, never by the launcher itself; listed so the indices stay complete.
     #[allow(dead_code)]
-    pub const SHUTDOWN: u64 = 11;
+    pub const SHUTDOWN: u64 = 12;
 }
 
-/// The daemon reads documents from a peer it did not choose; so does the runner. A reply
-/// larger than this is not a reply.
-const MAXIMUM_LENGTH: u64 = 1 << 20;
+/// The daemon reads documents from a peer it did not choose; so does the runner. A document
+/// larger than this is not one of ours. Pinned in `spec/launcher.md`, and the daemon's limit
+/// too.
+pub const MAXIMUM_LENGTH: u64 = 1 << 20;
+
+/// The most bytes one `data` document carries (`spec/launcher.md`, *Flow control*).
+pub const MAXIMUM_CHUNK: usize = 65536;
 
 // ── §4 varints ────────────────────────────────────────────────────────────────
 
@@ -150,8 +156,8 @@ pub fn decode_varint(bytes: &[u8]) -> Option<(u64, usize)> {
 
 // ── Encoding ──────────────────────────────────────────────────────────────────
 
-/// The fields of one variant record, accumulated in declaration order (§7.2 canonical order
-/// is member order, and every message here is written that way).
+/// The fields of one record, accumulated in declaration order (§7.2 canonical order is
+/// member order, and every message here is written that way).
 pub struct Record {
     count: u64,
     bytes: Vec<u8>,
@@ -160,15 +166,26 @@ pub struct Record {
 impl Record {
     pub fn new() -> Record { Record { count: 0, bytes: Vec::new() } }
 
-    pub fn scalar(&mut self, index: u64, text: &str) {
+    pub fn scalar(&mut self, index: u64, text: &str) { self.bytes_field(index, text.as_bytes()); }
+
+    /// A `Bytes` scalar: the same node form as a `String`, with no UTF-8 obligation.
+    pub fn bytes_field(&mut self, index: u64, bytes: &[u8]) {
         encode_varint(&mut self.bytes, index);
-        encode_varint(&mut self.bytes, text.len() as u64);
-        self.bytes.extend_from_slice(text.as_bytes());
+        encode_varint(&mut self.bytes, bytes.len() as u64);
+        self.bytes.extend_from_slice(bytes);
         self.count += 1;
     }
 
     pub fn flag(&mut self, index: u64) {
         encode_varint(&mut self.bytes, index);
+        self.count += 1;
+    }
+
+    /// A record-valued member: its index, its child count, its fields.
+    pub fn record(&mut self, index: u64, inner: Record) {
+        encode_varint(&mut self.bytes, index);
+        encode_varint(&mut self.bytes, inner.count);
+        self.bytes.extend_from_slice(&inner.bytes);
         self.count += 1;
     }
 }
@@ -198,13 +215,18 @@ pub fn document(variant: u64, record: Record, composition: &Composition) -> Vec<
 
 // ── Decoding ──────────────────────────────────────────────────────────────────
 
-/// A reply from the daemon.
+/// A document the daemon sends.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Reply {
+pub enum Message {
+    Data { stream: String, bytes: Vec<u8> },
+    End { stream: String },
+    Credit { stream: String, bytes: u64 },
+    Open { stream: String },
     SignalAck { accept: bool },
-    Verdict { fresh: bool },
     Mode { canonical: bool },
+    Closed { stream: String },
     ExitStatus { code: i32 },
+    Verdict { fresh: bool },
 }
 
 /// Reads exactly one framed document from `reader` — the magic number, the length varint and
@@ -237,26 +259,32 @@ pub fn read_document(reader: &mut impl Read) -> io::Result<Vec<u8>> {
     Ok(out)
 }
 
-/// The fields of the base's reply records: `(variant, kind)` for index 0 of each. The base
-/// declares one member per reply record.
+/// The fields of the base's inbound records: `(variant, index)` to kind. The runner reads
+/// only what the daemon sends, so the launcher-to-daemon records are not tabled.
 fn base_field_kind(variant: u64, index: u64) -> Option<Kind> {
     match (variant, index) {
+        (variant::DATA, 0) | (variant::DATA, 1) => Some(Kind::Scalar),
+        (variant::END, 0) | (variant::OPEN, 0) | (variant::CLOSED, 0) => Some(Kind::Scalar),
+        (variant::CREDIT, 0) | (variant::CREDIT, 1) => Some(Kind::Scalar),
         (variant::SIGNAL_ACK, 0) | (variant::VERDICT, 0) | (variant::MODE, 0) => Some(Kind::Flag),
         (variant::EXIT_STATUS, 0) => Some(Kind::Scalar),
         _ => None,
     }
 }
 
-/// How many members the base declares on a reply record.
+/// How many members the base declares on an inbound record.
 fn base_field_count(variant: u64) -> u64 {
     match variant {
-        variant::SIGNAL_ACK | variant::VERDICT | variant::MODE | variant::EXIT_STATUS => 1,
+        variant::DATA | variant::CREDIT => 2,
+        variant::END | variant::OPEN | variant::CLOSED | variant::EXIT_STATUS => 1,
+        variant::SIGNAL_ACK | variant::VERDICT | variant::MODE => 1,
         _ => 0,
     }
 }
 
-/// The kind of field at `index` in a reply variant's record under a composition of the given
-/// depth over `layers`: the base's members first, then those each layer appends, in order.
+/// The kind of field at `index` in an inbound variant's record under a composition of the
+/// given depth over `layers`: the base's members first, then those each layer appends, in
+/// order.
 fn field_kind(layers: &[Layer], depth: usize, variant: u64, index: u64) -> Option<Kind> {
     if let Some(kind) = base_field_kind(variant, index) { return Some(kind); }
     let mut next = base_field_count(variant);
@@ -270,13 +298,14 @@ fn field_kind(layers: &[Layer], depth: usize, variant: u64, index: u64) -> Optio
     None
 }
 
-/// Decodes a framed reply document written under `composition`. `None` for anything that is
-/// not a well-formed document of that composition carrying one reply variant.
-pub fn parse_reply(document: &[u8], composition: &Composition) -> Option<Reply> {
-    parse_reply_with(LAYERS, document, composition)
+/// Decodes a framed document from the daemon, written under `composition`. `None` for
+/// anything that is not a well-formed document of that composition carrying one inbound
+/// variant.
+pub fn parse(document: &[u8], composition: &Composition) -> Option<Message> {
+    parse_with(LAYERS, document, composition)
 }
 
-fn parse_reply_with(layers: &[Layer], document: &[u8], composition: &Composition) -> Option<Reply> {
+fn parse_with(layers: &[Layer], document: &[u8], composition: &Composition) -> Option<Message> {
     let signature = &composition.signature;
     if document.len() < 4 || document[..4] != MAGIC { return None; }
     let mut cur = 4;
@@ -301,7 +330,7 @@ fn parse_reply_with(layers: &[Layer], document: &[u8], composition: &Composition
     cur += n;
 
     let mut flags: Vec<u64> = Vec::new();
-    let mut scalars: Vec<(u64, Vec<u8>)> = Vec::new();
+    let mut scalars: Vec<(u64, &[u8])> = Vec::new();
     for _ in 0..field_count {
         let (index, n) = decode_varint(&document[cur..])?;
         cur += n;
@@ -312,7 +341,7 @@ fn parse_reply_with(layers: &[Layer], document: &[u8], composition: &Composition
                 cur += n;
                 let end = cur.checked_add(length as usize)?;
                 if end > document.len() { return None; }
-                scalars.push((index, document[cur..end].to_vec()));
+                scalars.push((index, &document[cur..end]));
                 cur = end;
             }
         }
@@ -321,16 +350,27 @@ fn parse_reply_with(layers: &[Layer], document: &[u8], composition: &Composition
     if cur != document.len() { return None; }
 
     let flag = |index: u64| flags.contains(&index);
+    let raw = |index: u64| -> Option<&[u8]> {
+        scalars.iter().find(|(i, _)| *i == index).map(|(_, bytes)| *bytes)
+    };
     let text = |index: u64| -> Option<String> {
-        scalars.iter().find(|(i, _)| *i == index)
-            .and_then(|(_, bytes)| String::from_utf8(bytes.clone()).ok())
+        raw(index).and_then(|bytes| String::from_utf8(bytes.to_vec()).ok())
     };
 
     match variant {
-        variant::SIGNAL_ACK => Some(Reply::SignalAck { accept: flag(0) }),
-        variant::VERDICT => Some(Reply::Verdict { fresh: flag(0) }),
-        variant::MODE => Some(Reply::Mode { canonical: flag(0) }),
-        variant::EXIT_STATUS => Some(Reply::ExitStatus { code: text(0)?.trim().parse().ok()? }),
+        variant::DATA => {
+            let bytes = raw(1)?;
+            if bytes.len() > MAXIMUM_CHUNK { return None; }
+            Some(Message::Data { stream: text(0)?, bytes: bytes.to_vec() })
+        }
+        variant::END => Some(Message::End { stream: text(0)? }),
+        variant::CREDIT => Some(Message::Credit { stream: text(0)?, bytes: text(1)?.trim().parse().ok()? }),
+        variant::OPEN => Some(Message::Open { stream: text(0)? }),
+        variant::SIGNAL_ACK => Some(Message::SignalAck { accept: flag(0) }),
+        variant::MODE => Some(Message::Mode { canonical: flag(0) }),
+        variant::CLOSED => Some(Message::Closed { stream: text(0)? }),
+        variant::EXIT_STATUS => Some(Message::ExitStatus { code: text(0)?.trim().parse().ok()? }),
+        variant::VERDICT => Some(Message::Verdict { fresh: flag(0) }),
         _ => None,
     }
 }
@@ -358,11 +398,12 @@ pub mod fixtures {
 mod tests {
     use super::*;
 
-    pub const SIGNATURE: &str = "e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5";
-
-    fn hex(bytes: &[u8]) -> String {
+    pub fn hex(bytes: &[u8]) -> String {
         bytes.iter().map(|b| format!("{:02x}", b)).collect()
     }
+
+    /// The base signature as hex: the pinned hash and its trailer.
+    pub fn signature() -> String { hex(&Composition::base().signature) }
 
     #[test]
     fn varints_round_trip_and_reject_overlong() {
@@ -376,12 +417,14 @@ mod tests {
     }
 
     // The base alone signs as its hash plus the cadence trailer: the constant the daemon's
-    // tests pin ("the schema signature is pinned" in Soundness's `ethereal_test.scala`).
+    // tests pin ("the schema signature is pinned" in Soundness's `ethereal_test.scala`), and
+    // the one `xek_test.scala` derives from `spec/ethereal-launcher.tel`.
     #[test]
     fn the_base_signature_is_pinned() {
-        assert_eq!(hex(&Composition::base().signature), SIGNATURE);
+        assert_eq!(hex(&Composition::base().signature[..32]), hex(&BASE));
         assert_eq!(Composition::base().depth, 1);
         assert_eq!(Composition::base().signature.iter().fold(0u8, |a, b| a ^ b), CADENCE);
+        assert_ne!(BASE, [0u8; 32], "the base hash has not been pinned");
     }
 
     // §8.2's shapes: 33 bytes for one component, 37 for two, 39 for three; every byte XORs
@@ -402,60 +445,83 @@ mod tests {
     }
 
     #[test]
-    fn exit_document_has_the_pinned_layout() {
+    fn exit_status_document_has_the_pinned_layout() {
         let mut record = Record::new();
         record.scalar(0, "42");
-        let doc = document(variant::EXIT, record, &Composition::base());
+        let doc = document(variant::EXIT_STATUS, record, &Composition::base());
         // magic, length (1 + 33 + 7 = 41), signature length, signature, body.
         assert_eq!(&doc[..4], &MAGIC);
         assert_eq!(doc[4], 41);
         assert_eq!(doc[5], 33);
-        assert_eq!(hex(&doc[6..39]), SIGNATURE);
-        assert_eq!(&doc[39..], &[0x01, 0x04, 0x01, 0x00, 0x02, b'4', b'2']);
+        assert_eq!(hex(&doc[6..39]), signature());
+        assert_eq!(&doc[39..], &[0x01, 0x09, 0x01, 0x00, 0x02, b'4', b'2']);
     }
 
     // The frames the daemon's own tests pin (in Soundness, `ethereal_test.scala`'s "Launcher
-    // protocol" suite),
-    // produced by `Launcher.encode` on the Scala side: both implementations must agree
-    // byte for byte.
+    // protocol" suite), produced by `Launcher.encode` on the Scala side: both implementations
+    // must agree byte for byte.
     #[test]
     fn frames_match_the_daemon_side() {
-        let sig = SIGNATURE;
+        let sig = signature();
         let base = Composition::base();
-        let mut record = Record::new();
-        record.scalar(0, "42");
-        assert_eq!(hex(&document(variant::EXIT, record, &base)),
-                   format!("b2c4b5bb2921{sig}01040100023432"));
         assert_eq!(hex(&document(variant::VERIFY, Record::new(), &base)),
-                   format!("b2c4b5bb2521{sig}010500"));
+                   format!("b2c4b5bb2521{sig}010a00"));
         let mut record = Record::new();
         record.flag(0);
         assert_eq!(hex(&document(variant::MODE, record, &base)),
-                   format!("b2c4b5bb2621{sig}01080100"));
-        // stdout deliberately not a terminal while stdin and stderr are: `command > file`
-        // run from a terminal. An all-true fixture would not catch the three flags being
-        // written in the wrong order or under the wrong indices.
+                   format!("b2c4b5bb2621{sig}01070100"));
+
+        // data: stream "stdin" (5 bytes), bytes 0x00 0xff (not UTF-8, which a Bytes scalar
+        // need not be). Body: 01 01 02 | 00 05 "stdin" | 01 02 00 ff = 14 bytes; 1+33+14=48.
+        assert_eq!(hex(&crate::protocol::data_document("stdin", &[0x00, 0xff], &base)),
+                   format!("b2c4b5bb3021{sig}0101020005737464696e010200ff"));
+        assert_eq!(hex(&crate::protocol::end_document("stdin", &base)),
+                   format!("b2c4b5bb2c21{sig}0102010005737464696e"));
+        assert_eq!(hex(&crate::protocol::credit_document("stdout", 65536, &base)),
+                   format!("b2c4b5bb3421{sig}01030200067374646f757401053635353336"));
+        assert_eq!(hex(&crate::protocol::closed_document("stdout", &base)),
+                   format!("b2c4b5bb2d21{sig}01080100067374646f7574"));
+
+        // A WINCH carries the terminal's size (fields 1 and 2); a Windows close, its deadline.
+        let detail = crate::protocol::SignalDetail { size: Some((80, 24)), deadline_ms: None };
+        assert_eq!(hex(&crate::protocol::signal_document("WINCH", detail, &base)),
+                   format!("b2c4b5bb3421{sig}010503000557494e43480102383002023234"));
+        let detail = crate::protocol::SignalDetail { size: None, deadline_ms: Some(5000) };
+        assert_eq!(hex(&crate::protocol::signal_document("CTRL_CLOSE", detail, &base)),
+                   format!("b2c4b5bb3721{sig}010502000a4354524c5f434c4f5345030435303030"));
+    }
+
+    // The `init` document: stdout deliberately not a terminal while stdin and stderr are
+    // (`command > file` run from a terminal), so the three flags being written in the wrong
+    // order or under the wrong indices is caught; and two descriptors, one a regular file
+    // with a path, one a pipe without.
+    #[test]
+    fn init_document_has_the_pinned_layout() {
+        let sig = signature();
+        let base = Composition::base();
         let info = crate::protocol::ClientInfo {
             pid: 7, user_id: "501".into(), user_name: "jon".into(), script: "/usr/bin/x".into(),
             invoked_as: Some("x".into()), pwd: "/tmp".into(), args: vec!["a".into(), "b c".into()],
             env: vec!["K=V".into()], stdin_tty: true, stdout_tty: false, stderr_tty: true,
             umask: Some("022".into()), size: None, codepages: None,
+            descriptors: vec![
+                crate::descriptors::Descriptor { fd: 0, direction: "r", kind: "file", path: Some("/in".into()) },
+                crate::descriptors::Descriptor { fd: 63, direction: "r", kind: "pipe", path: None },
+            ],
         };
         // pid, uid, username, script, pwd; stdin-tty and stderr-tty flags (5, 7); the two
-        // arguments (8); the environment (9); invoked-as (10); umask (11).
+        // arguments (8); the environment (9); invoked-as (10); umask (11); two descriptor
+        // records (16): fd, direction, kind[, path].
+        let fields = concat!(
+            "000137", "01033530 31", "02 03 6a6f6e", "03 0a 2f7573722f62696e2f78", "04 04 2f746d70",
+            "05", "07", "08 01 61", "08 03 622063", "09 03 4b3d56", "0a 01 78", "0b 03 303232",
+            "10 04 0001 30 0101 72 0204 66696c65 0303 2f696e",
+            "10 03 0002 3633 0101 72 0204 70697065",
+        ).replace(' ', "");
+        let body = format!("01000e{fields}");
+        let length = 1 + 33 + body.len() / 2;
         assert_eq!(hex(&crate::protocol::init_document(&info, &base)),
-                   format!("b2c4b5bb5b21{sig}01000c000137010335303102036a6f6e030a2f7573722f62696e2f7804042f746d700507080161080362206309034b3d560a01780b03303232"));
-
-        // A WINCH carries the terminal's size (fields 2 and 3); a Windows close, its deadline.
-        let detail = crate::protocol::SignalDetail { size: Some((80, 24)), deadline_ms: None };
-        assert_eq!(hex(&crate::protocol::signal_document(7, "WINCH", detail, &base)),
-                   format!("b2c4b5bb3721{sig}010304000137010557494e43480202383003023234"));
-        let detail = crate::protocol::SignalDetail { size: None, deadline_ms: Some(5000) };
-        assert_eq!(hex(&crate::protocol::signal_document(7, "CTRL_CLOSE", detail, &base)),
-                   format!("b2c4b5bb3a21{sig}010303000137010a4354524c5f434c4f5345040435303030"));
-
-        assert_eq!(hex(&crate::protocol::closed_document(7, "stdout", &base)),
-                   format!("b2c4b5bb3021{sig}010a0200013701067374646f7574"));
+                   format!("b2c4b5bb{:02x}21{sig}{body}", length));
     }
 
     // Under a deeper composition the frame carries the longer signature, and a layer's
@@ -475,38 +541,61 @@ mod tests {
         record.flag(0);
         record.flag(1);
         let doc = document(variant::MODE, record, &two);
-        assert_eq!(parse_reply_with(fixtures::LAYERS, &doc, &two), Some(Reply::Mode { canonical: true }));
+        assert_eq!(parse_with(fixtures::LAYERS, &doc, &two), Some(Message::Mode { canonical: true }));
         // The same bytes are not a base document: wrong signature.
-        assert_eq!(parse_reply_with(fixtures::LAYERS, &doc, &Composition::base()), None);
+        assert_eq!(parse_with(fixtures::LAYERS, &doc, &Composition::base()), None);
         // Nor a depth-3 one, whose signature is longer still.
-        assert_eq!(parse_reply_with(fixtures::LAYERS, &doc, &three), None);
+        assert_eq!(parse_with(fixtures::LAYERS, &doc, &three), None);
 
         // Index 2 exists only from the second layer on.
         let mut record = Record::new();
         record.flag(2);
         let doc = document(variant::MODE, record, &two);
-        assert_eq!(parse_reply_with(fixtures::LAYERS, &doc, &two), None);
+        assert_eq!(parse_with(fixtures::LAYERS, &doc, &two), None);
         let mut record = Record::new();
         record.flag(2);
         let doc = document(variant::MODE, record, &three);
-        assert_eq!(parse_reply_with(fixtures::LAYERS, &doc, &three), Some(Reply::Mode { canonical: false }));
+        assert_eq!(parse_with(fixtures::LAYERS, &doc, &three), Some(Message::Mode { canonical: false }));
     }
 
     #[test]
-    fn replies_parse() {
+    fn inbound_documents_parse() {
         let base = Composition::base();
         let mut record = Record::new();
         record.scalar(0, "3");
         let doc = document(variant::EXIT_STATUS, record, &base);
-        assert_eq!(parse_reply(&doc, &base), Some(Reply::ExitStatus { code: 3 }));
+        assert_eq!(parse(&doc, &base), Some(Message::ExitStatus { code: 3 }));
 
         let mut record = Record::new();
         record.flag(0);
         let doc = document(variant::MODE, record, &base);
-        assert_eq!(parse_reply(&doc, &base), Some(Reply::Mode { canonical: true }));
+        assert_eq!(parse(&doc, &base), Some(Message::Mode { canonical: true }));
 
         let doc = document(variant::VERDICT, Record::new(), &base);
-        assert_eq!(parse_reply(&doc, &base), Some(Reply::Verdict { fresh: false }));
+        assert_eq!(parse(&doc, &base), Some(Message::Verdict { fresh: false }));
+
+        let doc = crate::protocol::data_document("stdout", b"hi\xff", &base);
+        assert_eq!(parse(&doc, &base), Some(Message::Data { stream: "stdout".into(), bytes: b"hi\xff".to_vec() }));
+        let doc = crate::protocol::credit_document("stdin", 4096, &base);
+        assert_eq!(parse(&doc, &base), Some(Message::Credit { stream: "stdin".into(), bytes: 4096 }));
+        let doc = crate::protocol::end_document("63", &base);
+        assert_eq!(parse(&doc, &base), Some(Message::End { stream: "63".into() }));
+        let mut record = Record::new();
+        record.scalar(0, "63");
+        let doc = document(variant::OPEN, record, &base);
+        assert_eq!(parse(&doc, &base), Some(Message::Open { stream: "63".into() }));
+        let doc = crate::protocol::closed_document("63", &base);
+        assert_eq!(parse(&doc, &base), Some(Message::Closed { stream: "63".into() }));
+    }
+
+    // A chunk over the maximum is not a chunk: the sender has broken the contract.
+    #[test]
+    fn an_oversized_chunk_is_refused() {
+        let base = Composition::base();
+        let doc = crate::protocol::data_document("stdout", &vec![0u8; MAXIMUM_CHUNK + 1], &base);
+        assert_eq!(parse(&doc, &base), None);
+        let doc = crate::protocol::data_document("stdout", &vec![0u8; MAXIMUM_CHUNK], &base);
+        assert!(parse(&doc, &base).is_some());
     }
 
     #[test]
@@ -521,7 +610,7 @@ mod tests {
         let doc = read_document(&mut cursor).unwrap();
         assert_eq!(doc.len(), length);
         assert_eq!(cursor.position() as usize, length);
-        assert_eq!(parse_reply(&doc, &base), Some(Reply::SignalAck { accept: true }));
+        assert_eq!(parse(&doc, &base), Some(Message::SignalAck { accept: true }));
     }
 
     #[test]
@@ -531,6 +620,6 @@ mod tests {
         record.scalar(0, "3");
         let mut doc = document(variant::EXIT_STATUS, record, &base);
         doc[6] ^= 0x01;
-        assert_eq!(parse_reply(&doc, &base), None);
+        assert_eq!(parse(&doc, &base), None);
     }
 }
