@@ -47,7 +47,7 @@ object Packaging:
     case Native
 
   // Where each platform's bare reusable client stub comes from. The stubs are published
-  // independently (by tagging `xek-X.Y`); a build never compiles them.
+  // independently (by tagging `X.Y.Z`); a build never compiles them.
   enum ClientSource:
     // Read `<directory>/client-<label>[.exe]` from a local directory (e.g. the output of
     // `make client-build`). For development and testing — no download, no hash check.

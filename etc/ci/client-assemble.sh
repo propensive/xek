@@ -13,7 +13,7 @@
 # it writes only the three `res/core/xek/client.*` resources, and restores them when it exits,
 # so a dry run leaves the checkout as it found it:
 #
-#   PROPENSIVE_GITHUB=… RELEASE_DRY_RUN=1 ./etc/shared release.sh xek-X.Y.Z
+#   PROPENSIVE_GITHUB=… RELEASE_DRY_RUN=1 ./etc/shared release.sh X.Y.Z
 #
 # The stubs are version-independent and reusable, so they are released separately from — and far
 # less often than — the applications packaged with them: only when the Rust client source
