@@ -36,8 +36,12 @@ import anticipation.*
 import contingency.*
 import distillate.*
 import ethereal.*
+import galilei.*
+import prepositional.*
+import serpentine.*
 import exoskeleton.*
 import gossamer.*
+import hieroglyph.*, charsets.utf8Charset, textSanitizers.skipSanitizer
 import parasite.*
 import profanity.*
 import rudiments.*
@@ -131,6 +135,16 @@ def hello(): Unit = cli:
       execute:
         Out.print(safely(Environment[Text](variable)).or(t""))
         Exit.Ok
+
+    // The file named by the argument, copied to standard output: for `etc/ci/e2e.sh` to read
+    // a path that names one of the *client's* descriptors (`/dev/stdin`, `<(…)`), which only
+    // the launcher protocol can make reachable from the daemon's process.
+    case Argument("read") :: Argument(path) :: Nil =>
+      execute:
+        import filesystemBackends.javaBaseFilesystem
+        safely(path.as[Path on Linux].read[Text]) match
+          case text: Text => Out.print(text) yet Exit.Ok
+          case _          => Err.println(t"cannot read $path") yet Exit.Fail(1)
 
     case _ =>
       execute(Exit.Fail(1))

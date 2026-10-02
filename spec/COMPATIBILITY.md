@@ -7,6 +7,7 @@ at the first message rather than misreading fields. Above the base, the schema m
 
 | Release | Protocol | Base signature (BLAKE3-256 + cadence) | `ETHRCFG` | Reference daemon |
 |---|---|---|---|---|
+| `xek-0.11` | `ethereal-launcher` BinTEL | `a772bce70db951b957bec1cb86ada5517228cc11f5e6cc0d2c9f3a52281bdc9365` | v3 | none yet: the Soundness release after 0.69.0 |
 | `xek-0.10` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
 | `xek-0.9` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
 | `xek-0.8` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
@@ -53,6 +54,16 @@ identifier — a SID on Windows — rather than a number. What each means is in
 negotiation described under *Layers and acceptances* below: the launcher reads the daemon's
 acceptance before its first connection and writes under the richest composition both hold.
 Against a daemon that publishes no acceptance it behaves exactly as `xek-0.8` does.
+
+`xek-0.11` revises the base: an invocation becomes **one connection**, a session of framed
+documents in both directions, where before it was an `init` connection carrying raw stdin and
+stdout, a `stderr` connection, a `control` connection, a connection per `signal` and one for
+`exit`. Those three variants go; `data`, `end`, `credit` and `open` arrive, with a `Bytes`
+scalar (`encoding base-256`) for the chunks; `signal` and `closed` lose their `pid`, the
+session being the invocation's; and `record Init` gains a repeatable `descriptor` record
+advertising the client's file descriptors. [`launcher.md`](launcher.md) describes the session,
+its flow control and the descriptors. The variant indices are renumbered, so nothing of the
+old base's wire form survives, which the signature says.
 
 ## Protocol versions
 
@@ -106,8 +117,8 @@ Under that discipline every longer prefix of the chain is a subtype of every sho
 check. The layers, their hashes and the signature of each prefix belong in the table above as
 they are released, pinned in the same three places as the base.
 
-No layer exists yet: `xek-0.9`'s base is the whole schema, and the mechanism is exercised by
-the runner's tests against fixture hashes until the first feature that needs a layer arrives.
+No layer exists yet: the base is the whole schema, and the mechanism is exercised by the
+runner's tests against fixture hashes until the first feature that needs a layer arrives.
 
 ## Record versions
 

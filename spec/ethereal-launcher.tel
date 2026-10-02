@@ -5,31 +5,40 @@ document
 
 select Message
   variant init Init
-  variant stderr Stderr
-  variant control Control
+  variant data Data
+  variant end End
+  variant credit Credit
+  variant open Open
   variant signal Signal
-  variant exit Exit
-  variant verify Verify
   variant signal-ack SignalAck
-  variant verdict Verdict
   variant mode Mode
-  variant exit-status ExitStatus
   variant closed Closed
+  variant exit-status ExitStatus
+  variant verify Verify
+  variant verdict Verdict
   variant shutdown Shutdown
+
+scalar Bytes
+  description
+      Raw bytes: one chunk of a stream.
+  encoding base-256
 
 record Init
   description
-      A new invocation: the connection then carries the client's
-      stdin to the daemon and the daemon's stdout to the client.
-      The three tty flags say which of the client's streams are
-      attached to a terminal; the daemon sees only sockets and
-      cannot determine this for itself. The uid is the platform's
-      identifier for the user: numeric on Unix, a SID on Windows.
-      The invoked-as field is argv[0] as the caller supplied it,
-      for a multi-call binary to dispatch on; script is the
-      canonical path. The umask is octal; columns and rows are the
-      terminal's size when stdout is a terminal; the code pages are
-      the Windows console's input and output code pages.
+      A new invocation, opening the session that carries it: the
+      connection then carries data, end, credit, open, signal,
+      signal-ack, mode and closed documents in either direction,
+      until the daemon ends it with exit-status. The three tty
+      flags say which of the client's streams are attached to a
+      terminal; the daemon sees only sockets and cannot determine
+      this for itself. The uid is the platform's identifier for the
+      user: numeric on Unix, a SID on Windows. The invoked-as field
+      is argv[0] as the caller supplied it, for a multi-call binary
+      to dispatch on; script is the canonical path. The umask is
+      octal; columns and rows are the terminal's size when stdout is
+      a terminal; the code pages are the Windows console's input and
+      output code pages. Each descriptor is a file descriptor the
+      client holds, which the daemon may open as a stream.
   field pid String required
   field uid String required
   field username String required
@@ -46,16 +55,56 @@ record Init
   field rows String optional
   field input-codepage String optional
   field output-codepage String optional
+  field descriptor Descriptor optional repeatable
 
-record Stderr
+record Descriptor
   description
-      The connection on which the invocation's stderr is delivered.
-  field pid String required
+      A file descriptor open in the client when it connected,
+      numbered as the client sees it; 0, 1 and 2 are among them.
+      The direction is r, w or rw, as the descriptor was opened.
+      The kind is file, pipe, tty, socket or other; for a file the
+      path is its real path, which the daemon may open directly.
+      Anything else is reached by opening the descriptor as a
+      stream named by its number.
+  field fd String required
+  field direction String required
+  field kind String required
+  field path String optional
 
-record Control
+record Data
   description
-      The connection on which the daemon sends mode documents.
-  field pid String required
+      One chunk of a stream, of at most 65536 bytes. The stream is
+      stdin, stdout, stderr or the number of an open descriptor.
+      A sender never has more bytes outstanding on a stream than
+      the credit it holds for it.
+  field stream String required
+  field bytes Bytes required
+
+record End
+  description
+      The named stream has ended, after every chunk sent before
+      this: end-of-file for the daemon's reader of stdin or of a
+      descriptor opened to read, or the daemon's close of a
+      descriptor opened to write. Nothing more is sent on it.
+  field stream String required
+
+record Credit
+  description
+      The receiver of a stream can take this many more bytes of it,
+      in addition to any credit it granted before. The session opens
+      with 65536 bytes of credit on every stream in each direction.
+  field stream String required
+  field bytes String required
+
+record Open
+  description
+      Asks the launcher to start carrying the named descriptor: as
+      data documents from the client if it was opened to read, or
+      by writing data documents the daemon sends to it if it was
+      opened to write. Not answered; the stream simply begins. A
+      descriptor the daemon did not advertise, or opens again
+      while it is open, is ignored.
+  field stream String required
 
 record Signal
   description
@@ -63,32 +112,17 @@ record Signal
       or a Windows console control event. WINCH and CONT carry the
       terminal's current size; a Windows close, logoff or shutdown
       carries the milliseconds the system allows before it ends
-      the client regardless.
-  field pid String required
+      the client regardless. Answered with signal-ack; the launcher
+      sends no further signal until it has the answer.
   field name String required
   field columns String optional
   field rows String optional
   field deadline String optional
 
-record Exit
-  description
-      A request for the invocation's exit status, sent after its
-      streams have drained; answered with an exit-status document.
-  field pid String required
-
-record Verify
-  description
-      Asks whether the launcher file the daemon started from still
-      has the content it remembers; answered with a verdict.
-  field launcher String optional
-
 record SignalAck
   description
-      Whether the invocation accepted a forwarded signal.
+      Whether the invocation accepted the signal last sent.
   field accept Flag optional
-
-record Verdict
-  field fresh Flag optional
 
 record Mode
   description
@@ -96,18 +130,32 @@ record Mode
       (cooked) mode, or back into raw mode when the flag is absent.
   field canonical Flag optional
 
-record ExitStatus
-  field code String required
-
 record Closed
   description
-      The named output stream of the invocation, stdout or stderr,
-      has lost its reader: the client could not write to it. Sent
-      once, on its own connection, and not answered. The daemon
-      should fail the invocation's further writes to that stream,
-      as a broken pipe would.
-  field pid String required
+      The named stream has lost its reader at the client: stdout or
+      stderr could not be written, or a descriptor opened to write
+      could not be. The daemon should fail the invocation's further
+      writes to that stream, as a broken pipe would. Sent by the
+      daemon, it says the invocation has closed a descriptor it
+      opened to read before reading it to its end, and the launcher
+      stops carrying it.
   field stream String required
+
+record ExitStatus
+  description
+      The invocation's exit status, ending the session: the last
+      document the daemon writes, after every chunk of every stream.
+  field code String required
+
+record Verify
+  description
+      Asks, on a connection of its own, whether the launcher file
+      the daemon started from still has the content it remembers;
+      answered with a verdict.
+  field launcher String optional
+
+record Verdict
+  field fresh Flag optional
 
 record Shutdown
   description

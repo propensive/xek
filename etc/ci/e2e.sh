@@ -51,10 +51,16 @@ rm -f "$OUT"
 
 # Package with `xek`, from the local stubs: a native executable for one platform, with no
 # download and no hash check — the same command a shell user runs.
-if [[ ! -x dist/xek ]]; then
-  echo "e2e: dist/xek not found — run \`make xek\`" >&2; exit 1
+if [[ "${E2E_DAEMON:-}" == "legacy" ]]; then
+  # dist/xek is itself wrapped in the local stub, which the pinned daemon cannot serve (that is
+  # what this mode checks below), so the packager runs with no launcher at all.
+  ./mill xek.cli.bootstrap --platform "$LABEL" --runners "$PWD/dist/runners" "$PWD/$JAR" "$PWD/$OUT"
+else
+  if [[ ! -x dist/xek ]]; then
+    echo "e2e: dist/xek not found — run \`make xek\`" >&2; exit 1
+  fi
+  ./dist/xek --platform "$LABEL" --runners "$PWD/dist/runners" "$PWD/$JAR" "$PWD/$OUT"
 fi
-./dist/xek --platform "$LABEL" --runners "$PWD/dist/runners" "$PWD/$JAR" "$PWD/$OUT"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -100,6 +106,25 @@ expect_status() {  # expect_status <description> <expected> <actual>
 
 echo "e2e: running $OUT"
 
+# A daemon that predates this runner's protocol base cannot serve it, and must say so rather
+# than hang or loop: the launcher connects, the daemon closes on `init`, and the launcher
+# reports the mismatch with status 2. That is the whole check while the pinned Soundness
+# release is such a daemon (see the Makefile); the cases below wait for the release that
+# speaks this base.
+if [[ "${E2E_DAEMON:-}" == "legacy" ]]; then
+  status=0; actual=$(limit 60 "$OUT" 2>&1) || status=$?
+  expect_status "a daemon of another base is refused" 2 "$status"
+  if [[ "$actual" == *"speaks another launcher protocol"* ]]; then
+    pass "the mismatch is reported"
+  else
+    fail "the mismatch is not reported: '$actual'"
+  fi
+  pkill -f 'ethereal.name=hello' >/dev/null 2>&1 || true
+  if [[ "$failures" -ne 0 ]]; then echo "e2e: $failures failure(s)" >&2; exit 1; fi
+  echo "e2e: legacy daemon refused as expected; the session cases are skipped"
+  exit 0
+fi
+
 # The greeting: the whole chain works at all.
 expect "prints the greeting" "Hello world" "$("$OUT")"
 
@@ -125,6 +150,29 @@ expect "{wrap-java} reaches the application" "{wrap-java}" "$("$OUT" args '{wrap
 # in place of the byte, as the JVM itself would decode it.
 actual=$("$OUT" args $'ok\xff' && echo "/$?") || echo "/$?"
 expect "a non-UTF-8 argument does not abort the launcher" "$(printf 'ok\xef\xbf\xbd')/0" "$actual"
+
+# A path naming one of the client's descriptors is readable in the daemon (#10): process
+# substitution, /dev/stdin on a pipe, and /dev/stdin on a regular file (resolved to its path).
+actual=$(limit 20 "$OUT" read <(printf 'substituted')) || true
+expect "process substitution is readable" "substituted" "$actual"
+actual=$(printf 'piped' | limit 20 "$OUT" read /dev/stdin) || true
+expect "/dev/stdin on a pipe is readable" "piped" "$actual"
+printf 'from a file' > "$TMP/in"
+actual=$(limit 20 "$OUT" read /dev/stdin < "$TMP/in") || true
+expect "/dev/stdin on a file is readable" "from a file" "$actual"
+
+# …and a literal argument that merely looks like one is text, never rewritten (#10).
+expect "a literal /dev/fd/38 is an ordinary argument" "/dev/fd/38" "$("$OUT" args /dev/fd/38)"
+expect "a literal /dev/stdin is an ordinary argument" "/dev/stdin" "$("$OUT" args /dev/stdin)"
+
+# A large piped stdin round-trips intact: more than a window of credit in each direction.
+head -c 1000000 /dev/urandom > "$TMP/big"
+limit 60 "$OUT" cat < "$TMP/big" > "$TMP/big.out" || true
+if cmp -s "$TMP/big" "$TMP/big.out"; then pass "a megabyte of stdin round-trips"; else fail "a megabyte of stdin did not round-trip"; fi
+
+# A reader that goes away ends the invocation (stdout is `closed`) rather than hanging it.
+actual=$(limit 20 "$OUT" cat < "$TMP/big" | head -c 5 | wc -c | tr -d ' ') || true
+expect "a closed stdout ends the invocation" "5" "$actual"
 
 # Exit statuses and stderr are carried back.
 status=0; "$OUT" exit 3 || status=$?

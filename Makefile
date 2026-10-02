@@ -80,8 +80,13 @@ publishLocal:
 # The end-to-end check: package the example application around a real runner stub and run it.
 # Needs dist/runners (from `runners-build` or `runners-fetch`), and resolves a daemon
 # implementation — the one place anything here does.
+#
+# E2E_DAEMON=legacy says the daemon the pinned Soundness release provides predates this
+# runner's protocol base, so the only thing to check is that the pair refuses each other
+# legibly. Drop it when etc/refs moves to a Soundness release whose daemon speaks the base
+# in spec/ethereal-launcher.tel.
 e2e: xek
-	./etc/ci/e2e.sh
+	E2E_DAEMON=legacy ./etc/ci/e2e.sh
 
 clean:
 	$(MILL) clean

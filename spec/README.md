@@ -29,7 +29,7 @@ the artefacts of the other that it tests against.
 | [`ethrcfg.md`](ethrcfg.md) | The `ETHRCFG` configuration record a builder places between a stub and the JAR |
 | [`properties.md`](properties.md) | The `-Dethereal.*` and `-Dbuild.id` system properties the launcher passes to the JVM |
 | [`layout.md`](layout.md) | The files and directories the launcher and daemon share |
-| [`launcher.md`](launcher.md) | What the launcher does around an invocation: reserved arguments, the terminal, end of input, signals and exit status |
+| [`launcher.md`](launcher.md) | What the launcher does around an invocation: reserved arguments, the terminal, the session and its flow control, the client's descriptors, end of input and output, signals and exit status |
 | [`COMPATIBILITY.md`](COMPATIBILITY.md) | Which runner release speaks which protocol, and against which daemon |
 
 ## Why "ethereal" appears in a specification owned by XEK
