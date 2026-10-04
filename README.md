@@ -141,7 +141,7 @@ five stubs and builds the `xek` command around them, as a polyglot `xek` and a n
 deletes the release and the tag. Once the release is public it opens two draft pull requests: one
 here recording the hashes in `etc/client/1.0.0.tsv` and `etc/client/1.0.0.SHA256SUMS` and
 rewriting `res/core/xek/client.{tsv,version,url}`, the resources the builder reads
-(`etc/ci/client-record.sh`); and one in Soundness moving its `etc/xeq.tsv` to the release
+(`etc/ci/client-record.sh`); and one in Soundness moving its `etc/xek.tsv` to the release
 (`etc/downstream`). Adopting a release is therefore a data change, not a code change, and an
 application picks up a client fix without anything being rebuilt.
 
