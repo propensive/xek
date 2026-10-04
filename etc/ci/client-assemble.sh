@@ -89,7 +89,7 @@ cp "$WORK/client"/client-* "$WORK"/xek "$WORK"/xek.cmd "$WORK"/xek-* "$WORK/inst
   "$RELEASE_ASSETS"/
 
 # Every other asset's SHA-256, for downstream fetchers that verify by name: consumers pin an
-# `xek` asset's line in their etc/xeq.tsv.
+# `xek` asset's line in their etc/xek.tsv.
 SUMS="$RELEASE_ASSETS/$RELEASE_VERSION.SHA256SUMS"
 for f in "$RELEASE_ASSETS"/*; do
   [[ "$f" == "$SUMS" ]] && continue
