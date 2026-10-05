@@ -77,7 +77,7 @@ object Packaging:
 
   // The keys self-upgrades are verified against, written into each executable's record. `Unset`
   // overall disables upgrades (the safe default). Signing a release is a separate step, with
-  // `xek-sign`, which never happens inside a build that also holds the application's code.
+  // `xek sign`, which never happens inside a build that also holds the application's code.
   case class Signing
     ( publicKey:      Optional[Path on Linux] = Unset, // the release key
       recoveryKey:    Optional[Path on Linux] = Unset, // a second key, kept offline

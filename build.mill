@@ -412,7 +412,7 @@ object xek extends Module:
 
     // Runs `xek` from this module's assembly with no launcher, through its `bootstrap` entry
     // point, on the JVM Mill runs with: `xek` built by `xek`. Takes the command line `xek` takes,
-    // with paths relative to the repository, as in `./mill xek.cli.bootstrap --polyglot
+    // with paths relative to the repository, as in `./mill xek.cli.bootstrap build --polyglot
     // --client dist/client out/xek/cli/assembly.dest/out.jar dist/xek`.
     def bootstrap(arguments: mainargs.Leftover[String]) = Task.Command:
       val jar = assembly().path
@@ -436,7 +436,7 @@ object xek extends Module:
       val client = root / "dist" / "client"
       val output = root / "dist" / "xek"
       val local = if os.exists(client) then Seq("--client", client.toString) else Nil
-      val arguments = Seq("--polyglot", jar.toString, output.toString) ++ local
+      val arguments = Seq("build", "--polyglot", jar.toString, output.toString) ++ local
 
       os.proc(java, "-cp", jar.toString, "xek.bootstrap", arguments)
        .call(cwd = root, stdout = os.Inherit, stderr = os.Inherit)

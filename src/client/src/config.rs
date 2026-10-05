@@ -31,8 +31,7 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
-pub use crate::signing::{APP_ID_LEN, APP_ID_OFFSET, BUILD_ID_OFFSET, MAGIC_LEN, PUBKEY_LEN, RECORD_LEN,
-                         RECOVERY_KEY_OFFSET, RELEASE_KEY_OFFSET};
+pub use crate::signing::{BUILD_ID_OFFSET, MAGIC_LEN, RECORD_LEN};
 
 use crate::verify::Keys;
 
@@ -174,6 +173,7 @@ pub fn upgradable() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::signing::{APP_ID_LEN, APP_ID_OFFSET, PUBKEY_LEN, RECOVERY_KEY_OFFSET, RELEASE_KEY_OFFSET};
     use std::io::Write;
 
     fn record(build_id: u64, java_min: u16, java_pref: u16, jdk: bool, flags: u8) -> [u8; RECORD_LEN] {

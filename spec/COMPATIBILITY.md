@@ -74,7 +74,9 @@ signed over a statement rather than the whole file. A v3 client never finds a v4
 client never finds a v3 one, so the two cannot upgrade into each other — which loses nothing,
 since no v3 executable was published with a key. Its launcher also reports what became of a
 staged upgrade in `.upgrade-result` ([`layout.md`](layout.md)) and passes the daemon
-`ethereal.upgradable` ([`properties.md`](properties.md)); the protocol is unchanged.
+`ethereal.upgradable` ([`properties.md`](properties.md)); the protocol is unchanged. Its `xek`
+command takes a subcommand first: what `xek app.jar` did is now `xek build app.jar`, beside the
+subcommands that sign a release (`keygen`, `public-key`, `sign`, `statement`, `attach`, `verify`).
 
 ## Protocol versions
 

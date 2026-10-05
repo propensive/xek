@@ -49,17 +49,20 @@ OUT=dist/hello
 mkdir -p dist
 rm -f "$OUT"
 
+# `xek`, the command a shell user runs. Under E2E_DAEMON=legacy, dist/xek is itself wrapped in the
+# local stub, which the pinned daemon cannot serve (that is what this mode checks below), so `xek`
+# runs with no launcher at all.
+xek() {
+  if [[ "${E2E_DAEMON:-}" == "legacy" ]]; then ./mill xek.cli.bootstrap "$@"
+  else ./dist/xek "$@"
+  fi
+}
+
 # Package with `xek`, from the local stubs: a native executable for one platform, with no
-# download and no hash check — the same command a shell user runs. `package <output> [option…]`.
+# download and no hash check. `package <output> [option…]`.
 package() {
   local output=$1; shift
-  if [[ "${E2E_DAEMON:-}" == "legacy" ]]; then
-    # dist/xek is itself wrapped in the local stub, which the pinned daemon cannot serve (that is
-    # what this mode checks below), so the packager runs with no launcher at all.
-    ./mill xek.cli.bootstrap --platform "$LABEL" --client "$PWD/dist/client" "$@" "$PWD/$JAR" "$output"
-  else
-    ./dist/xek --platform "$LABEL" --client "$PWD/dist/client" "$@" "$PWD/$JAR" "$output"
-  fi
+  xek build --platform "$LABEL" --client "$PWD/dist/client" "$@" "$PWD/$JAR" "$output"
 }
 
 if [[ "${E2E_DAEMON:-}" != "legacy" && ! -x dist/xek ]]; then
@@ -115,24 +118,21 @@ echo "e2e: running $OUT"
 # it contacts any daemon, so these cases need none: each stages a candidate beside a keyed v1,
 # runs v1 once, and reads what the launcher did from the executable's bytes and from
 # `.upgrade-result`. They run under their own name and data directory, so as not to disturb the
-# cases below.
-SIGNER="$PWD/dist/client/xek-sign-$LABEL"
-if [[ ! -x "$SIGNER" ]]; then
-  echo "e2e: $SIGNER not found — run \`make client-build\`" >&2; exit 1
-fi
+# cases below. The releases are signed by `xek` and verified by the stub: the two implementations of
+# the statement meet here.
 echo "e2e: checking self-upgrade"
 
 UP="$TMP/up"
 mkdir -p "$UP/bin" "$UP/data/hello-up"
-"$SIGNER" keygen --out "$UP/release" 2>/dev/null
-"$SIGNER" keygen --out "$UP/recovery" 2>/dev/null
+xek keygen --out "$UP/release" 2>/dev/null
+xek keygen --out "$UP/recovery" 2>/dev/null
 keyed=(--public-key "$UP/release.pub" --recovery-key "$UP/recovery.pub")
 package "$UP/v1" --build-id 1 "${keyed[@]}" --app-id propensive/hello
 package "$UP/v2" --build-id 2 "${keyed[@]}" --app-id propensive/hello
 package "$UP/other" --build-id 2 "${keyed[@]}" --app-id propensive/other
-"$SIGNER" sign --key "$UP/release.seed" --in "$UP/v2" --out "$UP/v2.signed" 2>/dev/null
-"$SIGNER" sign --key "$UP/recovery.seed" --in "$UP/v2" --out "$UP/v2.recovered" 2>/dev/null
-"$SIGNER" sign --key "$UP/release.seed" --in "$UP/other" --out "$UP/other.signed" 2>/dev/null
+xek sign --key "$UP/release.seed" --in "$UP/v2" --out "$UP/v2.signed" 2>/dev/null
+xek sign --key "$UP/recovery.seed" --in "$UP/v2" --out "$UP/v2.recovered" 2>/dev/null
+xek sign --key "$UP/release.seed" --in "$UP/other" --out "$UP/other.signed" 2>/dev/null
 # One byte of the stub changed after signing.
 cp "$UP/v2.signed" "$UP/v2.tampered"
 printf '\x00' | dd of="$UP/v2.tampered" bs=1 seek=4096 conv=notrunc 2>/dev/null

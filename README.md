@@ -15,7 +15,7 @@ record and the JAR — not compiling. That is what makes cross-platform packagin
 executable can be built on one machine, in about as long as it takes to copy a file.
 
 ```sh
-$ xek mytool.jar
+$ xek build mytool.jar
 Wrote /home/you/mytool
 $ ./mytool --version
 mytool 1.0.0
@@ -33,18 +33,22 @@ which puts it in `~/.local/bin` (or `$XEK_INSTALL_DIR`); on Windows, download `x
 from the [latest release](https://github.com/propensive/xek/releases/latest). Then:
 
 ```sh
-xek app.jar                              # ./app, a native executable for this platform
-xek app.jar dist/tool                    # dist/tool
-xek -p linux-x64 -p windows-x64 app.jar  # app-linux-x64 and app-windows-x64.exe
-xek --polyglot app.jar                   # ./app, one file for every platform (see below)
-xek --polyglot --exclude bat app.jar     # …leaving out the cmd.exe section
-xek --polyglot --platforms linux-x64,macos-arm64 app.jar
-xek --download app.jar                   # a polyglot file which fetches its stub on first run
-xek --dispatch executables.tsv app       # a polyglot file which fetches a whole executable
-xek --java 25 --java-min 21 --jdk app.jar
+xek build app.jar                              # ./app, a native executable for this platform
+xek build app.jar dist/tool                    # dist/tool
+xek build -p linux-x64 -p windows-x64 app.jar  # app-linux-x64 and app-windows-x64.exe
+xek build --polyglot app.jar                   # ./app, one file for every platform (see below)
+xek build --polyglot --exclude bat app.jar     # …leaving out the cmd.exe section
+xek build --polyglot --platforms linux-x64,macos-arm64 app.jar
+xek build --download app.jar                   # a polyglot file which fetches its stub on first run
+xek build --dispatch executables.tsv app       # a polyglot file which fetches a whole executable
+xek build --java 25 --java-min 21 --jdk app.jar
 ```
 
-Options may come before or after the JAR, and `xek --help` lists them all. The `--java` options
+Every command line begins with a subcommand: `build`, or one of those which sign a release for
+self-upgrade — `keygen`, `public-key`, `sign`, `statement`, `attach` and `verify`, described in
+[`spec/ethrcfg.md`](spec/ethrcfg.md). Signing needs Java 24 or later, which provides ML-DSA.
+After the subcommand, options may come before or after the JAR; `xek --help` lists the
+subcommands, and `xek build --help` the options of one. The `--java` options
 record which runtime an executable wants: the client uses a suitable installed Java, and
 otherwise downloads the preferred version from Adoptium on first run. `xek '{admin}' install`
 installs tab-completions for `xek`, as for any XEK executable.
@@ -54,8 +58,7 @@ installs tab-completions for `xek`, as for any XEK executable.
 | Path | |
 |---|---|
 | `src/client` | The client stub, in Rust: platform detection, JVM discovery, the daemon handshake, terminal modes, signals, and signed self-upgrade. 0.2–0.3 MB per platform |
-| `src/sign` | `xek-sign` — keys, signing and verification for self-upgrade; published with the stubs as `xek-sign-<platform>` |
-| `src/core` | The builder: the configuration record, stubs (local, or downloaded, verified and cached), native assembly, and the polyglot launchers (`res/core/xek`) — one file valid as `sh`, `.bat` and PowerShell |
+| `src/core` | The builder: the configuration record, stubs (local, or downloaded, verified and cached), native assembly, and the polyglot launchers (`res/core/xek`) — one file valid as `sh`, `.bat` and PowerShell; and the signer, for self-upgrade |
 | `src/cli` | The `xek` command: `core` behind a command line with tab-completions, and an XEK executable itself. Published with the client |
 | `src/packager` | `Packager` — turns a `Packaging` into a distributable with `core` |
 | `src/toolchain` | The same packaging as an [Anthology](https://github.com/propensive/soundness) toolchain format, so an application compiles and packages in one pass |
@@ -135,8 +138,8 @@ git tag -s 1.0.0 && git push --tags
 The tag fires `.github/workflows/release.yml`, which runs the shared `release.sh` from
 [propensive/.github](https://github.com/propensive/.github) as configured by `etc/release`. It
 gates on a verified signed tag and on CI already being green on that commit; cross-compiles the
-five stubs and the signer, `xek-sign-<platform>`, and builds the `xek` command around the stubs,
-as a polyglot `xek` and a native `xek-<platform>` for each platform (`etc/ci/client-assemble.sh`); uploads them to the
+five stubs and builds the `xek` command around them, as a polyglot `xek` and a native
+`xek-<platform>` for each platform (`etc/ci/client-assemble.sh`); uploads them to the
 `1.0.0` release, with `1.0.0.SHA256SUMS`, and checks every digest; and, if anything fails,
 deletes the release and the tag. Once the release is public it opens two draft pull requests: one
 here recording the hashes in `etc/client/1.0.0.tsv` and `etc/client/1.0.0.SHA256SUMS` and

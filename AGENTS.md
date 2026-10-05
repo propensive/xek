@@ -82,7 +82,7 @@ is what keeps `make client-build` reproducible.
    uses. The Linux stubs have no unwind tables, so debuggers cannot walk their frames. All
    three are traded for size on purpose; do not "fix" them without re-measuring.
 5. **Don't move the flags into `.cargo/config.toml` or `Cargo.toml`.** They belong to the
-   stub build only; the unit tests and `ethereal-sign` build without them, on the same nightly,
+   stub build only; the unit tests build without them, on the same nightly,
    and `-Zbuild-std` under `cargo test` would need a different panic strategy.
 
 ### Tools are not dependencies

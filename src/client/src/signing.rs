@@ -1,10 +1,8 @@
 // What the signer and the verifier must agree on byte for byte: where the ETHRCFG v4 record's
-// fields lie, and the statement an upgrade is signed over. Specified in spec/ethrcfg.md.
-//
-// This module is shared: the client compiles it as `crate::signing`, and `xek-sign`
-// (src/sign/src/main.rs) includes the same file by path, so the two cannot drift apart. It
-// therefore uses nothing from either crate, and in particular does not contain the magic, which
-// a stub may not hold as a literal (see config.rs).
+// fields lie, and the statement an upgrade is signed over. Specified in spec/ethrcfg.md; the
+// signer is the `xek` command (`xek.Signer`, in src/core), which is checked against the same
+// test vectors in spec/fixtures. Nothing here holds the magic, which a stub may not contain as a
+// literal (see config.rs).
 
 use ml_dsa::{EncodedSignature, EncodedVerifyingKey, MlDsa44, Signature, VerifyingKey,
              signature::Verifier};
@@ -47,6 +45,7 @@ pub fn statement(file: &[u8], record: usize) -> [u8; STATEMENT_LEN] {
 }
 
 // SHA3-256 of an application's identifier, as the record's `app_id` holds it.
+#[cfg(test)]
 pub fn app_id(identifier: &str) -> [u8; APP_ID_LEN] {
     let mut out = [0u8; APP_ID_LEN];
     out.copy_from_slice(&Sha3_256::digest(identifier.as_bytes()));

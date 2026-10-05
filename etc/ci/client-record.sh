@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 #
 # Record a published xek release in this repository, as a draft pull request: its stub hashes in
-# `etc/client/<version>.tsv`, every asset's — the `xek` command's and `xek-sign`'s among them — in
-# `etc/client/<version>.SHA256SUMS`, and the three
+# `etc/client/<version>.tsv`, every asset's in `etc/client/<version>.SHA256SUMS`, and the three
 # resources the builder reads, `res/core/xek/client.{tsv,version,url}` — so that adopting the
 # release as the stubs `xek` and the packager build with is a data change, reviewed like any other.
 #

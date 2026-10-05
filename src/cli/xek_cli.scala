@@ -59,13 +59,26 @@ import systems.javaBaseSystem
 object Unusable extends Status(1, t"the command line could not be acted on")
 object Malformed extends Status(2, t"a file was malformed, or a download did not match its hash")
 object Unreachable extends Status(3, t"a download failed")
+object Unverified extends Status(4, t"a signature did not verify, or was for another application")
 
-// The flags of `xek`, declared to Exoskeleton so that they complete and appear in its help. They
-// are not how the command line is read — `Command.parse` does that, since `xek` takes operands
-// after its options as well as before them — but each is named for its `Command.Spec`.
+// The subcommands and flags of `xek`, declared to Exoskeleton so that they complete and appear in
+// its help. They are not how the command line is read — `Command.parse` does that, since `xek`
+// takes operands after its options as well as before them — but each is named for its
+// `Command.Action` or `Command.Spec`.
 object ui:
   private def flag(spec: Command.Spec): List[Text | Char] =
     if spec.short.present then List(spec.short.or(' ')) else Nil
+
+  object subcommand:
+    private def of(action: Command.Action): Subcommand = Subcommand(action.name, action.description)
+
+    val Build = of(Command.Action.Build)
+    val Keygen = of(Command.Action.Keygen)
+    val PublicKey = of(Command.Action.PublicKeyOf)
+    val Sign = of(Command.Action.Sign)
+    val Statement = of(Command.Action.Statement)
+    val Attach = of(Command.Action.Attach)
+    val Verify = of(Command.Action.Verify)
 
   val Platform =
     Flag[Text](t"platform", true, Command.Platform.aliases + flag(Command.Platform), Command.Platform.description)
@@ -84,6 +97,12 @@ object ui:
   val Client = Flag[Text](t"client", false, Nil, Command.Client.description)
   val ClientUrl = Flag[Text](t"client-url", false, Nil, Command.ClientUrl.description)
   val ClientManifest = Flag[Text](t"client-manifest", false, Nil, Command.ClientManifest.description)
+  val In = Flag[Text](t"in", false, Nil, Command.In.description)
+  val Out = Flag[Text](t"out", false, Nil, Command.Out.description)
+  val Key = Flag[Text](t"key", false, Nil, Command.Key.description)
+  val KeyEnv = Flag[Text](t"key-env", false, Nil, Command.KeyEnv.description)
+  val Signature = Flag[Text](t"signature", false, Nil, Command.Signature.description)
+  val ForeignKey = Flag[Unit](t"foreign-key", false, Nil, Command.ForeignKey.description)
   val Help = Flag[Unit](t"help", false, flag(Command.Help), Command.Help.description)
   val Version = Flag[Unit](t"version", false, flag(Command.Version), Command.Version.description)
 
@@ -106,11 +125,54 @@ def command(): Unit = cli:
       case Exit.Ok => Exit.Ok
       case Exit.Fail(1) => Unusable
       case Exit.Fail(2) => Malformed
-      case Exit.Fail(_) => Unreachable
+      case Exit.Fail(3) => Unreachable
+      case Exit.Fail(_) => Unverified
 
-// Registers every flag, with suggestions for its value, and suggests paths for the operands: a
-// JAR first, then the output's name.
+// Offers the subcommands for the first word, and then the flags of the one chosen.
 private def complete(arguments: List[Argument])(using Cli, Interpreter, WorkingDirectory): Unit =
+  // Flags whose values are paths, registered with path completion.
+  def paths(block: (Text is Discoverable) ?=> Unit): Unit =
+    given (Text is Discoverable) = (operand, tab) => Pathname.complete(operand, tab)
+    block
+
+  arguments match
+    case ui.subcommand.Build() :: rest =>
+      completeBuild(rest)
+
+    case ui.subcommand.Keygen() :: _ =>
+      paths(ui.Out.present)
+
+    case ui.subcommand.PublicKey() :: _ =>
+      paths { ui.Key.present; ui.Out.present }
+      ui.KeyEnv.present
+
+    case ui.subcommand.Sign() :: _ =>
+      paths { ui.Key.present; ui.In.present; ui.Out.present }
+      ui.KeyEnv.present
+      ui.AllowDowngrade.present
+      ui.ForeignKey.present
+
+    case ui.subcommand.Statement() :: _ =>
+      paths(ui.In.present)
+      ui.AllowDowngrade.present
+
+    case ui.subcommand.Attach() :: _ =>
+      paths { ui.In.present; ui.Signature.present; ui.Out.present }
+      ui.AllowDowngrade.present
+
+    case ui.subcommand.Verify() :: _ =>
+      paths { ui.PublicKey.present; ui.In.present }
+      ui.AppId.present
+
+    case _ =>
+      ()
+
+  ui.Help.present
+  ui.Version.present
+
+// Registers every flag of `xek build`, with suggestions for its value, and suggests paths for the
+// operands: a JAR first, then the output's name.
+private def completeBuild(arguments: List[Argument])(using Cli, Interpreter, WorkingDirectory): Unit =
   locally:
     given (Text is Discoverable) = (_, _) =>
       Target.all.map { target => Suggestion(target.label, target.description, operand = true) }
@@ -147,8 +209,6 @@ private def complete(arguments: List[Argument])(using Cli, Interpreter, WorkingD
   ui.Download.present
   ui.Jdk.present
   ui.AllowDowngrade.present
-  ui.Help.present
-  ui.Version.present
 
   // The first operand is the JAR, unless `--dispatch` takes its place, so only directories and
   // JARs are offered for it.
@@ -201,19 +261,49 @@ object Driver:
 
       Files.local(jnf.Path.of(here.encode.s).nn.resolve(expanded.s).nn)
 
-    attempt[Assembler.Error]:
-      val parsed: Command.Parsed = Command.parse(words)
+    // Which subcommand a mistake belongs to, so that its own help can be suggested.
+    val action: Optional[Command.Action] = words.prim.let(Command.Action.parse(_))
 
-      if parsed.has(Command.Help) then
-        out(help)
-        Exit.Ok
-      else if parsed.has(Command.Version) then
-        out(t"xek $version (client ${xek.Client.version})")
-        Exit.Ok
-      else if words.nil then
+    attempt[Assembler.Error]:
+      if words.nil then
         err(help)
         Exit.Fail(1)
       else
+        val parsed: Command.Parsed = Command.parse(words)
+
+        parsed.action.let: action =>
+          if parsed.has(Command.Help) then out(help(action))
+          else if action == Command.Action.Build then build(parsed, path, here, variable)(err)
+          else Signer.run(action, parsed, path, variable)(out, err)
+
+          Exit.Ok
+
+        . or:
+            if parsed.has(Command.Help) then out(help)
+            else out(t"xek $version (client ${xek.Client.version})")
+
+            Exit.Ok
+
+    . absolve match
+        case Attempt.Success(exit) => exit
+
+        case Attempt.Failure(error) =>
+          err(t"xek: ${error.message}")
+
+          if error.fault == Assembler.Fault.Usage then
+            val command: Text = action.let { action => t"xek ${action.name} --help" }.or(t"xek --help")
+            err(t"Try `$command` for more information.")
+
+          Exit.Fail(error.fault.status)
+
+  private def build
+    ( parsed:   Command.Parsed,
+      path:     Text => Path on Local,
+      here:     Path on Local,
+      variable: Text => Optional[Text] )
+    ( err: Text => Unit )
+  :   Unit raises Assembler.Error =
+
         val options: Options = Command.options(parsed, path)
         val host: Optional[Target] = Target.host(property("os.name"), property("os.arch"))
         val home: Text = variable(t"HOME").or(variable(t"USERPROFILE")).or(property("user.home"))
@@ -221,15 +311,6 @@ object Driver:
         val plan: Build.Plan = Build.plan(options, host, here)
         val written: List[Path on Local] = Build.execute(plan, cache)(err(_))
         written.each { file => err(t"Wrote ${file.encode}") }
-        Exit.Ok
-
-    . absolve match
-        case Attempt.Success(exit) => exit
-
-        case Attempt.Failure(error) =>
-          err(t"xek: ${error.message}")
-          if error.fault == Assembler.Fault.Usage then err(t"Try `xek --help` for more information.")
-          Exit.Fail(error.fault.status)
 
   private def property(name: String): Text = java.lang.System.getProperty(name).nn.tt
 
@@ -239,41 +320,61 @@ object Driver:
     if stream == null then t"unknown" else
       try String(stream.readAllBytes().nn, "UTF-8").trim.nn.tt finally stream.close()
 
-  // One option's line of the help, its description aligned in a column.
+  // One line of the help, its description aligned in a column.
+  private def entry(label: Text, description: Text): Text =
+    label+t" "*((32 - label.length) max 1)+description
+
   private def line(spec: Command.Spec): Text =
     val short: Text = if spec.short.present then t"-${spec.short.or(' ')}, " else t"    "
     val operand: Text = if spec.operand.present then t" <${spec.operand.or(t"")}>" else t""
-    val label: Text = t"  $short--${spec.name}$operand"
-    label+t" "*((32 - label.length) max 1)+spec.description
+    entry(t"  $short--${spec.name}$operand", spec.description)
 
   def help: Text =
-    val options: List[Text] = Command.specs.map(line(_))
-
-    val platforms: Text = Target.all.map(_.label).join(t", ")
+    val subcommands: List[Text] =
+      List(Command.Action.values*).map: (action: Command.Action) =>
+        entry(t"  "+action.name, action.description)
 
     List
-      ( t"xek — build XEK executables from JVM applications",
+      ( t"xek — build XEK executables from JVM applications, and sign their releases",
         t"",
         t"Usage:",
-        t"  xek [options] <app.jar> [<output>]",
-        t"  xek --dispatch <manifest.tsv> [options] <output>",
+        t"  xek <subcommand> [options]",
         t"",
-        t"With no options, writes a native executable for this platform, named for the JAR",
-        t"(app.jar makes app) unless <output> is given; an <output> which is a directory",
-        t"receives the executable under its default name.",
-        t"",
-        t"  -p <platform>      a native executable for that platform; several -p options write",
-        t"                     one for each, named <output>-<platform>",
-        t"  --polyglot         one file which runs in sh, and in PowerShell and cmd.exe once",
-        t"                     renamed to end .ps1 or .bat, unpacking the stub for its platform",
-        t"  --download         like --polyglot, but downloads its stub on first run",
-        t"  --dispatch <file>  downloads a complete executable, from the rows of a manifest:",
-        t"                     platform, URL and SHA-256, separated by tabs",
-        t"",
-        t"Platforms: $platforms",
-        t"",
-        t"Options:" )
-    . join(t"\n")+t"\n"+options.join(t"\n")+t"\n\nInstall tab-completions with: xek '{admin}' install"
+        t"Subcommands:" )
+    . join(t"\n")+t"\n"+subcommands.join(t"\n")+t"\n\n"
+    + t"Run `xek <subcommand> --help` for a subcommand's options. Signing needs Java 24 or later.\n"
+    + t"Install tab-completions with: xek '{admin}' install"
+
+  def help(action: Command.Action): Text =
+    val options: List[Text] = (action.specs + List(Command.Help)).map(line(_))
+    val usage: Text = t"Usage:\n  xek ${action.name} ${action.synopsis}"
+
+    val body: List[Text] = action match
+      case Command.Action.Build =>
+        val platforms: Text = Target.all.map(_.label).join(t", ")
+
+        List
+          ( t"  xek build --dispatch <manifest.tsv> [options] <output>",
+            t"",
+            t"With no options, writes a native executable for this platform, named for the JAR",
+            t"(app.jar makes app) unless <output> is given; an <output> which is a directory",
+            t"receives the executable under its default name.",
+            t"",
+            t"  -p <platform>      a native executable for that platform; several -p options write",
+            t"                     one for each, named <output>-<platform>",
+            t"  --polyglot         one file which runs in sh, and in PowerShell and cmd.exe once",
+            t"                     renamed to end .ps1 or .bat, unpacking the stub for its platform",
+            t"  --download         like --polyglot, but downloads its stub on first run",
+            t"  --dispatch <file>  downloads a complete executable, from the rows of a manifest:",
+            t"                     platform, URL and SHA-256, separated by tabs",
+            t"",
+            t"Platforms: $platforms" )
+
+      case _ =>
+        List(t"", t"${action.description.s.capitalize.nn.tt}. Needs Java 24 or later.")
+
+    (t"xek ${action.name} — ${action.description}" :: t"" :: usage :: body)
+    . join(t"\n")+t"\n\nOptions:\n"+options.join(t"\n")
 
 // `xek` from a plain JVM, without a launcher: how the first `xek` executable is built, from
 // its own JAR, by `mill xek.cli.executable`. It reads the same command line.
