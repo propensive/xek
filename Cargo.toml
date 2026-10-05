@@ -8,15 +8,6 @@ edition = "2024"
 name = "client"
 path = "src/client/src/main.rs"
 
-[[bin]]
-name = "xek-sign"
-path = "src/sign/src/main.rs"
-required-features = ["sign"]
-
-[features]
-default = []
-sign = ["ml-dsa/rand_core", "dep:rand"]
-
 [profile.release]
 opt-level = "z"
 lto = true
@@ -29,7 +20,6 @@ ml-dsa = { version = "0.1", default-features = false }
 # SHA3-256, for the statement an upgrade is signed over (spec/ethrcfg.md). It shares its Keccak
 # core with the SHAKE that ml-dsa already links.
 sha3 = { version = "0.11", default-features = false }
-rand = { version = "0.9", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

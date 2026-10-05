@@ -160,7 +160,7 @@ object Tests extends Suite(m"XEK tests"):
 
     def parse(words: Text*): Options =
       val here: Path on Linux = tempDir()
-      xek.Command.options(xek.Command.parse(words.to(List)), word => Files.child(local(here), word))
+      xek.Command.options(xek.Command.parse(t"build" :: words.to(List)), word => Files.child(local(here), word))
 
     def fault(block: => Any): Optional[Assembler.Fault] =
       safely(capture[Assembler.Error](block).fault)
@@ -234,55 +234,121 @@ object Tests extends Suite(m"XEK tests"):
         fault(Record(appId = t"a/b", recoveryKey = keyOf(_ => 1)).data)
       .assert(_ == Assembler.Fault.Usage)
 
-    // `xek-sign`, as `make client-build` or `cargo build --features sign` builds it in this
-    // checkout, or wherever $XEK_SIGN says. The suite runs in its host client's JVM, whose
-    // working directory is its own, so the checkout is found from this suite's jar, which
-    // `make test` assembles at `out/xek/test/assembly.dest/out.jar`. It is a Rust program, so
-    // a build with no Rust toolchain steps around these tests.
-    val signer: Optional[Text] =
-      val location = Tests.getClass.nn.getProtectionDomain.nn.getCodeSource.nn.getLocation.nn
-      val jar: jnf.Path = jnf.Path.of(location.toURI.nn).nn
-      val checkout: jnf.Path = jar.getParent.nn.getParent.nn.getParent.nn.getParent.nn.getParent.nn
-      val variable: String | Null = java.lang.System.getenv("XEK_SIGN")
+    def unhex(text: Text): scala.Array[Byte] = Signer.unhex(text.s.filter(!_.isWhitespace).tt).or(scala.Array())
 
-      val built: List[jnf.Path] =
-        List(s"dist/client/xek-sign-$hostLabel", "target/release/xek-sign", "target/debug/xek-sign")
-        . map(checkout.resolve(_).nn)
+    // The vector in `spec/fixtures/ml-dsa-44.tsv`, which the client's own tests check too.
+    def vector(name: Text): scala.Array[Byte] =
+      val row: Text = resource("fixtures/ml-dsa-44.tsv").cut(t"\n").filter(_.starts(t"$name\t")).prim.or(t"")
+      unhex(row.skip(name.length + 1))
 
-      val candidates: List[jnf.Path] = if variable == null then built else jnf.Path.of(variable).nn :: built
-      candidates.filter(jnf.Files.isExecutable(_)).prim.let(_.toAbsolutePath.nn.toString.tt)
+    // `xek`'s own subcommands, run in-process as the daemon runs them, against a directory.
+    def invoke(dir: Path on Linux, words: Text*): (List[Text], List[Text]) =
+      val out = scala.collection.mutable.ListBuffer[Text]()
+      val err = scala.collection.mutable.ListBuffer[Text]()
+      val parsed: xek.Command.Parsed = xek.Command.parse(words.to(List))
+      val path: Text => Path on Local = word => Files.child(local(dir), word)
+      def variable(name: Text): Optional[Text] = if name == t"SEED" then t"00"*32 else Unset
+      parsed.action.let(Signer.run(_, parsed, path, variable)(out += _, err += _))
+      (out.to(List), err.to(List))
 
-    signer.let: sign =>
-      suite(m"xek-sign"):
-        // An executable built by `xek` with both keys and an application id, then signed.
-        def signed(dir: Path on Linux): Path on Linux =
-          val client = fakeClient(); val jar = fakeJar(dir)
-          sh"$sign keygen --out ${dir/t"release"}".exec[Exit]()
-          sh"$sign keygen --out ${dir/t"recovery"}".exec[Exit]()
-          val words =
-            List
-              ( jar.encode, (dir/t"tool").encode, t"--client", client.encode, t"--build-id", t"7",
-                t"--public-key", (dir/t"release.pub").encode, t"--recovery-key", (dir/t"recovery.pub").encode,
-                t"--app-id", t"propensive/fume" )
+    // An executable built by `xek build` with both keys and an application id, and signed.
+    def keyed(dir: Path on Linux): Path on Linux =
+      val client = fakeClient(); val jar = fakeJar(dir)
+      invoke(dir, t"keygen", t"--out", t"release")
+      invoke(dir, t"keygen", t"--out", t"recovery")
+      val words =
+        List
+          ( t"build", jar.encode, (dir/t"tool").encode, t"--client", client.encode, t"--build-id", t"7",
+            t"--public-key", (dir/t"release.pub").encode, t"--recovery-key", (dir/t"recovery.pub").encode,
+            t"--app-id", t"propensive/fume" )
 
-          build(xek.Command.options(xek.Command.parse(words), Files.path(_)), dir)
-          sh"$sign sign --key ${dir/t"release.seed"} --in ${dir/t"tool"} --out ${dir/t"signed"}".exec[Exit]()
-          dir/t"signed"
+      build(xek.Command.options(xek.Command.parse(words), Files.path(_)), dir)
+      invoke(dir, t"sign", t"--key", t"release.seed", t"--in", t"tool", t"--out", t"signed")
+      dir/t"signed"
+
+    // ML-DSA is the JDK's from Java 24; on an older JDK the signing suites step aside.
+    if Signer.available then
+      suite(m"signing"):
+        test(m"derives the public key in spec/fixtures from its seed, as the client does"):
+          Signer.hex(Signer.publicKey(vector(t"seed")))
+        .assert(_ == Signer.hex(vector(t"public-key")))
+
+        test(m"takes the statement in spec/fixtures of the record there, as the client does"):
+          Signer.hex(Signer.statement(unhex(resource("fixtures/ethrcfg-v4.hex")), 0))
+        .assert(_ == Signer.hex(vector(t"statement")))
+
+        test(m"verifies the client's signature in spec/fixtures"):
+          Signer.verifies(vector(t"statement"), vector(t"signature"), vector(t"public-key"))
+        .assert(_ == true)
+
+        test(m"makes a signature which verifies, and no other"):
+          val statement: scala.Array[Byte] = vector(t"statement")
+          val signature: scala.Array[Byte] = Signer.sign(statement, vector(t"seed"))
+          val other: scala.Array[Byte] = Signer.publicKey(scala.Array.fill[Byte](32)(9))
+          val altered: scala.Array[Byte] = statement.clone()
+          altered(39) = (altered(39) ^ 1).toByte
+          ( Signer.verifies(statement, signature, vector(t"public-key")),
+            Signer.verifies(statement, signature, other),
+            Signer.verifies(altered, signature, vector(t"public-key")) )
+        .assert(_ == (true, false, false))
+
+        test(m"keygen writes a secret seed and its public key, and will not overwrite them"):
+          val dir = tempDir()
+          invoke(dir, t"keygen", t"--out", t"key")
+          val mode = jnf.Files.getPosixFilePermissions(jnf.Path.of((dir/t"key.seed").encode.s)).nn.toString
+          val again = fault(invoke(dir, t"keygen", t"--out", t"key"))
+          val derived = Signer.hex(Signer.publicKey(bytes(dir/t"key.seed")))
+          (mode, derived == Signer.hex(bytes(dir/t"key.pub")), again)
+        .assert(_ == (t"[OWNER_READ, OWNER_WRITE]", true, Assembler.Fault.Usage))
+
+        test(m"reads a seed from an environment variable"):
+          val dir = tempDir()
+          invoke(dir, t"public-key", t"--key-env", t"SEED", t"--out", t"key.pub")
+          Signer.hex(bytes(dir/t"key.pub"))
+        .assert(_ == Signer.hex(Signer.publicKey(new scala.Array[Byte](32))))
 
         test(m"an executable built with both keys and an application id, once signed, verifies"):
-          val dir = tempDir(); val out = signed(dir)
-          sh"$sign verify --public-key ${dir/t"release.pub"} --app-id propensive/fume --in $out".exec[Text]().trim
-        .assert(_ == t"7")
+          val dir = tempDir(); keyed(dir)
+          invoke(dir, t"verify", t"--public-key", t"release.pub", t"--app-id", t"propensive/fume", t"--in", t"signed")(0)
+        .assert(_ == List(t"7"))
 
         test(m"it does not verify for another application"):
-          val dir = tempDir(); val out = signed(dir)
-          sh"$sign verify --public-key ${dir/t"release.pub"} --app-id propensive/flame --in $out".exec[Exit]()
-        .assert(_ != Exit.Ok)
+          val dir = tempDir(); keyed(dir)
+          fault(invoke(dir, t"verify", t"--public-key", t"release.pub", t"--app-id", t"propensive/flame", t"--in", t"signed"))
+        .assert(_ == Assembler.Fault.Verification)
 
         test(m"it does not verify under the recovery key, which did not sign it"):
-          val dir = tempDir(); val out = signed(dir)
-          sh"$sign verify --public-key ${dir/t"recovery.pub"} --in $out".exec[Exit]()
-        .assert(_ != Exit.Ok)
+          val dir = tempDir(); keyed(dir)
+          fault(invoke(dir, t"verify", t"--public-key", t"recovery.pub", t"--in", t"signed"))
+        .assert(_ == Assembler.Fault.Verification)
+
+        test(m"a change to the executable after signing does not verify"):
+          val dir = tempDir(); val signed = keyed(dir)
+          val data = bytes(signed)
+          data(3) = (data(3) ^ 1).toByte
+          jnf.Files.write(jnf.Path.of(signed.encode.s), data)
+          fault(invoke(dir, t"verify", t"--public-key", t"release.pub", t"--in", t"signed"))
+        .assert(_ == Assembler.Fault.Verification)
+
+        test(m"the recovery key may sign, but a key the record does not carry needs --foreign-key"):
+          val dir = tempDir(); keyed(dir)
+          invoke(dir, t"keygen", t"--out", t"other")
+          invoke(dir, t"sign", t"--key", t"recovery.seed", t"--in", t"tool", t"--out", t"recovered")
+          val recovered = invoke(dir, t"verify", t"--public-key", t"recovery.pub", t"--in", t"recovered")(0)
+          val refused = fault(invoke(dir, t"sign", t"--key", t"other.seed", t"--in", t"tool", t"--out", t"x"))
+          invoke(dir, t"sign", t"--key", t"other.seed", t"--in", t"tool", t"--out", t"x", t"--foreign-key")
+          val foreign = invoke(dir, t"verify", t"--public-key", t"other.pub", t"--in", t"x")(0)
+          (recovered, refused, foreign)
+        .assert(_ == (List(t"7"), Assembler.Fault.Usage, List(t"7")))
+
+        test(m"a signature made elsewhere over the statement can be attached"):
+          val dir = tempDir(); keyed(dir)
+          val statement = unhex(invoke(dir, t"statement", t"--in", t"tool")(0).prim.or(t""))
+          val signature = Signer.sign(statement, bytes(dir/t"release.seed"))
+          jnf.Files.write(jnf.Path.of((dir/t"sig").encode.s), signature)
+          invoke(dir, t"attach", t"--in", t"tool", t"--signature", t"sig", t"--out", t"attached")
+          invoke(dir, t"verify", t"--public-key", t"release.pub", t"--in", t"attached")(0)
+        .assert(_ == List(t"7"))
 
     // The schema in `spec/ethereal-launcher.tel` is the contract, and `src/client/src/bintel.rs`
     // pins the hash of its base as the constant from which the client derives every signature
@@ -461,6 +527,21 @@ object Tests extends Suite(m"XEK tests"):
       .assert(_ == Assembler.Fault.Download)
 
     suite(m"command line"):
+      test(m"needs a subcommand, and suggests one for a JAR"):
+        (fault(xek.Command.parse(Nil)), fault(xek.Command.parse(List(t"app.jar"))),
+         fault(xek.Command.parse(List(t"frob"))))
+      .assert(_ == (Assembler.Fault.Usage, Assembler.Fault.Usage, Assembler.Fault.Usage))
+
+      test(m"accepts --help and --version alone"):
+        (xek.Command.parse(List(t"--help")).action, xek.Command.parse(List(t"-v")).action)
+      .assert(_ == (Unset, Unset))
+
+      test(m"reads the subcommand, and gives each only its own options"):
+        val sign = xek.Command.parse(List(t"sign", t"--key", t"k", t"--in", t"a", t"--out", t"b"))
+        (sign.action, sign.value(xek.Command.Key), fault(xek.Command.parse(List(t"sign", t"--platform", t"x"))),
+         fault(xek.Command.parse(List(t"build", t"--key", t"k", t"app.jar"))))
+      .assert(_ == (xek.Command.Action.Sign, t"k", Assembler.Fault.Usage, Assembler.Fault.Usage))
+
       test(m"names the output for the JAR by default"):
         plan(parse(t"app.jar")).files.map(_.name)
       .assert(_ == List(t"app"))

@@ -54,6 +54,7 @@ object Assembler:
     case Usage extends Fault(1)
     case Format extends Fault(2)
     case Download extends Fault(3)
+    case Verification extends Fault(4)
 
   case class Error(fault: Fault, detail: Message)(using Diagnostics)
   extends fulminate.Error(detail)

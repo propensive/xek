@@ -347,3 +347,38 @@ mod tests {
         assert_eq!(verify_pending(&bin, &running).unwrap_err(), VerifyError::ApplicationUnset);
     }
 }
+
+
+// spec/fixtures/ml-dsa-44.tsv is a test vector which the Scala signer in `xek` is checked
+// against too: the public key derived from a seed, the statement of the record in
+// spec/fixtures/ethrcfg-v4.hex taken as a whole file, and a signature over it by that key.
+#[cfg(test)]
+mod vector {
+    use crate::signing::{PUBKEY_LEN, statement, verifies};
+    use ml_dsa::{B32, Keypair, MlDsa44, SigningKey};
+
+    fn unhex(text: &str) -> Vec<u8> {
+        let text: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+        (0..text.len() / 2).map(|i| u8::from_str_radix(&text[2 * i..2 * i + 2], 16).unwrap()).collect()
+    }
+
+    fn field(name: &str) -> Vec<u8> {
+        let line = include_str!("../../../spec/fixtures/ml-dsa-44.tsv").lines()
+            .find(|line| line.starts_with(&format!("{name}\t"))).unwrap();
+        unhex(&line[name.len() + 1..])
+    }
+
+    #[test]
+    fn matches_the_vector() {
+        let seed: [u8; 32] = field("seed").try_into().unwrap();
+        let seed: B32 = seed.into();
+        let derived: [u8; PUBKEY_LEN] = SigningKey::<MlDsa44>::from_seed(&seed).verifying_key().encode().into();
+        let key: [u8; PUBKEY_LEN] = field("public-key").try_into().unwrap();
+        assert_eq!(derived, key);
+
+        let file = unhex(include_str!("../../../spec/fixtures/ethrcfg-v4.hex"));
+        let signed = statement(&file, 0);
+        assert_eq!(signed.to_vec(), field("statement"));
+        assert!(verifies(&signed, &field("signature"), &key));
+    }
+}
