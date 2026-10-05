@@ -36,7 +36,8 @@ import vacuous.*
 // The xek packaging configuration `executableEdges`' tools fold settings into: the distributable's
 // basename, the platforms it targets (defaulting to every platform its client source names),
 // where the bare client stubs come from, the Java runtime policy recorded in each stub's
-// ETHRCFG block, self-upgrade signing, and the build number that orders upgrades. A client
+// ETHRCFG block, the keys and application id self-upgrades are checked against, and the build
+// number that orders upgrades. A client
 // source must be specified: `executableOptions.client.standard` names the published release.
 case class ExecutableConfiguration
   ( name:    Text                             = t"app",
@@ -44,4 +45,5 @@ case class ExecutableConfiguration
     client: Optional[Packaging.ClientSource] = Unset,
     java:    Packaging.JavaPolicy             = Packaging.JavaPolicy(),
     signing: Optional[Packaging.Signing]      = Unset,
+    appId:   Optional[Text]                   = Unset,
     buildId: Long                             = 0L )

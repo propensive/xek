@@ -1,4 +1,4 @@
-// The ETHRCFG v3 configuration record. Specified in spec/ethrcfg.md, which is what a builder
+// The ETHRCFG v4 configuration record. Specified in spec/ethrcfg.md, which is what a builder
 // outside this repository is written against.
 //
 // The record is NOT part of the stub. A builder turns a bare stub into an application's
@@ -10,35 +10,31 @@
 // the stub, exactly that happened on x86-64: the verifier's comparand was materialised as a
 // `movabs` immediate ahead of the real record, and every builder patched the code instead.)
 //
-// Layout (3764 bytes total):
-//   [0..8]        magic: "ETHRCFG" + format version (3)
-//   [8..16]       build_id    (u64 little-endian)
-//   [16..18]      java_min    (u16 little-endian)
-//   [18..20]      java_pref   (u16 little-endian)
-//   [20]          bundle      (0 = jre, 1 = jdk)
-//   [21]          flags       (bit 0 = downgrade_permitted, others reserved)
-//   [22..32]      reserved    (0)
-//   [32..1344]    ml_dsa_44 public key (1312 bytes)
-//   [1344..3764]  ml_dsa_44 signature  (2420 bytes; zero in the running
-//                 binary, set only by the signer. The verifier zeroes this
-//                 region of the incoming .pending binary before recomputing
-//                 the signature.)
+// Layout (5108 bytes total; the offsets are in `signing.rs`, shared with the signer):
+//   [0..8]        magic: "ETHRCFG" + format version (4)
+//   [8..16]       build_id     (u64 little-endian)
+//   [16..18]      java_min     (u16 little-endian)
+//   [18..20]      java_pref    (u16 little-endian)
+//   [20]          bundle       (0 = jre, 1 = jdk)
+//   [21]          flags        (bit 0 = downgrade_permitted, others reserved)
+//   [22..32]      reserved     (0)
+//   [32..64]      app_id       (SHA3-256 of the application's identifier; zero = unset)
+//   [64..1376]    release_key  (ML-DSA-44 public key; zero = unset)
+//   [1376..2688]  recovery_key (ML-DSA-44 public key; zero = none)
+//   [2688..5108]  signature    (ML-DSA-44, over the statement in `signing.rs`; zero in an
+//                 unsigned file)
 //
 // A stub run bare — no record appended — sees the compiled-in defaults below, which are also
-// what a zero field means: Java 21 minimum, 24 preferred, a JRE, build id 0, and an all-zero
-// public key, which disables self-upgrade.
+// what a zero field means: Java 21 minimum, 24 preferred, a JRE, build id 0, and no keys,
+// which disables self-upgrade.
 
 use std::path::Path;
 use std::sync::OnceLock;
 
-pub const RECORD_LEN: usize        = 3764;
-pub const MAGIC_LEN: usize         = 8;
-pub const PUBKEY_OFFSET: usize     = 32;
-pub const PUBKEY_LEN: usize        = 1312;        // ML-DSA-44 |pk|
-pub const SIGNATURE_OFFSET: usize  = 1344;
-pub const SIGNATURE_LEN: usize     = 2420;        // ML-DSA-44 |sig|
+pub use crate::signing::{APP_ID_LEN, APP_ID_OFFSET, BUILD_ID_OFFSET, MAGIC_LEN, PUBKEY_LEN, RECORD_LEN,
+                         RECOVERY_KEY_OFFSET, RELEASE_KEY_OFFSET};
 
-pub const FLAG_DOWNGRADE_PERMITTED: u8 = 0x01;
+use crate::verify::Keys;
 
 pub const DEFAULT_JAVA_MIN: u16  = 21;
 pub const DEFAULT_JAVA_PREF: u16 = 24;
@@ -49,11 +45,11 @@ pub const DEFAULT_JAVA_PREF: u16 = 24;
 const SCAN_LIMIT: u64 = 16 * 1024 * 1024;
 const CHUNK: usize = 64 * 1024;
 
-// `ETHRCFG\x03`, each byte XORed with `OBFUSCATION_KEY`. See the module comment.
+// `ETHRCFG\x04`, each byte XORed with `OBFUSCATION_KEY`. See the module comment.
 const OBFUSCATION_KEY: u8 = 0x5A;
 const MAGIC_OBFUSCATED: [u8; MAGIC_LEN] = [
     b'E' ^ OBFUSCATION_KEY, b'T' ^ OBFUSCATION_KEY, b'H' ^ OBFUSCATION_KEY, b'R' ^ OBFUSCATION_KEY,
-    b'C' ^ OBFUSCATION_KEY, b'F' ^ OBFUSCATION_KEY, b'G' ^ OBFUSCATION_KEY, 3 ^ OBFUSCATION_KEY,
+    b'C' ^ OBFUSCATION_KEY, b'F' ^ OBFUSCATION_KEY, b'G' ^ OBFUSCATION_KEY, 4 ^ OBFUSCATION_KEY,
 ];
 
 // The magic, reassembled at run time. `black_box` stops the optimiser from folding the XOR
@@ -93,13 +89,15 @@ static RECORD: OnceLock<Option<[u8; RECORD_LEN]>> = OnceLock::new();
 pub fn find_record(bytes: &[u8]) -> Option<usize> {
     if bytes.len() < RECORD_LEN { return None; }
     let magic = magic();
-    bytes[..=bytes.len() - RECORD_LEN]
+    // The last start a record can have is `len - RECORD_LEN`, so the windows run to that plus
+    // the magic's length.
+    bytes[..bytes.len() - RECORD_LEN + MAGIC_LEN]
         .windows(MAGIC_LEN)
         .position(|window| window == magic)
 }
 
 pub fn parse(record: &[u8; RECORD_LEN]) -> BuildConfig {
-    let build_id      = u64::from_le_bytes(record[8..16].try_into().unwrap());
+    let build_id      = u64::from_le_bytes(record[BUILD_ID_OFFSET..BUILD_ID_OFFSET + 8].try_into().unwrap());
     let java_min_raw  = u16::from_le_bytes(record[16..18].try_into().unwrap());
     let java_pref_raw = u16::from_le_bytes(record[18..20].try_into().unwrap());
     BuildConfig {
@@ -161,22 +159,16 @@ pub fn read_config() -> BuildConfig {
     RECORD.get().and_then(|r| r.as_ref()).map(parse).unwrap_or(BuildConfig::DEFAULT)
 }
 
-// Snapshot of the running binary's ML-DSA-44 public key. Returned as an owned
-// array because the caller may need to forward it across thread or FFI
-// boundaries; it's only 1312 bytes.
-pub fn public_key() -> [u8; PUBKEY_LEN] {
-    let mut out = [0u8; PUBKEY_LEN];
-    if let Some(record) = RECORD.get().and_then(|r| r.as_ref()) {
-        out.copy_from_slice(&record[PUBKEY_OFFSET..PUBKEY_OFFSET + PUBKEY_LEN]);
-    }
-    out
+// The running binary's keys and application id, or zeros when it has no record. Owned, since
+// they are only 2.6 kB and the caller holds them across the whole of an upgrade check.
+pub fn keys() -> Keys {
+    RECORD.get().and_then(|r| r.as_ref()).map(|record| Keys::of(record)).unwrap_or(Keys::NONE)
 }
 
-// True iff the baked-in public key is all zeros — the safe "no signing
-// configured" state. A client in this state rejects every upgrade.
-#[cfg(test)]
-pub fn public_key_is_unset() -> bool {
-    public_key().iter().all(|&b| b == 0)
+// Whether this binary can upgrade itself at all: it has both a release key and an application
+// id. Rule 1 of the verification rule in spec/ethrcfg.md, and `ethereal.upgradable` to the daemon.
+pub fn upgradable() -> bool {
+    keys().upgradable()
 }
 
 #[cfg(test)]
@@ -202,8 +194,8 @@ mod tests {
     }
 
     #[test]
-    fn magic_is_ethrcfg_v3() {
-        assert_eq!(&magic(), b"ETHRCFG\x03");
+    fn magic_is_ethrcfg_v4() {
+        assert_eq!(&magic(), b"ETHRCFG\x04");
     }
 
     #[test]
@@ -215,6 +207,14 @@ mod tests {
         jar.extend_from_slice(&[0u8; RECORD_LEN]);
         bytes.extend_from_slice(&jar);
         assert_eq!(find_record(&bytes), Some(1000));
+    }
+
+    #[test]
+    fn record_at_the_very_end_is_found() {
+        let mut bytes = vec![0u8; 100];
+        bytes.extend_from_slice(&record(1, 0, 0, false, 0));
+        assert_eq!(find_record(&bytes), Some(100));
+        assert_eq!(find_record(&bytes[..bytes.len() - 1]), None);
     }
 
     #[test]
@@ -264,17 +264,47 @@ mod tests {
     }
 
     #[test]
-    fn scan_reads_the_public_key() {
+    fn scan_reads_the_keys_and_application() {
         let mut r = record(1, 0, 0, false, 0);
-        for (i, b) in r[PUBKEY_OFFSET..PUBKEY_OFFSET + PUBKEY_LEN].iter_mut().enumerate() {
+        r[APP_ID_OFFSET..APP_ID_OFFSET + APP_ID_LEN].fill(9);
+        for (i, b) in r[RELEASE_KEY_OFFSET..RELEASE_KEY_OFFSET + PUBKEY_LEN].iter_mut().enumerate() {
             *b = (i % 251) as u8;
         }
+        r[RECOVERY_KEY_OFFSET..RECOVERY_KEY_OFFSET + PUBKEY_LEN].fill(3);
         let mut bytes = vec![0x44u8; 777];
         bytes.extend_from_slice(&r);
-        let path = temp_file("pubkey", &bytes);
-        let found = scan_file(&path).expect("record");
-        assert_eq!(&found[PUBKEY_OFFSET..PUBKEY_OFFSET + 8], &[0, 1, 2, 3, 4, 5, 6, 7]);
+        let path = temp_file("keys", &bytes);
+        let keys = Keys::of(&scan_file(&path).expect("record"));
+        assert_eq!(keys.app_id, [9u8; APP_ID_LEN]);
+        assert_eq!(&keys.release_key[..8], &[0, 1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(keys.recovery_key, [3u8; PUBKEY_LEN]);
+        assert!(keys.upgradable());
         let _ = std::fs::remove_file(path);
+    }
+
+    // The record `xek.Record` writes for the fields below, committed in spec/fixtures and
+    // checked byte for byte by the Scala suite: the client must read back what the builder wrote.
+    #[test]
+    fn reads_the_record_the_builder_writes() {
+        let hex: String = include_str!("../../../spec/fixtures/ethrcfg-v4.hex")
+            .chars().filter(|c| !c.is_whitespace()).collect();
+        assert_eq!(hex.len(), 2 * RECORD_LEN);
+        let mut r = [0u8; RECORD_LEN];
+        for (i, b) in r.iter_mut().enumerate() {
+            *b = u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).unwrap();
+        }
+        assert_eq!(find_record(&r), Some(0));
+        assert_eq!(parse(&r), BuildConfig {
+            build_id: 0x0102030405060708, java_min: 21, java_pref: 25, bundle: "jdk", flags: 1
+        });
+        let keys = Keys::of(&r);
+        assert_eq!(keys.app_id, crate::signing::app_id("propensive/fume"));
+        for i in 0..PUBKEY_LEN {
+            assert_eq!(keys.release_key[i], (i % 251) as u8);
+            assert_eq!(keys.recovery_key[i], ((i * 7) % 251) as u8);
+        }
+        assert!(crate::signing::is_zero(&r[22..32]));
+        assert!(crate::signing::is_zero(&r[crate::signing::SIGNATURE_OFFSET..]));
     }
 
     #[test]
@@ -283,7 +313,7 @@ mod tests {
         // assert what holds either way for a record-free process.
         if RECORD.get().is_none() {
             assert_eq!(read_config(), BuildConfig::DEFAULT);
-            assert!(public_key_is_unset());
+            assert!(!upgradable());
         }
     }
 }

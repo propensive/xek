@@ -2,7 +2,8 @@ name: Build
 
 # Build every pull request and every merge into main, via the shared workflows in
 # propensive/.github: the Scala modules with Mill, their suites run by the fume pinned in
-# etc/tools, and the client stubs' unit tests with Cargo. Both checks, `build / build` and
+# etc/tools, and the client stubs' unit tests with Cargo — with the `sign` feature, so that the
+# signer, xek-sign, is built and checked too. Both checks, `build / build` and
 # `rust / build`, are required by the ruleset on main.
 
 on:
@@ -22,3 +23,5 @@ jobs:
 
   rust:
     uses: propensive/.github/.github/workflows/rust-ci.yml@main
+    with:
+      test_args: --workspace --locked --features sign

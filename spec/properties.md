@@ -17,6 +17,7 @@ who launched it, and the daemon may rely on every one of them being present.
 | `ethereal.payloadSize` | Reserved; currently always `0` |
 | `ethereal.jarSize` | The length in bytes of the whole executable file (stub, record and JAR) |
 | `ethereal.command` | The path `PATH` resolution finds for `ethereal.name`, or empty |
+| `ethereal.upgradable` | `true` if the executable's record has both a release key and an application id, so that its launcher would accept a signed upgrade (rule 1 in [`ethrcfg.md`](ethrcfg.md)); otherwise `false`. An application should not offer an upgrade its own launcher will refuse — from a development build, say |
 | `burdock.progress` | A file the JVM may append dependency-download progress lines to, which the launcher tails and renders |
 
 Adding a property is compatible; removing or repurposing one is a protocol change and follows

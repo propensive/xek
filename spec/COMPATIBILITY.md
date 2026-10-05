@@ -68,6 +68,14 @@ the daemon have a command run on the client's terminal; and `record Init` gains 
 describes the session, its flow control, the descriptors and the terminal. The variant indices are renumbered, so nothing of the
 old base's wire form survives, which the signature says.
 
+The release after `1.0.0` moves the configuration record to `ETHRCFG` v4
+([`ethrcfg.md`](ethrcfg.md)): 5108 bytes, adding the application id and a recovery key, and
+signed over a statement rather than the whole file. A v3 client never finds a v4 record and a v4
+client never finds a v3 one, so the two cannot upgrade into each other — which loses nothing,
+since no v3 executable was published with a key. Its launcher also reports what became of a
+staged upgrade in `.upgrade-result` ([`layout.md`](layout.md)) and passes the daemon
+`ethereal.upgradable` ([`properties.md`](properties.md)); the protocol is unchanged.
+
 ## Protocol versions
 
 There is no version number on the wire, and deliberately so: the base signature *is* the

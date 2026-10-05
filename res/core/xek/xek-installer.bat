@@ -42,7 +42,7 @@ if not exist "!tmp_bin!" (
     echo Extraction failed for windows-!arch! >&2
     exit /b 1
 )
-rem The ETHRCFG v3 record (spec/ethrcfg.md), embedded once, appended after the stub.
+rem The ETHRCFG v4 record (spec/ethrcfg.md), embedded once, appended after the stub.
 if defined record_offset (
     set "tmp_rec=%TEMP%\~ethereal_%RANDOM%_rec"
     set /a "rskip=indexnum + record_offset - 1"

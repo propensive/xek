@@ -75,19 +75,22 @@ object Packaging:
 
   case class JavaPolicy(minimum: Int = 21, preferred: Int = 24, bundle: Bundle = Bundle.Jre)
 
-  // Self-upgrade signing. `Unset` overall disables upgrades (the safe default).
+  // The keys self-upgrades are verified against, written into each executable's record. `Unset`
+  // overall disables upgrades (the safe default). Signing a release is a separate step, with
+  // `xek-sign`, which never happens inside a build that also holds the application's code.
   case class Signing
-    ( publicKey:      Optional[Path on Linux] = Unset, // baked in via `-Dethereal.publicKey`
-     seed:           Optional[Path on Linux] = Unset, // signs post-assembly via `ethereal-sign`
-     allowDowngrade: Boolean                 = false )
+    ( publicKey:      Optional[Path on Linux] = Unset, // the release key
+      recoveryKey:    Optional[Path on Linux] = Unset, // a second key, kept offline
+      allowDowngrade: Boolean                 = false )
 
 case class Packaging
   ( name:         Text,
-   targets:      List[Text],
-   delivery:     Packaging.Delivery,
-   dependencies: Packaging.Dependencies,
-   output:       Path on Linux,
-   clientSource: Packaging.ClientSource,
-   java:         Packaging.JavaPolicy        = Packaging.JavaPolicy(),
-   signing:      Optional[Packaging.Signing] = Unset,
-   buildId:      Long                        = 0L )
+    targets:      List[Text],
+    delivery:     Packaging.Delivery,
+    dependencies: Packaging.Dependencies,
+    output:       Path on Linux,
+    clientSource: Packaging.ClientSource,
+    java:         Packaging.JavaPolicy        = Packaging.JavaPolicy(),
+    signing:      Optional[Packaging.Signing] = Unset,
+    appId:        Optional[Text]              = Unset,
+    buildId:      Long                        = 0L )

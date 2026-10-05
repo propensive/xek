@@ -66,8 +66,8 @@ object Packager:
       case Packaging.ClientSource.Local(directory)      => Stubs.Source.Directory(local(directory))
       case Packaging.ClientSource.Remote(baseUrl, hashes) => Stubs.Source.Remote(baseUrl, hashes)
 
-    val publicKey: Optional[Data] =
-      config.signing.let(_.publicKey).let { path => Array.unsafeFrozen(jnf.Files.readAllBytes(javaPath(path)).nn) }
+    def key(path: Optional[Path on Linux]): Optional[Data] =
+      path.let { path => Array.unsafeFrozen(jnf.Files.readAllBytes(javaPath(path)).nn) }
 
     val record: Record =
       Record
@@ -76,7 +76,9 @@ object Packager:
           javaPreferred  = config.java.preferred,
           jdk            = config.java.bundle == Packaging.Bundle.Jdk,
           allowDowngrade = config.signing.let(_.allowDowngrade).or(false),
-          publicKey      = publicKey )
+          appId          = config.appId,
+          releaseKey     = key(config.signing.let(_.publicKey)),
+          recoveryKey    = key(config.signing.let(_.recoveryKey)) )
 
     val options: Options =
       Options

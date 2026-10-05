@@ -60,9 +60,48 @@ directory and the socket must therefore be private, by construction rather than 
 
 Within `<data>/<name>`:
 
-| File | Meaning |
+| File | Written by | Meaning |
+|---|---|---|
+| `.pending` | application | A complete signed replacement executable, staged by the application (or whatever fetches its releases). On its next start the launcher verifies it against the keys and application id in the *running* executable's record, by the rule in [`ethrcfg.md`](ethrcfg.md), swaps it into place on success, and re-execs. Whatever the outcome, the launcher deletes it |
+| `.upgrade-result` | launcher | What became of the last `.pending`; see below |
+
+### `.upgrade-result`
+
+After handling a `.pending`, and only then, the launcher writes `.upgrade-result`, replacing any
+earlier one, as a single line of four space-separated fields:
+
+    <outcome> <candidate-build-id> <running-build-id> <time-ms>
+
+`candidate-build-id` is the `build_id` in the candidate's record, or `0` if it has none;
+`running-build-id` is that of the executable which did the check; `time-ms` is milliseconds
+since the epoch. `outcome` is one of:
+
+| Outcome | Meaning |
 |---|---|
-| `.pending` | A complete signed replacement binary. On its next start the launcher verifies this against the public key baked into the *running* binary, and on success swaps it into place and re-execs; on failure it is deleted silently |
+| `applied` | The candidate was verified and is now the executable. Written after the swap and before the re-exec |
+| `disabled` | The running executable has no release key or no application id, so it accepts no upgrade |
+| `no-record` | The candidate has no `ETHRCFG` v4 record |
+| `wrong-application` | The candidate is for another application |
+| `bad-signature` | The candidate's signature verifies under neither of the running executable's keys |
+| `not-newer` | The candidate's build id does not exceed the running one, and it does not permit a downgrade |
+| `swap-failed` | The candidate was accepted, but could not be installed — the executable's directory is not writable, say — and the existing executable runs on |
+
+An application that staged an upgrade reads this file to tell its user whether it took. The file
+is written whole, beside its destination, and renamed over it.
+
+### The swap
+
+The executable is replaced through two files beside it, in its own directory `<dir>`, so that
+every rename stays on one filesystem — which a rename from the data directory cannot promise,
+`~/.local/share` and `/usr/local/bin` being on different ones often enough:
+
+1. The bytes that were verified — held in memory, not read again — are written to
+   `<dir>/.<name>.new`, mode `0755`, and synced; `.pending` is deleted.
+2. The executable is renamed to `<dir>/.<name>.old`, replacing any earlier one.
+3. `.<name>.new` is renamed to the executable's path. If that fails, `.<name>.old` is renamed back.
+
+If any step fails, `.<name>.new` is removed and the outcome is `swap-failed`. `.<name>.old` is
+left in place, as the previous version, until the next upgrade replaces it.
 
 ## Launcher diagnostics
 

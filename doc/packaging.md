@@ -5,7 +5,7 @@
 Shipping a JVM application to someone who just wants to run it starts with distribution: a JAR
 becomes a self-contained executable — a native launcher per platform, or a single polyglot
 installer script that runs as shell script, batch file and PowerShell alike. Building one is
-joining a bare client stub, a 3764-byte configuration record and the JAR (`stub ‖ record ‖
+joining a bare client stub, a 5108-byte configuration record and the JAR (`stub ‖ record ‖
 jar`); the reference implementation is the `xek` script published with each client release.
 
 ### On distribution
@@ -49,7 +49,12 @@ Packager.pack(packaging)
 ```
 
 The launchers locate or fetch a JVM within the configured version policy, and support signed
-self-upgrade.
+self-upgrade. For that, the record carries the application's identifier and the keys an upgrade
+must be signed with — a release key, and optionally a recovery key kept offline — given as
+`Packaging(…, appId = t"propensive/mytool", signing = Packaging.Signing(publicKey =
+releaseKeyPath, recoveryKey = recoveryKeyPath))`. A release key needs an application id. Signing
+is not part of the build: a release is signed afterwards, with `xek-sign`, published beside the
+stubs ([`spec/ethrcfg.md`](../spec/ethrcfg.md)).
 
 ### Bundling as a toolchain format
 
@@ -72,8 +77,8 @@ Toolchain(jarEdges(), executableEdges()).produce
 committed manifest, while `client.local` reads prebuilt stubs from a directory instead. Targets
 default to every platform the client source names, and `executableOptions.target` adds one
 explicitly. `executableOptions.java` sets the minimum and preferred JVM versions, `bundle.jre`
-and `bundle.jdk` ship one alongside, and `signing` and `buildId` configure the self-upgrade
-signing and upgrade ordering recorded in each stub.
+and `bundle.jdk` ship one alongside, and `signing`, `appId` and `buildId` configure the keys,
+the application and the upgrade ordering recorded in each executable.
 
 ### Where the stubs come from
 
@@ -100,6 +105,7 @@ xek --polyglot -x bat -p linux-x64,macos-arm64 app.jar dist/
 xek --download app.jar                   # a polyglot file which fetches its stub on first run
 xek --dispatch executables.tsv app       # a polyglot file which fetches a complete executable
 xek --java 25 --java-min 21 --jdk app.jar
+xek --build-id 42 --app-id propensive/mytool --public-key release.pub --recovery-key recovery.pub app.jar
 ```
 
 `xek --help` lists every option, and `xek '{admin}' install` installs its tab-completions.

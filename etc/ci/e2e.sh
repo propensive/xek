@@ -50,17 +50,22 @@ mkdir -p dist
 rm -f "$OUT"
 
 # Package with `xek`, from the local stubs: a native executable for one platform, with no
-# download and no hash check — the same command a shell user runs.
-if [[ "${E2E_DAEMON:-}" == "legacy" ]]; then
-  # dist/xek is itself wrapped in the local stub, which the pinned daemon cannot serve (that is
-  # what this mode checks below), so the packager runs with no launcher at all.
-  ./mill xek.cli.bootstrap --platform "$LABEL" --client "$PWD/dist/client" "$PWD/$JAR" "$PWD/$OUT"
-else
-  if [[ ! -x dist/xek ]]; then
-    echo "e2e: dist/xek not found — run \`make xek\`" >&2; exit 1
+# download and no hash check — the same command a shell user runs. `package <output> [option…]`.
+package() {
+  local output=$1; shift
+  if [[ "${E2E_DAEMON:-}" == "legacy" ]]; then
+    # dist/xek is itself wrapped in the local stub, which the pinned daemon cannot serve (that is
+    # what this mode checks below), so the packager runs with no launcher at all.
+    ./mill xek.cli.bootstrap --platform "$LABEL" --client "$PWD/dist/client" "$@" "$PWD/$JAR" "$output"
+  else
+    ./dist/xek --platform "$LABEL" --client "$PWD/dist/client" "$@" "$PWD/$JAR" "$output"
   fi
-  ./dist/xek --platform "$LABEL" --client "$PWD/dist/client" "$PWD/$JAR" "$PWD/$OUT"
+}
+
+if [[ "${E2E_DAEMON:-}" != "legacy" && ! -x dist/xek ]]; then
+  echo "e2e: dist/xek not found — run \`make xek\`" >&2; exit 1
 fi
+package "$PWD/$OUT"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -105,6 +110,55 @@ expect_status() {  # expect_status <description> <expected> <actual>
 }
 
 echo "e2e: running $OUT"
+
+# Self-upgrade (spec/ethrcfg.md, spec/layout.md). A launcher handles a staged `.pending` before
+# it contacts any daemon, so these cases need none: each stages a candidate beside a keyed v1,
+# runs v1 once, and reads what the launcher did from the executable's bytes and from
+# `.upgrade-result`. They run under their own name and data directory, so as not to disturb the
+# cases below.
+SIGNER="$PWD/dist/client/xek-sign-$LABEL"
+if [[ ! -x "$SIGNER" ]]; then
+  echo "e2e: $SIGNER not found — run \`make client-build\`" >&2; exit 1
+fi
+echo "e2e: checking self-upgrade"
+
+UP="$TMP/up"
+mkdir -p "$UP/bin" "$UP/data/hello-up"
+"$SIGNER" keygen --out "$UP/release" 2>/dev/null
+"$SIGNER" keygen --out "$UP/recovery" 2>/dev/null
+keyed=(--public-key "$UP/release.pub" --recovery-key "$UP/recovery.pub")
+package "$UP/v1" --build-id 1 "${keyed[@]}" --app-id propensive/hello
+package "$UP/v2" --build-id 2 "${keyed[@]}" --app-id propensive/hello
+package "$UP/other" --build-id 2 "${keyed[@]}" --app-id propensive/other
+"$SIGNER" sign --key "$UP/release.seed" --in "$UP/v2" --out "$UP/v2.signed" 2>/dev/null
+"$SIGNER" sign --key "$UP/recovery.seed" --in "$UP/v2" --out "$UP/v2.recovered" 2>/dev/null
+"$SIGNER" sign --key "$UP/release.seed" --in "$UP/other" --out "$UP/other.signed" 2>/dev/null
+# One byte of the stub changed after signing.
+cp "$UP/v2.signed" "$UP/v2.tampered"
+printf '\x00' | dd of="$UP/v2.tampered" bs=1 seek=4096 conv=notrunc 2>/dev/null
+
+upgrade() {  # upgrade <description> <candidate> <expected outcome> <expected executable>
+  # A new file, not v1 copied over the last one: macOS kills an executable rewritten in place.
+  rm -f "$UP/bin/hello-up" "$UP/data/hello-up/.upgrade-result"
+  cp "$UP/v1" "$UP/bin/hello-up"
+  cp "$2" "$UP/data/hello-up/.pending"
+  XDG_DATA_HOME="$UP/data" limit 60 "$UP/bin/hello-up" > /dev/null 2>&1 || true
+  pkill -f 'ethereal.name=hello-up' >/dev/null 2>&1 || true
+  local result
+  result=$(cut -d' ' -f1-3 "$UP/data/hello-up/.upgrade-result" 2>/dev/null) || true
+  expect "$1 is reported" "$3" "$result"
+  if cmp -s "$UP/bin/hello-up" "$4"; then pass "$1 leaves the right executable"
+  else fail "$1 leaves the wrong executable"; fi
+  if [[ -e "$UP/data/hello-up/.pending" ]]; then fail "$1 leaves .pending behind"; fi
+}
+
+upgrade "a signed upgrade" "$UP/v2.signed" "applied 2 1" "$UP/v2.signed"
+if cmp -s "$UP/bin/.hello-up.old" "$UP/v1"; then pass "the replaced executable is kept beside it"
+else fail "the replaced executable is not at .hello-up.old"; fi
+upgrade "a tampered upgrade" "$UP/v2.tampered" "bad-signature 2 1" "$UP/v1"
+upgrade "an upgrade for another application" "$UP/other.signed" "wrong-application 2 1" "$UP/v1"
+upgrade "an upgrade signed with the recovery key" "$UP/v2.recovered" "applied 2 1" "$UP/v2.recovered"
+rm -rf "${XDG_STATE_HOME:-$HOME/.local/state}/hello-up" "${XDG_RUNTIME_DIR:-/nonexistent}/hello-up"
 
 # A daemon that predates this client's protocol base cannot serve it, and must say so rather
 # than hang or loop: the launcher connects, the daemon closes on `init`, and the launcher

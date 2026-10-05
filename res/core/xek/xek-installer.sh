@@ -71,7 +71,7 @@ case "${os}-${arch}" in windows*) gz=0 ;; *) gz=1 ;; esac
 extract "$offset" "$gz" > "$tmpout"
 stubsize=$(wc -c < "$tmpout" | tr -d ' ')
 
-# The ETHRCFG v3 record (spec/ethrcfg.md), embedded once, appended after the stub.
+# The ETHRCFG v4 record (spec/ethrcfg.md), embedded once, appended after the stub.
 record_offset=$(get_offset "record")
 if [ -n "$record_offset" ]
 then extract "$record_offset" 0 >> "$tmpout"
@@ -83,7 +83,7 @@ then extract "$data_offset" 0 >> "$tmpout"
 fi
 
 # Rebase the JAR's ZIP64 locator, if any, by the bytes now in front of it.
-recsize=0; [ -n "$record_offset" ] && recsize=3764
+recsize=0; [ -n "$record_offset" ] && recsize=5108
 xek_rebase_zip64 "$tmpout" $((stubsize + recsize))
 
 size=$(wc -c < "$tmpout" | tr -d ' ')
