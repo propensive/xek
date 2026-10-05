@@ -13,7 +13,7 @@ Three things, and each is easy to delimit:
 
 - **The record.** `java_min`, `java_pref` and `bundle` in `ETHRCFG`
   ([`spec/ethrcfg.md`](../spec/ethrcfg.md)) are a runtime-version policy and where to fetch
-  one from (Adoptium): five bytes of 3764.
+  one from (Adoptium): five bytes of 5108.
 - **The payload.** A JAR, found by scanning back from the end of the file for the ZIP
   end-of-central-directory record, with the ZIP64 locator fixed up at build time.
 - **The spawn.** The client starts the daemon as `java -jar <self>`, with the `-Dethereal.*`

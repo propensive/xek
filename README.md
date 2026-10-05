@@ -54,7 +54,7 @@ installs tab-completions for `xek`, as for any XEK executable.
 | Path | |
 |---|---|
 | `src/client` | The client stub, in Rust: platform detection, JVM discovery, the daemon handshake, terminal modes, signals, and signed self-upgrade. 0.2–0.3 MB per platform |
-| `src/sign` | `ethereal-sign` — keygen and signing for the self-upgrade path |
+| `src/sign` | `xek-sign` — keys, signing and verification for self-upgrade; published with the stubs as `xek-sign-<platform>` |
 | `src/core` | The builder: the configuration record, stubs (local, or downloaded, verified and cached), native assembly, and the polyglot launchers (`res/core/xek`) — one file valid as `sh`, `.bat` and PowerShell |
 | `src/cli` | The `xek` command: `core` behind a command line with tab-completions, and an XEK executable itself. Published with the client |
 | `src/packager` | `Packager` — turns a `Packaging` into a distributable with `core` |
@@ -135,8 +135,8 @@ git tag -s 1.0.0 && git push --tags
 The tag fires `.github/workflows/release.yml`, which runs the shared `release.sh` from
 [propensive/.github](https://github.com/propensive/.github) as configured by `etc/release`. It
 gates on a verified signed tag and on CI already being green on that commit; cross-compiles the
-five stubs and builds the `xek` command around them, as a polyglot `xek` and a native
-`xek-<platform>` for each platform (`etc/ci/client-assemble.sh`); uploads them to the
+five stubs and the signer, `xek-sign-<platform>`, and builds the `xek` command around the stubs,
+as a polyglot `xek` and a native `xek-<platform>` for each platform (`etc/ci/client-assemble.sh`); uploads them to the
 `1.0.0` release, with `1.0.0.SHA256SUMS`, and checks every digest; and, if anything fails,
 deletes the release and the tag. Once the release is public it opens two draft pull requests: one
 here recording the hashes in `etc/client/1.0.0.tsv` and `etc/client/1.0.0.SHA256SUMS` and
