@@ -165,27 +165,124 @@ object Tests extends Suite(m"XEK tests"):
     def fault(block: => Any): Optional[Assembler.Fault] =
       safely(capture[Assembler.Error](block).fault)
 
+    // Read from the jar this suite was loaded from: the host client's classloader does
+    // not expose the jar's resources by name.
+    def resource(name: String): Text =
+      val location = Tests.getClass.nn.getProtectionDomain.nn.getCodeSource.nn.getLocation.nn
+      val zip = java.util.zip.ZipFile(java.io.File(location.toURI.nn))
+      try
+        val entry = zip.getEntry(name).nn
+        String(zip.getInputStream(entry).nn.readAllBytes().nn, "UTF-8").tt
+      finally zip.close()
+
+    def hex(bytes: scala.Array[Byte]): Text =
+      val builder = StringBuilder()
+      var index = 0
+
+      while index < bytes.length do
+        builder.append(String.format("%02x", Integer.valueOf(bytes(index) & 0xff)))
+        index += 1
+
+      builder.toString.tt
+
+    def le(data: scala.Array[Byte]): java.nio.ByteBuffer =
+      java.nio.ByteBuffer.wrap(data).nn.order(java.nio.ByteOrder.LITTLE_ENDIAN).nn
+
+    def keyOf(fill: Int => Int): Data = Array.unsafeFrozen(scala.Array.tabulate[Byte](1312)(fill(_).toByte))
+
     suite(m"record"):
-      test(m"is exactly 3764 bytes and starts with the v3 magic"):
+      test(m"is exactly 5108 bytes and starts with the v4 magic"):
         val data = Array.unsafeJvm(Record(buildId = 42).data)
         (data.length, String(data, 0, 8, "ISO-8859-1").tt)
-      .assert(_ == (3764, t"ETHRCFG\u0003"))
+      .assert(_ == (5108, t"ETHRCFG\u0004"))
 
       test(m"lays out its fields little-endian, at the offsets the spec gives"):
         val data = Array.unsafeJvm(Record(0x0102030405060708L, 21, 25, true, true).data)
-        val buffer = java.nio.ByteBuffer.wrap(data).nn.order(java.nio.ByteOrder.LITTLE_ENDIAN).nn
+        val buffer = le(data)
         (buffer.getLong(8), buffer.getShort(16).toInt, buffer.getShort(18).toInt, data(20).toInt, data(21).toInt)
       .assert(_ == (0x0102030405060708L, 21, 25, 1, 1))
 
-      test(m"places the public key at offset 32"):
-        val key = scala.Array.fill[Byte](1312)(7)
-        val data = Array.unsafeJvm(Record(publicKey = Array.unsafeFrozen(key)).data)
-        (data(31).toInt, data(32).toInt, data(1343).toInt, data(1344).toInt)
-      .assert(_ == (0, 7, 7, 0))
+      test(m"holds the SHA3-256 of the application id at offset 32"):
+        val data = Array.unsafeJvm(Record(appId = t"propensive/fume").data)
+        hex(data.slice(32, 64))
+      .assert(_ == hex(java.security.MessageDigest.getInstance("SHA3-256").nn.digest("propensive/fume".getBytes("UTF-8")).nn))
 
-      test(m"refuses a public key of the wrong size"):
-        fault(Record(publicKey = Array.unsafeFrozen(scala.Array.fill[Byte](10)(1))).data)
+      test(m"places the release key at offset 64 and the recovery key at 1376"):
+        val record = Record(appId = t"a/b", releaseKey = keyOf(_ => 7), recoveryKey = keyOf(_ => 9))
+        val data = Array.unsafeJvm(record.data)
+        (data(31).toInt, data(64).toInt, data(1375).toInt, data(1376).toInt, data(2687).toInt, data(2688).toInt)
+      .assert(_ == (0, 7, 7, 9, 9, 0))
+
+      test(m"writes, byte for byte, the record in spec/fixtures that the client reads back"):
+        val record =
+          Record
+            ( 0x0102030405060708L, 21, 25, true, true, t"propensive/fume", keyOf(_%251),
+              keyOf(i => (i*7)%251) )
+
+        hex(Array.unsafeJvm(record.data))
+      .assert(_ == resource("fixtures/ethrcfg-v4.hex").s.filter(!_.isWhitespace).tt)
+
+      test(m"refuses a key of the wrong size"):
+        fault(Record(appId = t"a/b", releaseKey = Array.unsafeFrozen(scala.Array.fill[Byte](10)(1))).data)
       .assert(_ == Assembler.Fault.Format)
+
+      test(m"refuses a release key without an application id"):
+        fault(Record(releaseKey = keyOf(_ => 1)).data)
+      .assert(_ == Assembler.Fault.Usage)
+
+      test(m"refuses a recovery key without a release key"):
+        fault(Record(appId = t"a/b", recoveryKey = keyOf(_ => 1)).data)
+      .assert(_ == Assembler.Fault.Usage)
+
+    // `xek-sign`, as `make client-build` or `cargo build --features sign` builds it in this
+    // checkout, or wherever $XEK_SIGN says. The suite runs in its host client's JVM, whose
+    // working directory is its own, so the checkout is found from this suite's jar, which
+    // `make test` assembles at `out/xek/test/assembly.dest/out.jar`. It is a Rust program, so
+    // a build with no Rust toolchain steps around these tests.
+    val signer: Optional[Text] =
+      val location = Tests.getClass.nn.getProtectionDomain.nn.getCodeSource.nn.getLocation.nn
+      val jar: jnf.Path = jnf.Path.of(location.toURI.nn).nn
+      val checkout: jnf.Path = jar.getParent.nn.getParent.nn.getParent.nn.getParent.nn.getParent.nn
+      val variable: String | Null = java.lang.System.getenv("XEK_SIGN")
+
+      val built: List[jnf.Path] =
+        List(s"dist/client/xek-sign-$hostLabel", "target/release/xek-sign", "target/debug/xek-sign")
+        . map(checkout.resolve(_).nn)
+
+      val candidates: List[jnf.Path] = if variable == null then built else jnf.Path.of(variable).nn :: built
+      candidates.filter(jnf.Files.isExecutable(_)).prim.let(_.toAbsolutePath.nn.toString.tt)
+
+    signer.let: sign =>
+      suite(m"xek-sign"):
+        // An executable built by `xek` with both keys and an application id, then signed.
+        def signed(dir: Path on Linux): Path on Linux =
+          val client = fakeClient(); val jar = fakeJar(dir)
+          sh"$sign keygen --out ${dir/t"release"}".exec[Exit]()
+          sh"$sign keygen --out ${dir/t"recovery"}".exec[Exit]()
+          val words =
+            List
+              ( jar.encode, (dir/t"tool").encode, t"--client", client.encode, t"--build-id", t"7",
+                t"--public-key", (dir/t"release.pub").encode, t"--recovery-key", (dir/t"recovery.pub").encode,
+                t"--app-id", t"propensive/fume" )
+
+          build(xek.Command.options(xek.Command.parse(words), Files.path(_)), dir)
+          sh"$sign sign --key ${dir/t"release.seed"} --in ${dir/t"tool"} --out ${dir/t"signed"}".exec[Exit]()
+          dir/t"signed"
+
+        test(m"an executable built with both keys and an application id, once signed, verifies"):
+          val dir = tempDir(); val out = signed(dir)
+          sh"$sign verify --public-key ${dir/t"release.pub"} --app-id propensive/fume --in $out".exec[Text]().trim
+        .assert(_ == t"7")
+
+        test(m"it does not verify for another application"):
+          val dir = tempDir(); val out = signed(dir)
+          sh"$sign verify --public-key ${dir/t"release.pub"} --app-id propensive/flame --in $out".exec[Exit]()
+        .assert(_ != Exit.Ok)
+
+        test(m"it does not verify under the recovery key, which did not sign it"):
+          val dir = tempDir(); val out = signed(dir)
+          sh"$sign verify --public-key ${dir/t"recovery.pub"} --in $out".exec[Exit]()
+        .assert(_ != Exit.Ok)
 
     // The schema in `spec/ethereal-launcher.tel` is the contract, and `src/client/src/bintel.rs`
     // pins the hash of its base as the constant from which the client derives every signature
@@ -195,16 +292,6 @@ object Tests extends Suite(m"XEK tests"):
     // schema's layers removed (BinTEL §8.1), so adding a layer must leave it unchanged.
     suite(m"Launcher protocol"):
       import stratiform.*
-      // Read from the jar this suite was loaded from: the host client's classloader does
-      // not expose the jar's resources by name.
-      def resource(name: String): Text =
-        val location = Tests.getClass.nn.getProtectionDomain.nn.getCodeSource.nn.getLocation.nn
-        val zip = java.util.zip.ZipFile(java.io.File(location.toURI.nn))
-        try
-          val entry = zip.getEntry(name).nn
-          String(zip.getInputStream(entry).nn.readAllBytes().nn, "UTF-8").tt
-        finally zip.close()
-
       val schemaText: Text = resource("ethereal-launcher.tel")
       val rust: Text = resource("bintel.rs")
 
@@ -433,6 +520,18 @@ object Tests extends Suite(m"XEK tests"):
 
       test(m"refuses a platform no included shell can unpack"):
         fault(plan(parse(t"app.jar", t"--polyglot", t"-x", t"bat,pwsh", t"-p", t"windows-x64")))
+      .assert(_ == Assembler.Fault.Usage)
+
+      test(m"refuses --public-key without --app-id"):
+        val key = tempDir()/t"key.pub"
+        jnf.Files.write(jnf.Path.of(key.encode.s), scala.Array.fill[Byte](1312)(1))
+        fault(parse(t"app.jar", t"--public-key", key.encode))
+      .assert(_ == Assembler.Fault.Usage)
+
+      test(m"refuses --recovery-key without --public-key"):
+        val key = tempDir()/t"key.pub"
+        jnf.Files.write(jnf.Path.of(key.encode.s), scala.Array.fill[Byte](1312)(1))
+        fault(parse(t"app.jar", t"--recovery-key", key.encode, t"--app-id", t"a/b"))
       .assert(_ == Assembler.Fault.Usage)
 
       test(m"refuses a minimum Java version above the preferred one"):

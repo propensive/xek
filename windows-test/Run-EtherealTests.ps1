@@ -576,14 +576,16 @@ if ($script:ToolV2) {
       Start-Sleep -Milliseconds 200
       $dataNameDir = Join-Path $DataRoot $Name
       New-Item -ItemType Directory -Force -Path $dataNameDir | Out-Null
-      # update.rs reads {data_home}/{name}/.pending and renames the running
-      # script to {data_home}/{name}.old before re-exec.
+      # update.rs reads {data_home}/{name}/.pending, verifies it against the
+      # running binary's keys, writes it beside the executable as .{name}.new,
+      # and renames the running executable to .{name}.old before re-exec.
       Copy-Item -LiteralPath $script:ToolV2 -Destination (Join-Path $dataNameDir '.pending') -Force
       $r = Invoke-Tool -ToolArgs 'version'
       Should-Equal $r.Stdout 'v2' 'stdout after self-update'
     }
     It 'old binary is preserved after upgrade' {
-      $oldPath = Join-Path $DataRoot ($Name + '.old')
+      $exe = $script:Tool
+      $oldPath = Join-Path (Split-Path -Parent $exe) ('.' + (Split-Path -Leaf $exe) + '.old')
       Should-Be-True (Test-Path -LiteralPath $oldPath) "$oldPath should exist"
     }
   }
