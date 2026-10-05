@@ -78,6 +78,8 @@ object ui:
   val Jdk = Flag[Unit](t"jdk", false, Nil, Command.Jdk.description)
   val BuildId = Flag[Text](t"build-id", false, Nil, Command.BuildId.description)
   val PublicKey = Flag[Text](t"public-key", false, Nil, Command.PublicKey.description)
+  val RecoveryKey = Flag[Text](t"recovery-key", false, Nil, Command.RecoveryKey.description)
+  val AppId = Flag[Text](t"app-id", false, Nil, Command.AppId.description)
   val AllowDowngrade = Flag[Unit](t"allow-downgrade", false, Nil, Command.AllowDowngrade.description)
   val Client = Flag[Text](t"client", false, Nil, Command.Client.description)
   val ClientUrl = Flag[Text](t"client-url", false, Nil, Command.ClientUrl.description)
@@ -134,10 +136,12 @@ private def complete(arguments: List[Argument])(using Cli, Interpreter, WorkingD
     given (Text is Discoverable) = (operand, tab) => Pathname.complete(operand, tab)
     ui.Dispatch.present
     ui.PublicKey.present
+    ui.RecoveryKey.present
     ui.Client.present
     ui.ClientManifest.present
 
   ui.BuildId.present
+  ui.AppId.present
   ui.ClientUrl.present
   ui.Polyglot.present
   ui.Download.present

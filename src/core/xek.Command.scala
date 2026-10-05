@@ -70,7 +70,9 @@ object Command:
   val JavaMin = Spec(t"java-min", Unset, t"version", t"the oldest Java version the application runs on")
   val Jdk = Spec(t"jdk", Unset, Unset, t"download a full JDK rather than a JRE")
   val BuildId = Spec(t"build-id", Unset, t"number", t"the build number self-upgrades are ordered by")
-  val PublicKey = Spec(t"public-key", Unset, t"file", t"the public key self-upgrades are verified against")
+  val PublicKey = Spec(t"public-key", Unset, t"file", t"the release key self-upgrades are verified against")
+  val RecoveryKey = Spec(t"recovery-key", Unset, t"file", t"a second key, kept offline, which may sign any self-upgrade")
+  val AppId = Spec(t"app-id", Unset, t"identifier", t"the application a self-upgrade must be for, like propensive/fume")
   val AllowDowngrade = Spec(t"allow-downgrade", Unset, Unset, t"accept a self-upgrade to a lower build number")
   val Client = Spec(t"client", Unset, t"directory", t"take unverified stubs from a local directory")
   val ClientUrl = Spec(t"client-url", Unset, t"url", t"download stubs from this URL instead")
@@ -81,7 +83,7 @@ object Command:
   val specs: List[Spec] =
     List
       ( Platform, Polyglot, Download, Exclude, Dispatch, Java, JavaMin, Jdk, BuildId, PublicKey,
-        AllowDowngrade, Client, ClientUrl, ClientManifest, Help, Version )
+        RecoveryKey, AppId, AllowDowngrade, Client, ClientUrl, ClientManifest, Help, Version )
 
   // The words of a command line, sorted: each option given, with its value if it takes one, in
   // order, and the operands.
@@ -167,8 +169,14 @@ object Command:
       if dispatch.present then parsed.operands.prim.let(path)
       else parsed.operands.skip(1).prim.let(path)
 
-    val publicKey: Optional[Data] =
-      parsed.value(PublicKey).let(path).let { key => Array.unsafeFrozen(Files.read(key)) }
+    def key(spec: Spec): Optional[Data] =
+      parsed.value(spec).let(path).let { key => Array.unsafeFrozen(Files.read(key)) }
+
+    if parsed.has(PublicKey) && !parsed.has(AppId)
+    then abort(usage(m"--public-key needs --app-id, or the executable could never upgrade"))
+
+    if parsed.has(RecoveryKey) && !parsed.has(PublicKey)
+    then abort(usage(m"--recovery-key needs --public-key"))
 
     val record: Record =
       Record
@@ -177,7 +185,9 @@ object Command:
           javaPreferred  = parsed.value(Java).let(version(Java, _)).or(Record.javaPreferred),
           jdk            = parsed.has(Jdk),
           allowDowngrade = parsed.has(AllowDowngrade),
-          publicKey      = publicKey )
+          appId          = parsed.value(AppId),
+          releaseKey     = key(PublicKey),
+          recoveryKey    = key(RecoveryKey) )
 
     Options
       ( jar      = jar,

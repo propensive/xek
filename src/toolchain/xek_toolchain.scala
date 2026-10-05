@@ -81,11 +81,15 @@ object executableOptions:
 
   def signing
     ( publicKey:      Optional[Path on Linux] = Unset,
-      seed:           Optional[Path on Linux] = Unset,
+      recoveryKey:    Optional[Path on Linux] = Unset,
       allowDowngrade: Boolean                 = false )
   :   Toolchain.Setting =
 
-    xek(_.copy(signing = Packaging.Signing(publicKey, seed, allowDowngrade)))
+    xek(_.copy(signing = Packaging.Signing(publicKey, recoveryKey, allowDowngrade)))
+
+  // The application's identifier, like `propensive/fume`, which a self-upgrade must match; a
+  // release key needs one.
+  def appId(id: Text): Toolchain.Setting = xek(_.copy(appId = id))
 
   def buildId(id: Long): Toolchain.Setting = xek(_.copy(buildId = id))
 
@@ -142,6 +146,7 @@ object executableEdges:
             clientSource = client,
             java         = settings.java,
             signing      = settings.signing,
+            appId        = settings.appId,
             buildId      = settings.buildId )
 
       mitigate:

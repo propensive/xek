@@ -75,7 +75,7 @@ if [ -n "$record_offset" ]
 then
   rabs=$((indexnum + record_offset + 1))
   tail -n +"$rabs" "$s" | sed -n '/^-----END/q; p' | { base64 -d 2>/dev/null || base64 -D; } >> "$t"
-  recsize=3764
+  recsize=5108
 fi
 absline=$((indexnum + data_offset + 1))
 tail -n +"$absline" "$s" | sed -n '/^-----END/q; p' | { base64 -d 2>/dev/null || base64 -D; } >> "$t"
