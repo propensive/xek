@@ -17,6 +17,7 @@ mod launch;
 mod progress;
 mod protocol;
 mod signals;
+mod signing;
 mod tty;
 mod uds;
 mod update;
@@ -88,7 +89,7 @@ fn main() {
         std::process::exit(1);
     }
     // The configuration record follows the stub in this very file (spec/ethrcfg.md); read it
-    // once, before anything consults the build id or the public key.
+    // once, before anything consults the build id or the keys.
     let build_config = config::load(&script);
     debug!("main: build_id={} java_min={} java_pref={}", build_config.build_id, build_config.java_min, build_config.java_pref);
 

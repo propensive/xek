@@ -213,6 +213,9 @@ fn build_java_arguments(script: &Path, name: &str, progress_file: &Path, config:
         "-Dethereal.payloadSize=0".to_string(),
         format!("-Dethereal.jarSize={}", jar_size),
         format!("-Dethereal.command={}", command_path),
+        // Whether this launcher would accept a signed upgrade at all (spec/ethrcfg.md, rule 1),
+        // so that an application need not offer one its own launcher will refuse.
+        format!("-Dethereal.upgradable={}", crate::config::upgradable()),
         // Where a Burdock bootstrap reports its dependency downloads; see `progress.rs`.
         format!("-Dburdock.progress={}", progress_file.display()),
     ]
