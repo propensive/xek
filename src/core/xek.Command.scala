@@ -43,11 +43,13 @@ import vacuous.*
 
 import denominative.dysasymptotics.linearSize
 
-// The `xek` command line, as a pure function from its words to `Options`. It lives here, not
-// beside the daemon, so that it can be tested without one; `xek.cli` declares the same flags to
-// Exoskeleton, for tab-completion.
+// The `xek` command line, as a pure function from its words to a subcommand and its options. It
+// lives here, not beside the daemon, so that it can be tested without one; `xek.cli` declares the
+// same subcommands and flags to Exoskeleton, for tab-completion.
 //
-// The syntax is the POSIX convention: options and operands in any order, an option's value
+// Every command line begins with a subcommand — `build`, or one of those which sign a release —
+// and each subcommand accepts only its own options; only `--help` and `--version` may stand alone.
+// After the subcommand the syntax is the POSIX convention: options and operands in any order, an option's value
 // either the next word or joined by `=` (`--platform=linux-x64`, `-p linux-x64`, `-plinux-x64`),
 // repeatable options accumulating, comma-separated lists accepted wherever a list is, and `--`
 // ending the options.
@@ -74,20 +76,80 @@ object Command:
   val RecoveryKey = Spec(t"recovery-key", Unset, t"file", t"a second key, kept offline, which may sign any self-upgrade")
   val AppId = Spec(t"app-id", Unset, t"identifier", t"the application a self-upgrade must be for, like propensive/fume")
   val AllowDowngrade = Spec(t"allow-downgrade", Unset, Unset, t"accept a self-upgrade to a lower build number")
+  val In = Spec(t"in", Unset, t"executable", t"the executable to read")
+  val Out = Spec(t"out", Unset, t"file", t"the file to write")
+  val Prefix = Spec(t"out", Unset, t"prefix", t"write the key pair as <prefix>.seed and <prefix>.pub")
+  val Key = Spec(t"key", Unset, t"seed-file", t"the 32-byte seed of the key to sign with")
+  val KeyEnv = Spec(t"key-env", Unset, t"variable", t"an environment variable holding that seed as 64 hex digits")
+  val Signature = Spec(t"signature", Unset, t"file", t"a signature made elsewhere, over the statement")
+  val ForeignKey = Spec(t"foreign-key", Unset, Unset, t"sign with a key the executable's record does not carry")
+  val VerifyKey = Spec(t"public-key", Unset, t"file", t"the public key the signature must verify under")
+  val VerifyApp = Spec(t"app-id", Unset, t"identifier", t"the application the executable must be for")
   val Client = Spec(t"client", Unset, t"directory", t"take unverified stubs from a local directory")
   val ClientUrl = Spec(t"client-url", Unset, t"url", t"download stubs from this URL instead")
   val ClientManifest = Spec(t"client-manifest", Unset, t"file", t"verify downloaded stubs against this manifest")
   val Help = Spec(t"help", 'h', Unset, t"show this help")
   val Version = Spec(t"version", 'v', Unset, t"show the version")
 
-  val specs: List[Spec] =
-    List
-      ( Platform, Polyglot, Download, Exclude, Dispatch, Java, JavaMin, Jdk, BuildId, PublicKey,
-        RecoveryKey, AppId, AllowDowngrade, Client, ClientUrl, ClientManifest, Help, Version )
+  // A subcommand, the first word of every command line, with the options it accepts.
+  enum Action(val name: Text, val synopsis: Text, val description: Text, val specs: List[Spec]):
+    case Build
+    extends Action
+      ( t"build",
+        t"[options] <app.jar> [<output>]",
+        t"build an executable from an application's JAR",
+        List
+          ( Platform, Polyglot, Download, Exclude, Dispatch, Java, JavaMin, Jdk, BuildId, PublicKey,
+            RecoveryKey, AppId, AllowDowngrade, Client, ClientUrl, ClientManifest ) )
 
-  // The words of a command line, sorted: each option given, with its value if it takes one, in
-  // order, and the operands.
-  case class Parsed(options: List[(Spec, Text)], operands: List[Text]):
+    case Keygen
+    extends Action(t"keygen", t"--out <prefix>", t"generate a key pair for signing releases", List(Prefix))
+
+    case PublicKeyOf
+    extends Action
+      ( t"public-key",
+        t"(--key <seed-file> | --key-env <variable>) --out <file>",
+        t"derive a public key from its seed",
+        List(Key, KeyEnv, Out) )
+
+    case Sign
+    extends Action
+      ( t"sign",
+        t"(--key <seed-file> | --key-env <variable>) --in <executable> --out <file>",
+        t"sign a release",
+        List(Key, KeyEnv, In, Out, AllowDowngrade, ForeignKey) )
+
+    case Statement
+    extends Action
+      ( t"statement",
+        t"--in <executable>",
+        t"print the statement an external signer is asked to sign",
+        List(In, AllowDowngrade) )
+
+    case Attach
+    extends Action
+      ( t"attach",
+        t"--in <executable> --signature <file> --out <file>",
+        t"write a signature made elsewhere into a release",
+        List(In, Signature, Out, AllowDowngrade) )
+
+    case Verify
+    extends Action
+      ( t"verify",
+        t"--public-key <file> [--app-id <identifier>] --in <executable>",
+        t"check a release's signature, and print its build id",
+        List(VerifyKey, VerifyApp, In) )
+
+  object Action:
+    def parse(name: Text): Optional[Action] = values.find(_.name == name).getOrElse(Unset)
+
+  // Every option, for completion, which reads a command line before knowing whether it is whole.
+  lazy val specs: List[Spec] = (List(Action.values*).flatMap(_.specs) + List(Help, Version)).distinct
+
+  // The words of a command line, sorted: the subcommand, each option given, with its value if it
+  // takes one, in order, and the operands. Only `--help` and `--version` come without a
+  // subcommand.
+  case class Parsed(action: Optional[Action], options: List[(Spec, Text)], operands: List[Text]):
     def has(spec: Spec): Boolean = options.exists(_(0) == spec)
 
     def values(spec: Spec): List[Text] =
@@ -98,28 +160,59 @@ object Command:
   private def usage(message: Message)(using Diagnostics): Assembler.Error =
     Assembler.Error(Assembler.Fault.Usage, message)
 
-  def spec(name: Text): Optional[Spec] = specs.filter { spec => spec.name == name || spec.aliases.has(name) }.prim
+  def spec(name: Text, specs: List[Spec] = specs): Optional[Spec] =
+    specs.filter { spec => spec.name == name || spec.aliases.has(name) }.prim
 
   def spec(short: Char): Optional[Spec] = specs.filter(_.short == short).prim
 
   def parse(words: List[Text]): Parsed raises Assembler.Error =
+    words.prim.let(Action.parse(_)).lay(standalone(words)): action =>
+      parse(action, words.skip(1))
+
+  // A command line with no subcommand, which may only ask for help or the version. Anything else
+  // is a mistake, and most likely the command line of an `xek` from before subcommands, which
+  // built an executable from the JAR it was given: so that is suggested.
+  private def standalone(words: List[Text]): Parsed raises Assembler.Error =
+    val parsed: Parsed = safely(parse(Unset, words, List(Help, Version))).or(Parsed(Unset, Nil, words))
+
+    if !words.nil && parsed.operands.nil && parsed.options.size == words.size then parsed else
+      val names: Text = List(Action.values*).map(_.name).join(t", ")
+      val first: Text = words.prim.or(t"")
+
+      if words.exists(_.ends(t".jar")) then
+        val line: Text = words.join(t" ")
+        abort(usage(m"xek needs a subcommand first; to build an executable, use: xek build $line"))
+      else if words.nil || first.starts(t"-")
+      then abort(usage(m"xek needs a subcommand first: one of $names"))
+      else abort(usage(m"there is no subcommand $first; choose from $names"))
+
+  def parse(action: Action, words: List[Text]): Parsed raises Assembler.Error =
+    parse(action, words, action.specs :+ Help)
+
+  private def parse(action: Optional[Action], words: List[Text], accepted: List[Spec])
+  :   Parsed raises Assembler.Error =
+
+    def unknown(written: Text)(using Diagnostics): Assembler.Error =
+      action.let { action => usage(m"xek ${action.name} has no option $written") }.or:
+        usage(m"there is no option $written")
+
     def recur(words: List[Text], options: List[(Spec, Text)], operands: List[Text]): Parsed =
       words.absolve match
         case Nil =>
-          Parsed(options.reverse, operands.reverse)
+          Parsed(action, options.reverse, operands.reverse)
 
         case t"--" :: rest =>
-          Parsed(options.reverse, operands.reverse + rest)
+          Parsed(action, options.reverse, operands.reverse + rest)
 
         case word :: rest if word.starts(t"--") =>
           val body: Text = word.skip(2)
           val (name, joined) = split(body)
-          val found: Spec = spec(name).lest(usage(m"there is no option --$name"))
+          val found: Spec = spec(name, accepted).lest(unknown(t"--$name"))
           option(found, t"--$name", joined, rest, options, operands)
 
         case word :: rest if word.starts(t"-") && word.length > 1 =>
           val short: Char = word.s.charAt(1)
-          val found: Spec = spec(short).lest(usage(m"there is no option -$short"))
+          val found: Spec = accepted.filter(_.short == short).prim.lest(unknown(t"-$short"))
           val remainder: Text = word.skip(2)
           val joined: Optional[Text] = if remainder == t"" then Unset else remainder.s.stripPrefix("=").tt
           option(found, t"-$short", joined, rest, options, operands)

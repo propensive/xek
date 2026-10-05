@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 #
-# Assemble a release of xek: the five native client stubs; the signer, `xek-sign-<platform>[.exe]`,
-# for each platform; the `xek` command, as an embed-all
+# Assemble a release of xek: the five native client stubs; the `xek` command, as an embed-all
 # polyglot file for every platform (also as `xek.cmd`, the same bytes) and as a native executable
 # for each (`xek-<platform>[.exe]`); the `install.sh` that https://propensive.dev/xek serves; and
 # `<version>.SHA256SUMS` over all of them, written into $RELEASE_ASSETS for the shared release
@@ -77,8 +76,8 @@ else
   ./etc/ci/client-fetch.sh "$COMMAND_STUBS" "$REPO" "$WORK/command-client"
   WRAP="$WORK/command-client"
 fi
-./mill xek.cli.bootstrap --polyglot --client "$WRAP" "$JAR" "$WORK/xek"
-./mill xek.cli.bootstrap --platform "$PLATFORMS" --client "$WRAP" "$JAR" "$WORK/xek"
+./mill xek.cli.bootstrap build --polyglot --client "$WRAP" "$JAR" "$WORK/xek"
+./mill xek.cli.bootstrap build --platform "$PLATFORMS" --client "$WRAP" "$JAR" "$WORK/xek"
 cp "$WORK/xek" "$WORK/xek.cmd"
 
 # The installer served from https://propensive.dev/xek, which redirects to the latest release's
@@ -86,11 +85,11 @@ cp "$WORK/xek" "$WORK/xek.cmd"
 # the digest it embeds, taken here from the very files being uploaded.
 ./etc/shared generate-install.sh xek "$RELEASE_VERSION" "$RELEASE_TAG" "$WORK" > "$WORK/install.sh"
 
-cp "$WORK/client"/client-* "$WORK/client"/xek-sign-* "$WORK"/xek "$WORK"/xek.cmd "$WORK"/xek-* "$WORK/install.sh" \
+cp "$WORK/client"/client-* "$WORK"/xek "$WORK"/xek.cmd "$WORK"/xek-* "$WORK/install.sh" \
   "$RELEASE_ASSETS"/
 
 # Every other asset's SHA-256, for downstream fetchers that verify by name: consumers pin an
-# `xek` asset's line in their etc/xek.tsv, and a release script its `xek-sign-<platform>` line.
+# `xek` asset's line in their etc/xek.tsv.
 SUMS="$RELEASE_ASSETS/$RELEASE_VERSION.SHA256SUMS"
 for f in "$RELEASE_ASSETS"/*; do
   [[ "$f" == "$SUMS" ]] && continue
