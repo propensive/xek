@@ -23,9 +23,14 @@
 # flags below are unstable and have changed before; AGENTS.md records what each is for and how
 # to re-measure when a toolchain bump upsets them.
 #
+# The signer, `xek-sign`, is built here too, for the same five platforms, so that a release
+# publishes it beside the stubs and a consumer can pin it as it pins `xek`. It is an ordinary
+# program, built without the stubs' size flags (AGENTS.md: they belong to the stubs alone).
+#
 # Usage: ./etc/ci/client-build.sh [output-dir]      (default: dist/client)
 #
-# Produces <output-dir>/client-<label>[.exe] for each platform.
+# Produces <output-dir>/client-<label>[.exe] and <output-dir>/xek-sign-<label>[.exe] for each
+# platform.
 
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -75,12 +80,25 @@ cargo zigbuild --release \
   -Zbuild-std-features=optimize_for_size \
   "${triple_args[@]}"
 
+echo "client-build: cross-compiling xek-sign for ${#TARGETS[@]} platforms…"
+(
+  unset CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS CARGO_TARGET_X86_64_APPLE_DARWIN_RUSTFLAGS \
+    CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS
+  export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-Clinker=$PWD/etc/ci/zigcc-aarch64-linux.sh"
+  cargo zigbuild --release \
+    --manifest-path Cargo.toml \
+    --target-dir "$target_dir/sign" \
+    --features sign --bin xek-sign \
+    "${triple_args[@]}"
+)
+
 mkdir -p "$OUT"
 for entry in "${TARGETS[@]}"; do
   IFS='|' read -r triple label binary <<< "$entry"
   ext=""; [[ "$binary" == *.exe ]] && ext=".exe"
   cp -f "$target_dir/$triple/release/$binary" "$OUT/client-$label$ext"
-  chmod +x "$OUT/client-$label$ext"
+  cp -f "$target_dir/sign/$triple/release/xek-sign$ext" "$OUT/xek-sign-$label$ext"
+  chmod +x "$OUT/client-$label$ext" "$OUT/xek-sign-$label$ext"
 done
 
 for f in "$OUT"/client-*; do
@@ -91,9 +109,9 @@ for f in "$OUT"/client-*; do
 done
 echo "client-build: no stub contains the ETHRCFG magic"
 
-# Ad-hoc sign the macOS stubs. Apple's `codesign` on a Mac, `rcodesign` (apple-codesign)
+# Ad-hoc sign the macOS stubs and signers. Apple's `codesign` on a Mac, `rcodesign` (apple-codesign)
 # elsewhere; both produce a valid ad-hoc signature. Hashes are taken from the signed bytes.
-for f in "$OUT"/client-macos-*; do
+for f in "$OUT"/client-macos-* "$OUT"/xek-sign-macos-*; do
   if command -v codesign >/dev/null 2>&1; then
     codesign --sign - --force "$f"
   elif command -v rcodesign >/dev/null 2>&1; then
@@ -103,7 +121,7 @@ for f in "$OUT"/client-macos-*; do
     exit 1
   fi
 done
-echo "client-build: signed the macOS stubs"
+echo "client-build: signed the macOS stubs and signers"
 
 echo "client-build: built into $OUT:"
-ls -la "$OUT"/client-*
+ls -la "$OUT"/client-* "$OUT"/xek-sign-*
