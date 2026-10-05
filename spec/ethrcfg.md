@@ -132,31 +132,32 @@ chain:
 - An executable that skipped the release which introduced a key cannot verify a release signed
   with it, so a release that rotates a key should stay available until its users have moved on.
 
-### `xek-sign`
+### Signing with `xek`
 
-`xek-sign` (this repository, `src/sign`) is published with every client release as
-`xek-sign-<platform>[.exe]`, beside the stubs and in the release's `SHA256SUMS`, so a release
-script can pin it as it pins `xek`. A seed is 32 bytes, the FIPS 204 key generation seed; where
-a command takes one, it is `--key <seed-file>`, or `--key-env <VAR>` naming an environment
-variable holding it as 64 hexadecimal digits, so that a CI secret need never be written to disk.
-The seed is never accepted as an argument.
+The `xek` command signs releases, with the subcommands below. ML-DSA is the JDK's, so these need
+Java 24 or later; `xek build` does not. A key is kept as its 32-byte FIPS 204 key generation seed
+and its 1312-byte raw public key, the form the record holds. Where a subcommand takes the seed, it
+is `--key <seed-file>`, or `--key-env <variable>` naming an environment variable holding it as 64
+hexadecimal digits, so that a CI secret need never be written to disk. The seed itself is never
+accepted as an argument.
 
-- `xek-sign keygen --out <prefix>` writes `<prefix>.seed`, mode `0600`, and `<prefix>.pub`, the
-  1312-byte public key a builder writes into the record. It refuses to overwrite either.
-- `xek-sign public-key (--key <file> | --key-env <VAR>) --out <file>` derives the public key
-  from a seed, so that one committed to a repository can be regenerated and checked.
-- `xek-sign sign (--key <file> | --key-env <VAR>) --in <binary> --out <signed>
+- `xek keygen --out <prefix>` writes `<prefix>.seed`, mode `0600`, and `<prefix>.pub`, the public
+  key a builder writes into the record. It refuses to overwrite either.
+- `xek public-key (--key <file> | --key-env <variable>) --out <file>` derives the public key from
+  a seed, so that one committed to a repository can be regenerated and checked.
+- `xek sign (--key <file> | --key-env <variable>) --in <executable> --out <signed>
   [--allow-downgrade] [--foreign-key]` sets the flags byte, signs the statement, and writes the
   signature into the slot. It says whether the key is the record's `release_key` or its
   `recovery_key`, and refuses a key that is neither unless `--foreign-key` is given — which is
   what the release after a rotation needs, and otherwise almost always a mistake.
-- `xek-sign statement --in <binary> [--allow-downgrade]` sets the flags byte as `sign` would and
+- `xek statement --in <executable> [--allow-downgrade]` sets the flags byte as `sign` would and
   prints the 40-byte statement in hexadecimal: what an external signer is asked to sign.
-- `xek-sign attach --in <binary> --signature <file> --out <signed> [--allow-downgrade]` writes a
+- `xek attach --in <executable> --signature <file> --out <signed> [--allow-downgrade]` writes a
   signature made elsewhere, over that statement, into the slot.
-- `xek-sign verify --public-key <file> [--app-id <text>] --in <binary>` exits with status 0 only
-  if the signature verifies under that key (and the `app_id` matches, if given), and prints the
-  build id: the gate a release script runs on every executable before publishing it.
+- `xek verify --public-key <file> [--app-id <identifier>] --in <executable>` exits with status 0
+  only if the signature verifies under that key (and the `app_id` matches, if given), and prints
+  the build id: the gate a release script runs on every executable before publishing it. A
+  signature or application that does not match exits with status 4.
 
 ## Changing the layout
 
@@ -179,9 +180,9 @@ never be replaced. No v3 executable was published with a key, so no upgrade chan
 ## Implementations
 
 - `src/client/src/config.rs` — the reader, in the stub.
-- `src/client/src/signing.rs` — the offsets and the statement, shared by the verifier and the
-  signer, which include the same file.
+- `src/client/src/signing.rs` — the offsets and the statement, as the verifier reads them.
 - `src/client/src/verify.rs` — the verifier, and `src/client/src/update.rs`, which applies it.
-- `src/sign/src/main.rs` — the signer, `xek-sign`.
+- `src/core/xek.Signer.scala` — the signer, behind `xek keygen`, `sign` and the rest. The client's
+  tests and the `xek` suite check the two against the same vectors, in `spec/fixtures`.
 - `src/core` — the builder: `xek.Record` writes the record and `xek.Assembler` the executable,
   for the `xek` command (`src/cli`) published with each release, and for `xek.Packager`.

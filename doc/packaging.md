@@ -53,8 +53,8 @@ self-upgrade. For that, the record carries the application's identifier and the 
 must be signed with — a release key, and optionally a recovery key kept offline — given as
 `Packaging(…, appId = t"propensive/mytool", signing = Packaging.Signing(publicKey =
 releaseKeyPath, recoveryKey = recoveryKeyPath))`. A release key needs an application id. Signing
-is not part of the build: a release is signed afterwards, with `xek-sign`, published beside the
-stubs ([`spec/ethrcfg.md`](../spec/ethrcfg.md)).
+is not part of the build: a release is signed afterwards, with `xek sign`
+([`spec/ethrcfg.md`](../spec/ethrcfg.md)).
 
 ### Bundling as a toolchain format
 
@@ -98,17 +98,18 @@ command runs too — so an Anthology build and a user at a shell produce the sam
 The same packaging is the `xek` command:
 
 ```sh
-xek app.jar                              # ./app, a native executable for this platform
-xek -p linux-x64 -p windows-x64 app.jar  # app-linux-x64 and app-windows-x64.exe
-xek --polyglot app.jar                   # ./app, one file for sh, PowerShell and cmd.exe
-xek --polyglot -x bat -p linux-x64,macos-arm64 app.jar dist/
-xek --download app.jar                   # a polyglot file which fetches its stub on first run
-xek --dispatch executables.tsv app       # a polyglot file which fetches a complete executable
-xek --java 25 --java-min 21 --jdk app.jar
-xek --build-id 42 --app-id propensive/mytool --public-key release.pub --recovery-key recovery.pub app.jar
+xek build app.jar                              # ./app, a native executable for this platform
+xek build -p linux-x64 -p windows-x64 app.jar  # app-linux-x64 and app-windows-x64.exe
+xek build --polyglot app.jar                   # ./app, one file for sh, PowerShell and cmd.exe
+xek build --polyglot -x bat -p linux-x64,macos-arm64 app.jar dist/
+xek build --download app.jar                   # a polyglot file which fetches its stub on first run
+xek build --dispatch executables.tsv app       # a polyglot file which fetches a complete executable
+xek build --java 25 --java-min 21 --jdk app.jar
+xek build --build-id 42 --app-id propensive/mytool --public-key release.pub --recovery-key recovery.pub app.jar
+xek sign --key release.seed --in mytool --out mytool.signed
 ```
 
-`xek --help` lists every option, and `xek '{admin}' install` installs its tab-completions.
+`xek --help` lists the subcommands, `xek build --help` the options of one, and `xek '{admin}' install` installs its tab-completions.
 
 ### The other end
 
