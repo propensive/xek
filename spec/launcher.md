@@ -93,6 +93,40 @@ inherits that process's context, not the client's, for everything not listed abo
 An author of a security- or resource-sensitive tool should not rely on any of these
 following the client.
 
+## The daemon process
+
+A daemon outlives the invocation that started it and serves every later one, from any
+directory, terminal or shell. Whatever process state it inherited from the first invocation
+would be imposed on all the others, and would differ according to who happened to come first.
+So the launcher starts the daemon (through the wrapper process, `XEK_WRAP_JAVA`) in fixed
+process state, following the long-standing conventions for Unix daemons. Each invocation's own
+directory, umask and environment reach the daemon in its `init` document (above), and that is
+where a daemon should take them from.
+
+| State | What the daemon starts with |
+|---|---|
+| Session | A new session (`setsid`), so it has no controlling terminal and is not in the invoking shell's process group |
+| Working directory | `/`; on Windows the root of the system drive (`%SystemDrive%\`, else `C:\`). Every path the launcher passes to the JVM is made absolute first |
+| umask | `077`; absent on Windows |
+| Descriptors | Standard input a pipe carrying the launch environment (above), standard output the null device, and standard error appended to `daemon.log`. Every other descriptor is closed: the launcher marks every descriptor above 2 close-on-exec before it executes the wrapper |
+| Environment | Only the variables listed below. The whole environment the launcher was started with is written to the daemon's standard input instead, as `ethereal.environment` describes ([`properties.md`](properties.md)), so an application which really does want it, rather than the invocation's, can read it there; it is never written to disk |
+
+The environment kept is what identifies the user and locates their files, the locale, the
+search path for the commands the daemon itself runs, and the options the JVM reads as it starts
+(`JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS`, `_JAVA_OPTIONS`), which are how a daemon's heap is sized:
+
+- **Unix**: `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`, every `LC_*`, `TZ`, `TMPDIR`,
+  `XDG_RUNTIME_DIR`, `XDG_STATE_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`,
+  the three JVM option variables, and `ETHEREAL_DEBUG`.
+- **Windows** (names compared without regard to case): `SystemRoot`, `SystemDrive`, `windir`,
+  `ComSpec`, `PATH`, `PATHEXT`, `TEMP`, `TMP`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`,
+  `USERNAME`, `HOMEDRIVE`, `HOMEPATH`, the three JVM option variables, and `ETHEREAL_DEBUG`.
+
+The `XDG_*` variables, `HOME` and `LOCALAPPDATA` are kept so that the daemon computes the same
+state directory the launcher did ([`layout.md`](layout.md)). Everything else is removed: the
+terminal's variables (`TERM`, `COLUMNS`, `LINES`, …), the shell's (`PWD`, `OLDPWD`, `SHLVL`, …),
+those of an agent or multiplexer the invocation ran under, and every application's own.
+
 ## The composition an invocation is written under
 
 Every document the launcher writes carries the signature of the schema composition it was

@@ -49,17 +49,28 @@ pub fn launch(
     // appended). The wrapper exec's java synchronously and forwards signals.
     // The mode is selected by an environment variable, not an argument, so
     // that the application's own argv has no reserved values.
+    //
+    // The daemon starts in a fixed directory, with a fixed umask, no inherited descriptors and a
+    // sanitized environment (`daemon.rs`), so every path handed to it is made absolute first.
     let executable = std::env::current_exe().unwrap_or_else(|_| script.to_path_buf());
+    let executable = crate::daemon::absolute(&executable);
+    let java = crate::daemon::absolute(&java);
+    let script = crate::daemon::absolute(script);
+    let progress_file = crate::daemon::absolute(progress_file);
     let mut command = Command::new(&executable);
+    crate::daemon::sanitize(&mut command);
+    command.current_dir(crate::daemon::working_directory());
     command.env(crate::WRAP_VARIABLE, "1").arg(&java);
-    for argument in build_java_arguments(script, name, progress_file, config) { command.arg(argument); }
+    for argument in build_java_arguments(&script, name, &progress_file, config) { command.arg(argument); }
     // Capture the JVM invocation time as late as possible — after the
     // argument-building work (the `PATH` search for the command) — so `uptime` in the
     // daemon measures from the moment java is actually spawned, not from when
     // launch() was entered.
     command.arg(format!("-Dethereal.startTime={}", crate::now_ms()));
-    command.arg("-jar").arg(script);
-    command.stdin(Stdio::null());
+    command.arg("-jar").arg(&script);
+    // The launcher's environment, which the daemon's own no longer carries, is written to its
+    // standard input once it is spawned.
+    command.stdin(Stdio::piped());
     command.stdout(Stdio::null());
     match std::fs::OpenOptions::new().create(true).append(true).open(base_dir.join("daemon.log")) {
         Ok(log) => { command.stderr(Stdio::from(log)); }
@@ -79,7 +90,7 @@ pub fn launch(
     mark_stdio_non_inheritable();
     // A progress file left by a bootstrap that died mid-download would otherwise
     // count as this daemon's first sign of life.
-    let _ = std::fs::remove_file(progress_file);
+    let _ = std::fs::remove_file(&progress_file);
     crate::debug!("launch: spawning daemon: {} (wrapper)", executable.display());
 
     let mut child = match command.spawn() {
@@ -92,11 +103,12 @@ pub fn launch(
         }
     };
     crate::debug!("launch: spawned, child pid={}", child.id());
+    if let Some(stdin) = child.stdin.take() { crate::daemon::send_environment(stdin); }
 
     let _ = std::fs::write(pid_file, format!("{}\n", child.id()));
 
-    let outcome = await_startup(socket_file, fail_file, progress_file, Some(&mut child));
-    let _ = std::fs::remove_file(progress_file);
+    let outcome = await_startup(socket_file, fail_file, &progress_file, Some(&mut child));
+    let _ = std::fs::remove_file(&progress_file);
     crate::debug!("launch: post-poll socket_ready={} fail_exists={}",
         crate::state::socket_ready(socket_file), fail_file.exists());
 
@@ -194,7 +206,12 @@ pub fn idle_reason(outcome: &Outcome) -> String {
     }
 }
 
-fn build_java_arguments(script: &Path, name: &str, progress_file: &Path, config: &BuildConfig) -> Vec<String> {
+fn build_java_arguments(
+    script: &Path,
+    name: &str,
+    progress_file: &Path,
+    config: &BuildConfig,
+) -> Vec<String> {
     let jar_size = std::fs::metadata(script).map(|metadata| metadata.len()).unwrap_or(0);
     let user_name = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_default();
     // The *effective* user, since that is whose files the daemon will be creating; the
@@ -204,7 +221,7 @@ fn build_java_arguments(script: &Path, name: &str, progress_file: &Path, config:
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default();
 
-    vec![
+    let mut arguments = vec![
         format!("-Dbuild.id={}", config.build_id),
         format!("-Dethereal.name={}", name),
         format!("-Dethereal.user.id={}", uid),
@@ -218,7 +235,11 @@ fn build_java_arguments(script: &Path, name: &str, progress_file: &Path, config:
         format!("-Dethereal.upgradable={}", crate::config::upgradable()),
         // Where a Burdock bootstrap reports its dependency downloads; see `progress.rs`.
         format!("-Dburdock.progress={}", progress_file.display()),
-    ]
+    ];
+    // The environment this launcher was started with, which the daemon's own sanitized
+    // environment no longer carries, arrives on the daemon's standard input.
+    arguments.push(format!("-Dethereal.environment={}", crate::daemon::ENVIRONMENT_ON_STDIN));
+    arguments
 }
 
 #[cfg(unix)]
@@ -227,6 +248,7 @@ fn detach(command: &mut Command) {
     unsafe {
         command.pre_exec(|| {
             libc::setsid();
+            crate::daemon::conventional_process_state();
             Ok(())
         });
     }
