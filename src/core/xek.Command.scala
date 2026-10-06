@@ -88,6 +88,11 @@ object Command:
   val Client = Spec(t"client", Unset, t"directory", t"take unverified stubs from a local directory")
   val ClientUrl = Spec(t"client-url", Unset, t"url", t"download stubs from this URL instead")
   val ClientManifest = Spec(t"client-manifest", Unset, t"file", t"verify downloaded stubs against this manifest")
+  val Url = Spec(t"url", Unset, t"base-url", t"the URL the executables are downloaded from")
+  val Name = Spec(t"name", Unset, t"name", t"the command's name; by default, the executables' common prefix")
+  val Release = Spec(t"release", Unset, t"version", t"the version the scripts announce; by default, the URL's last segment")
+  val Manifest = Spec(t"manifest", Unset, t"file", t"take the digests from a manifest of platform and SHA-256 lines")
+  val OutDir = Spec(t"out", Unset, t"directory", t"the directory to write install.sh and install.ps1 in")
   val Help = Spec(t"help", 'h', Unset, t"show this help")
   val Version = Spec(t"version", 'v', Unset, t"show the version")
 
@@ -101,6 +106,13 @@ object Command:
         List
           ( Platform, Polyglot, Download, Exclude, Dispatch, Java, JavaMin, Jdk, BuildId, PublicKey,
             RecoveryKey, AppId, AllowDowngrade, Client, ClientUrl, ClientManifest ) )
+
+    case Installer
+    extends Action
+      ( t"installer",
+        t"--url <base-url> [--name <name>] [--release <version>] [--out <directory>] <executable>...",
+        t"write install scripts for sh and PowerShell, embedding the digests of a release",
+        List(Url, Name, Release, Manifest, OutDir) )
 
     case Keygen
     extends Action(t"keygen", t"--out <prefix>", t"generate a key pair for signing releases", List(Prefix))
@@ -293,6 +305,77 @@ object Command:
         record   = record,
         source   = source(parsed, path) )
 
+  // The options of `xek installer`: the digests come from the executables given as operands,
+  // each named `<name>-<platform>[.exe]` as `xek build -p` writes them, or from a manifest.
+  def installer(parsed: Parsed, path: Text => Path on Local): Installer.Options raises Assembler.Error =
+    val url: Text = parsed.value(Url).lest(usage(m"--url is needed: where the executables are downloaded from"))
+    val manifest: Optional[Text] = parsed.value(Manifest)
+    val out: Path on Local = parsed.value(OutDir).let(path).or(path(t"."))
+
+    if manifest.present && !parsed.operands.nil
+    then abort(usage(m"--manifest replaces the executables; give one or the other"))
+
+    if manifest.absent && parsed.operands.nil
+    then abort(usage(m"give the executables to embed the digests of, or a --manifest"))
+
+    // Each operand's name, split into the command's name and its platform: `tool-linux-x64`
+    // or `tool-windows-x64.exe`, as `xek build -p` writes them.
+    val executables: List[(Text, Target, Path on Local)] =
+      parsed.operands.map: operand =>
+        val file: Path on Local = path(operand)
+        val name: Text = file.name.s.stripSuffix(".exe").tt
+
+        val target: Target =
+          Target.all.filter { target => name.ends(t"-${target.label}") }.prim.lest:
+            usage(m"$operand is not named <name>-<platform>[.exe], for a platform of $platforms")
+
+        (name.keep(name.length - target.label.length - 1), target, file)
+
+    val names: List[Text] = executables.map(_(0)).distinct
+
+    if names.size > 1
+    then abort(usage(m"the executables are named for different commands: ${names.join(t", ")}"))
+
+    val name: Text =
+      parsed.value(Name).or(names.prim.lest(usage(m"--name is needed with --manifest")))
+
+    if name == t"" || name.contains(t"/") || name.contains(t" ")
+    then abort(usage(m"$name is not a command name"))
+
+    val digests: Map[Target, Text] =
+      if manifest.present then
+        val text: Text = String(Files.read(path(manifest.or(t""))), "UTF-8").tt
+
+        val lines: Map[Text, Text] = Stubs.manifest(text)
+
+        lines.keys.to[List].map: label =>
+          val digest: Text = lines(label).or(t"")
+
+          val target: Target = Target.parse(label).lest:
+            usage(m"the manifest names $label, which is not a platform; choose from $platforms")
+
+          if digest.length != 64 || !digest.s.matches("[0-9a-fA-F]+")
+          then abort(usage(m"the manifest's digest for $label is not a SHA-256"))
+
+          (target, digest.lower)
+        . to[Map]
+      else
+        val targets: List[Target] = executables.map(_(1))
+
+        targets.filter { target => targets.count(_ == target) > 1 }.prim.let: target =>
+          abort(usage(m"more than one executable is for ${target.label}"))
+
+        executables.map { (_, target, file) => (target, Files.sha256(Files.read(file))) }.to[Map]
+
+    if digests.keys.to[List].nil then abort(usage(m"the manifest names no platform"))
+
+    val base: Text = url.s.stripSuffix("/").tt
+    val release: Text = parsed.value(Release).or(base.s.substring(base.s.lastIndexOf('/') + 1).nn.tt)
+
+    Installer.Options(base, name, release, digests, out)
+
+  private def platforms: Text = Target.all.map(_.label).join(t", ")
+
   // Stubs from a local directory; or from a URL and a manifest, either of which may be given
   // alone to replace the published release's.
   private def source(parsed: Parsed, path: Text => Path on Local): Stubs.Source raises Assembler.Error =
@@ -316,8 +399,7 @@ object Command:
     else xek.Client.standard
 
   private def target(label: Text): Target raises Assembler.Error =
-    Target.parse(label).lest:
-      usage(m"$label is not a platform; choose from ${Target.all.map(_.label).join(t", ")}")
+    Target.parse(label).lest(usage(m"$label is not a platform; choose from $platforms"))
 
   private def shell(name: Text): Shell raises Assembler.Error =
     Shell.parse(name).lest(usage(m"$name is not a shell; choose from sh, pwsh or bat"))

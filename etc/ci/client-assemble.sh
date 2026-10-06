@@ -80,13 +80,15 @@ fi
 ./mill xek.cli.bootstrap build --platform "$PLATFORMS" --client "$WRAP" "$JAR" "$WORK/xek"
 cp "$WORK/xek" "$WORK/xek.cmd"
 
-# The installer served from https://propensive.dev/xek, which redirects to the latest release's
-# `install.sh`: it downloads the native `xek-<platform>` for where it runs and checks it against
-# the digest it embeds, taken here from the very files being uploaded.
-./etc/shared generate-install.sh xek "$RELEASE_VERSION" "$RELEASE_TAG" "$WORK" > "$WORK/install.sh"
+# The installers served from https://propensive.dev/xek (and xek.ps1), which redirect to the
+# latest release's `install.sh` and `install.ps1`: each downloads the native `xek-<platform>`
+# for where it runs and checks it against the digest it embeds, taken here from the very files
+# being uploaded, by `xek installer` itself.
+./mill xek.cli.bootstrap installer --url "$BASE_URL" --release "$RELEASE_VERSION" --out "$WORK" \
+  "$WORK"/xek-*
 
 cp "$WORK/client"/client-* "$WORK"/xek "$WORK"/xek.cmd "$WORK"/xek-* "$WORK/install.sh" \
-  "$RELEASE_ASSETS"/
+  "$WORK/install.ps1" "$RELEASE_ASSETS"/
 
 # Every other asset's SHA-256, for downstream fetchers that verify by name: consumers pin an
 # `xek` asset's line in their etc/xek.tsv.

@@ -526,6 +526,99 @@ object Tests extends Suite(m"XEK tests"):
         fault(Stubs.resolve(Stubs.Source.Remote(t"file:///nonexistent", hashes), host, local(tempDir()))(_ => ()))
       .assert(_ == Assembler.Fault.Download)
 
+    suite(m"installer"):
+      // The executables of a release, named as `xek build -p` names them, in a directory.
+      def release(dir: Path on Linux, name: Text, targets: List[Target]): List[Text] =
+        targets.map: target =>
+          val suffix: Text = if target.windows then t".exe" else t""
+          val file: Text = t"$name-${target.label}$suffix"
+          writeText(sub(dir, file), t"#!/bin/sh\necho $file\n")
+          file
+
+      def installer(dir: Path on Linux, words: Text*): _root_.xek.Installer.Options =
+        val parsed = xek.Command.parse(t"installer" :: words.to(List))
+        xek.Command.installer(parsed, word => Files.child(local(dir), word))
+
+      def written(dir: Path on Linux, words: Text*): (Text, Text) =
+        _root_.xek.Installer.write(installer(dir, words*))
+        (String(bytes(dir/t"install.sh"), "UTF-8").tt, String(bytes(dir/t"install.ps1"), "UTF-8").tt)
+
+      test(m"names the command for its executables, and the release for the URL"):
+        val dir = tempDir()
+        val files = release(dir, t"my-tool", List(Target.LinuxX64, Target.WindowsX64))
+        val options = installer(dir, (t"--url" :: t"https://example.com/r/2.0.1/" :: files)*)
+        (options.name, options.release, options.url, Target.all.filter(options.digests(_).present))
+      .assert(_ == (t"my-tool", t"2.0.1", t"https://example.com/r/2.0.1", List(Target.LinuxX64, Target.WindowsX64)))
+
+      test(m"embeds each executable's SHA-256 in both scripts"):
+        val dir = tempDir()
+        val files = release(dir, t"tool", List(Target.LinuxArm64, Target.MacosArm64, Target.WindowsX64))
+        val (sh, ps1) = written(dir, (t"--url" :: t"https://example.com/r/1.0" :: files)*)
+        val expected: List[Text] = files.map { file => sha(sub(dir, file)) }
+        ( expected.all { digest => sh.contains(t"expected=$digest ;;") },
+          expected.all { digest => ps1.contains(t"= '$digest'") },
+          sh.contains(t"linux-x64)"), ps1.contains(t"'linux-x64'"),
+          sh.contains(t"base=\"https://example.com/r/1.0\""), ps1.contains(t"$$base = 'https://example.com/r/1.0'"),
+          sh.contains(t"TOOL_INSTALL_DIR"), ps1.contains(t"$$env:TOOL_INSTALL_DIR"),
+          sh.contains(t"@@"), ps1.contains(t"@@") )
+      .assert(_ == (true, true, false, false, true, true, true, true, false, false))
+
+      test(m"takes digests from a manifest instead, with a name"):
+        val dir = tempDir()
+        val digest: Text = t"ab"*32
+        writeText(dir/t"m.tsv", t"# digests\nlinux-x64\t$digest\nwindows-x64\t${digest.upper}\n")
+        val options = installer(dir, t"--url", t"https://example.com/r/3", t"--manifest", t"m.tsv", t"--name", t"tool", t"--release", t"3.0.0")
+        (options.name, options.release, options.digests(Target.LinuxX64) == digest, options.digests(Target.WindowsX64) == digest)
+      .assert(_ == (t"tool", t"3.0.0", true, true))
+
+      test(m"refuses a missing URL, an unnamed manifest, a bad platform and mixed names"):
+        val dir = tempDir()
+        val files = release(dir, t"tool", List(Target.LinuxX64))
+        writeText(dir/t"other-macos-x64", t"x")
+        writeText(dir/t"tool-plan9", t"x")
+        writeText(dir/t"m.tsv", t"linux-x64\t${t"ab"*32}\n")
+        ( fault(installer(dir, files*)),
+          fault(installer(dir, t"--url", t"u", t"--manifest", t"m.tsv")),
+          fault(installer(dir, t"--url", t"u", t"--manifest", t"m.tsv", t"tool-linux-x64")),
+          fault(installer(dir, t"--url", t"u", t"tool-plan9")),
+          fault(installer(dir, t"--url", t"u", t"tool-linux-x64", t"other-macos-x64")),
+          fault(installer(dir, t"--url", t"u", t"tool-linux-x64", t"tool-linux-x64")),
+          fault(installer(dir, t"--url", t"u")) )
+      .assert(_ == (Assembler.Fault.Usage, Assembler.Fault.Usage, Assembler.Fault.Usage, Assembler.Fault.Usage,
+                    Assembler.Fault.Usage, Assembler.Fault.Usage, Assembler.Fault.Usage))
+
+      test(m"writes an install.sh which installs the executable for this platform from a file URL"):
+        val dir = tempDir()
+        val files = release(dir, t"tool", List(host))
+        val bin = tempDir()
+        written(dir, (t"--url" :: t"file://${dir.encode}" :: t"--release" :: t"9.9" :: files)*)
+        val install = dir/t"install.sh"
+        val output = sh"env TOOL_INSTALL_DIR=${bin.encode} sh ${install.encode}".exec[Text]()
+        val installed = bin/t"tool"
+        val file: Text = files.prim.or(t"")
+        (output.contains(t"Installed tool 9.9"), sha(installed) == sha(sub(dir, file)), sh"$installed".exec[Text]().trim == file)
+      .assert(_ == (true, true, true))
+
+      test(m"an install.sh refuses an executable whose digest differs"):
+        val dir = tempDir()
+        val files = release(dir, t"tool", List(host))
+        written(dir, (t"--url" :: t"file://${dir.encode}" :: files)*)
+        writeText(sub(dir, files.prim.or(t"")), t"#!/bin/sh\necho tampered\n")
+        val bin = tempDir()
+        val exit = sh"env TOOL_INSTALL_DIR=${bin.encode} sh ${(dir/t"install.sh").encode}".exec[Exit]()
+        (exit, jnf.Files.exists(jnf.Path.of((bin/t"tool").encode.s)))
+      .assert(_ == (Exit.Fail(1), false))
+
+      if safely(sh"pwsh -Version".exec[Exit]()) == Exit.Ok then
+        test(m"writes an install.ps1 which PowerShell parses"):
+          val dir = tempDir()
+          val files = release(dir, t"tool", List(Target.WindowsX64))
+          written(dir, (t"--url" :: t"https://example.com/r/1" :: files)*)
+          val script: Text = (dir/t"install.ps1").encode
+          val check: Text = t"$$null = [scriptblock]::Create((Get-Content -Raw '$script')); 'parsed'"
+          sh"pwsh -NoProfile -Command $check".exec[Text]().trim
+        .assert(_ == t"parsed")
+
     suite(m"command line"):
       test(m"needs a subcommand, and suggests one for a JAR"):
         (fault(xek.Command.parse(Nil)), fault(xek.Command.parse(List(t"app.jar"))),
