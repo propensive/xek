@@ -22,7 +22,7 @@ Within it:
 | `pid` | daemon | The daemon's process id |
 | `build` | daemon | The launcher content the daemon was started from, which the launcher reads to detect a stale daemon after a rebuild; see *Staleness* |
 | `acceptance` | daemon | Which compositions of the protocol schema the daemon reads: a BinTEL §8.4 acceptance, which the launcher consults before its first connection; see *Negotiating the composition* |
-| `fail` | daemon | Written when startup fails, so the launcher can report the reason instead of timing out |
+| `fail` | both | Written when startup fails — by the daemon, with the reason, so the launcher can report it instead of timing out; and by the launcher, when its attempt to start a daemon fails. A `fail` file less than two seconds old, with no `pid`, stops the next invocation with a message naming it, so a failing daemon is not started in a loop; an older one is removed |
 | `progress` | daemon | Dependency-download progress, tailed and rendered by the launcher (see `burdock.progress`) |
 | `lock` | launcher | Held while starting a daemon, so concurrent invocations start exactly one |
 | `daemon.log` | daemon | Diagnostics |
@@ -105,9 +105,11 @@ left in place, as the previous version, until the next upgrade replaces it.
 
 ## Launcher diagnostics
 
-`$TMPDIR/ethereal-launcher.log` — the launcher's own trace, written **only when
-`ETHEREAL_DEBUG` is set** (see `launcher.md`), and kept outside the per-application state
-directory because it must be writable before any application directory is known.
+`$TMPDIR/ethereal-launcher.log` — the trace of an *internal* invocation (`{completions}`,
+`{admin}`), whose stderr belongs to the shell, written **only when `ETHEREAL_DEBUG` is set**
+(see `launcher.md`); every other invocation traces to stderr. It is kept outside the
+per-application state directory because it must be writable before any application directory
+is known.
 
 ## Staleness
 
@@ -126,7 +128,10 @@ proves a rebuild: the daemon is displaced. A different mtime alone — after a `
 rebuild of the same size — is a question only content can settle, so the launcher asks the
 daemon, over the protocol, whether it is still fresh (`verify` → `verdict`). The daemon hashes
 at most once per change and remembers the answer, which a stateless launcher cannot do. A
-stale daemon shuts down and the launcher waits for its death before starting a new one.
+stale daemon shuts down and the launcher waits for its death, for up to five seconds, before
+starting a new one. A displaced daemon is asked too, for the same reason — so that it exits
+rather than lingers on an unlinked socket — but its answer is not needed: a daemon that
+cannot answer `verify` is displaced without being told, and exits when idle.
 
 ## Negotiating the composition
 
@@ -195,7 +200,12 @@ of a daemon it did not start.
 **Idle exit.** A daemon may exit after a period without invocations; the reference daemon
 does so after six hours idle. A launcher must not assume a daemon it once found is still
 there: a missing or unresponsive socket means *start one*, never *fail*. Nothing is lost by an
-idle exit but the warm JVM, which the next invocation pays for again.
+idle exit but the warm JVM, which the next invocation pays for again. A daemon that exits
+removes its `pid` with its other files; one that is killed leaves it, and the launcher clears
+a `pid` naming a dead process, or a live one whose socket refuses connections. The one case it
+cannot tell apart is a `pid` recycled by an unrelated process while no socket file exists at
+all, which it reports as a daemon that cannot be reached (status 2); removing the stale `pid`
+by hand clears it.
 
 **Shutdown.** The `shutdown` document asks a daemon to exit cleanly: it must accept no further
 invocations, let those in flight finish, and then end, removing its state files (`acceptance`

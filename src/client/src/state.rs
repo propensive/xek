@@ -46,7 +46,8 @@ pub fn prepare_base_dir(base_dir: &Path) -> Result<(), String> {
         if metadata.uid() != me {
             return Err(format!("it is owned by user {}, not by this user ({me})", metadata.uid()));
         }
-        if metadata.mode() & 0o077 != 0 {
+        // `DirBuilder::mode` is still filtered by the umask, so a fresh directory is set here too.
+        if metadata.mode() & 0o777 != 0o700 {
             fs::set_permissions(base_dir, fs::Permissions::from_mode(0o700))
                 .map_err(|error| format!("its permissions could not be restricted ({error})"))?;
         }
@@ -194,6 +195,15 @@ pub fn backout(fail_file: &Path, pid_file: &Path, name: &str) {
     }
 }
 
+// Waits, for up to five seconds, for a daemon that said it would exit to do so.
+fn await_death(pid: u32) {
+    let mut attempts = 0;
+    while process_alive(pid) && attempts < 50 {
+        std::thread::sleep(POLL_INTERVAL);
+        attempts += 1;
+    }
+}
+
 pub fn read_pid(pid_file: &Path) -> Option<u32> {
     let mut content = String::new();
     File::open(pid_file).ok()?.read_to_string(&mut content).ok()?;
@@ -314,8 +324,15 @@ pub fn check_state(
     match freshness(&record, size, mtime) {
         Freshness::Fresh => (),
 
+        // A different size proves a rebuild, but the daemon is still asked, so that it shuts
+        // itself down and is waited for rather than left running on an unlinked socket; one
+        // that cannot answer (it predates `verify`) is displaced without being told, and exits
+        // when idle.
         Freshness::Stale => {
-            let _ = fs::remove_file(pid_file);
+            if matches!(crate::protocol::verify(socket_file, composition), crate::protocol::Verdict::Stale) {
+                await_death(pid);
+            }
+            if file_has_content(pid_file) { let _ = fs::remove_file(pid_file); }
             clear_daemon_files(build_file, socket_file);
             std::thread::sleep(POLL_INTERVAL);
         }
@@ -329,11 +346,7 @@ pub fn check_state(
             // state and exits. Wait for it to die so the launch path below finds a
             // clean slate, and clear any state it failed to remove itself.
             crate::protocol::Verdict::Stale => {
-                let mut attempts = 0;
-                while process_alive(pid) && attempts < 50 {
-                    std::thread::sleep(POLL_INTERVAL);
-                    attempts += 1;
-                }
+                await_death(pid);
                 if file_has_content(pid_file) { let _ = fs::remove_file(pid_file); }
                 clear_daemon_files(build_file, socket_file);
             }

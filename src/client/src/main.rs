@@ -77,6 +77,7 @@ fn main() {
         wrapper::run(&raw[1..]);
     }
 
+    let argv0: Option<OsString> = raw.first().cloned();
     let invoked_as = raw.first().map(|arg| arg.to_string_lossy().into_owned());
     let (script, args, download) = parse_arguments(raw);
     let name = script.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
@@ -93,7 +94,7 @@ fn main() {
     let build_config = config::load(&script);
     debug!("main: build_id={} java_min={} java_pref={}", build_config.build_id, build_config.java_min, build_config.java_pref);
 
-    update::check_updates(&script, &args, &name);
+    update::check_updates(&script, argv0.as_deref(), &args, &name);
     debug!("main: post-update-check");
 
     let base_dir = state::base_dir(&name);
@@ -127,6 +128,9 @@ fn main() {
     debug!("main: internal={}", internal);
 
     state::backout(&fail_file, &pid_file, &name);
+    // Nothing connects to a socket another user could have planted: the check comes before the
+    // liveness probe and the `verify` that `check_state` may send (spec/layout.md, *Permissions*).
+    if state::socket_ready(&socket_file) { require_private_socket(&socket_file, &name); }
     state::check_state(&pid_file, &build_file, &socket_file, &script, &composition);
     debug!("main: post check_state, pid_file_has_content={}", state::file_has_content(&pid_file));
 
@@ -164,14 +168,10 @@ fn main() {
     }
     state::backout(&fail_file, &pid_file, &name);
 
+    if state::socket_ready(&socket_file) { require_private_socket(&socket_file, &name); }
     if !state::socket_alive(&socket_file) {
         debug!("main: socket not alive, exiting STARTUP_FAILURE");
         state::report_failure(&base_dir, &name, "its socket does not accept connections");
-        std::process::exit(STARTUP_FAILURE_EXIT_CODE);
-    }
-    if let Err(reason) = state::socket_private(&socket_file) {
-        xek::clear();
-        eprintln!("\nThe {name} daemon socket {} is not trusted: {reason}.", socket_file.display());
         std::process::exit(STARTUP_FAILURE_EXIT_CODE);
     }
     debug!("main: socket is alive");
@@ -302,6 +302,15 @@ fn intercept(args: &[OsString]) -> (Vec<OsString>, bool) {
 // CURRENT DIRECTORY, so a launcher run beside anything of the same name launched that instead
 // (`Invalid or corrupt jarfile …`), and `update::check_updates` would have renamed it.
 //
+// A socket owned by another user, or open to one, is refused before anything is sent on it.
+fn require_private_socket(socket_file: &Path, name: &str) {
+    if let Err(reason) = state::socket_private(socket_file) {
+        xek::clear();
+        eprintln!("\nThe {name} daemon socket {} is not trusted: {reason}.", socket_file.display());
+        std::process::exit(STARTUP_FAILURE_EXIT_CODE);
+    }
+}
+
 // `current_exe` is taken as an argument rather than read here so that the fallback arm below,
 // which is unreachable in practice, is still testable.
 fn resolve_script(executable: &str, current_exe: Option<PathBuf>) -> PathBuf {

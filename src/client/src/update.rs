@@ -1,4 +1,4 @@
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use crate::signing::{BUILD_ID_OFFSET, FLAG_DOWNGRADE_PERMITTED};
@@ -30,7 +30,9 @@ impl Outcome {
     }
 }
 
-pub fn check_updates(script: &Path, args: &[OsString], name: &str) {
+// `argv0` is what the launcher was invoked as, which the re-exec passes on unchanged so that
+// `invoked-as` (spec/launcher.md) survives an upgrade; the executable run is `script`.
+pub fn check_updates(script: &Path, argv0: Option<&OsStr>, args: &[OsString], name: &str) {
     // `script` is renamed below. `main` has already refused to run if it is not a regular
     // file; repeat the check here so the rename can never reach a directory or a stray
     // same-named neighbour, whatever a future caller does.
@@ -49,8 +51,9 @@ pub fn check_updates(script: &Path, args: &[OsString], name: &str) {
         use std::ffi::CString;
         use std::os::unix::ffi::OsStrExt;
         let script_c = CString::new(script.as_os_str().as_bytes()).unwrap();
+        let argv0_c = CString::new(argv0.unwrap_or(script.as_os_str()).as_bytes()).unwrap();
         let mut argv: Vec<*const libc::c_char> = Vec::with_capacity(args.len() + 2);
-        argv.push(script_c.as_ptr());
+        argv.push(argv0_c.as_ptr());
         let arg_cstrs: Vec<CString> = args.iter()
             .map(|a| CString::new(a.as_bytes()).unwrap())
             .collect();
@@ -62,6 +65,7 @@ pub fn check_updates(script: &Path, args: &[OsString], name: &str) {
     #[cfg(windows)]
     {
         use std::process::Command;
+        let _ = argv0; // `Command` cannot set argv[0]; the re-exec runs under the executable's path.
         // Same handle-leak prevention as in `launch.rs::launch` — without
         // this, the re-exec'd new binary inherits the launcher's
         // stdin/stdout/stderr pipe handles and keeps them open even after
