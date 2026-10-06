@@ -7,6 +7,7 @@ at the first message rather than misreading fields. Above the base, the schema m
 
 | Release | Protocol | Base signature (BLAKE3-256 + cadence) | `ETHRCFG` | Reference daemon |
 |---|---|---|---|---|
+| `1.1.1` | `ethereal-launcher` BinTEL | `55d18c247b88db8fc6af7a197c56ee2b680084d1800afe8947a2f613c70492e563` | v4 | Soundness ≥ 0.70.0 (`ethereal-core`) |
 | `1.1.0` | `ethereal-launcher` BinTEL | `55d18c247b88db8fc6af7a197c56ee2b680084d1800afe8947a2f613c70492e563` | v4 | Soundness ≥ 0.70.0 (`ethereal-core`) |
 | `1.0.0` | `ethereal-launcher` BinTEL | `55d18c247b88db8fc6af7a197c56ee2b680084d1800afe8947a2f613c70492e563` | v3 | Soundness ≥ 0.70.0 (`ethereal-core`) |
 | `xek-0.10` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
@@ -79,6 +80,11 @@ staged upgrade in `.upgrade-result` ([`layout.md`](layout.md)) and passes the da
 `ethereal.upgradable` ([`properties.md`](properties.md)); the protocol is unchanged. Its `xek`
 command takes a subcommand first: what `xek app.jar` did is now `xek build app.jar`, beside the
 subcommands that sign a release (`keygen`, `public-key`, `sign`, `statement`, `attach`, `verify`).
+
+`1.1.1` is a client fix, changing no contract: the launcher checks the daemon socket's owner
+before connecting to it, asks a daemon it displaces to shut down, keeps `argv[0]` across a
+self-upgrade, and makes its state directory 0700 whatever the umask — each as the
+specifications already said.
 
 ## Protocol versions
 
