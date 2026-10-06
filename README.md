@@ -29,13 +29,14 @@ other. On Linux or macOS, install it with
 curl -fsSL https://propensive.dev/xek | sh
 ```
 
-which puts it in `~/.local/bin` (or `$XEK_INSTALL_DIR`). On Windows, in PowerShell,
+which puts it in `~/.local/bin` (or `$XEK_INSTALL_DIR`). In PowerShell, on any platform,
 
 ```powershell
 irm https://propensive.dev/xek.ps1 | iex
 ```
 
-puts it in `%LOCALAPPDATA%\Programs\xek` (or `$env:XEK_INSTALL_DIR`) and on your `PATH`. Then:
+does the same; on Windows it puts `xek.exe` in `%LOCALAPPDATA%\Programs\xek` (or
+`$env:XEK_INSTALL_DIR`) and on your `PATH`. Then:
 
 ```sh
 xek build app.jar                              # ./app, a native executable for this platform
