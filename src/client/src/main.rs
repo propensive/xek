@@ -9,6 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 mod acceptance;
 mod bintel;
 mod config;
+mod daemon;
 mod descriptors;
 mod session;
 mod state;

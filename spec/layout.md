@@ -40,9 +40,10 @@ directory and the socket must therefore be private, by construction rather than 
   A directory owned by another user is refused, with a message, and the launcher exits with
   status 2. `$XDG_RUNTIME_DIR` is normally already 0700; the fallbacks under `$HOME` are not
   guaranteed to be, which is why the check exists.
-- The daemon creates the socket **mode 0600**: its umask is inherited from whichever
-  invocation first started it, so it must set the mode explicitly (`fchmod`, or bind under a
-  temporary umask of 077). Before connecting, the launcher verifies that the socket is owned
+- The daemon creates the socket **mode 0600**. A launcher starts the daemon under a umask of
+  077 (see *The daemon process* in [`launcher.md`](launcher.md)), but a daemon started by an
+  older launcher inherits the umask of whichever invocation first started it, so the daemon
+  should still set the mode explicitly (`fchmod`, or bind under a temporary umask of 077). Before connecting, the launcher verifies that the socket is owned
   by the invoking user and admits no one else, and refuses otherwise.
 - The daemon **should check peer credentials** on every connection — `SO_PEERCRED` on Linux,
   `LOCAL_PEERCRED` or `getpeereid` on macOS — and refuse a connection whose peer user is not
