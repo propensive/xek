@@ -8,7 +8,7 @@
 # you do — AGENTS.md says how. `rust-src` is what `-Zbuild-std` compiles; the targets are the
 # five platforms the stubs are cross-compiled for.
 [toolchain]
-channel = "nightly-2026-10-01"
+channel = "nightly-2026-10-05"
 components = ["rust-src"]
 targets = [
   "x86_64-pc-windows-gnu",
