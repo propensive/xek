@@ -16,15 +16,16 @@ argument vector at all. One argument form is also accepted, for a user at a shel
 | `XEK_DOWNLOAD` | Set (to anything but the empty string or `0`): download a JVM if no suitable one is installed, rather than failing with instructions |
 | `--download` | The same request, recognised **only when it is the sole argument**. `mytool --download` downloads a JVM if necessary, starts the daemon, and runs the application *with no arguments*. In any other position — `mytool install --download`, `mytool -- --download` — the argument belongs to the application and is delivered unchanged |
 | `XEK_WRAP_JAVA` | Internal. Set by the launcher on the process it starts the JVM through, so the daemon appears under the application's name; never set it yourself |
-| `ETHEREAL_DEBUG` | Set: the launcher traces its progress to stderr and to `$TMPDIR/ethereal-launcher.log`, which is otherwise never written |
+| `ETHEREAL_DEBUG` | Set (to anything but the empty string or `0`): the launcher traces its progress to stderr. An internal invocation (`{completions}`, `{admin}`), whose stderr belongs to the shell, traces instead to `$TMPDIR/ethereal-launcher.log`, which is otherwise never written |
 | `ETHEREAL_SIGNAL_TIMEOUT_MS` | How long the launcher waits for the daemon to acknowledge a forwarded signal before taking the signal's fallback action (below); default 250 |
 
 Two argument values are reserved by the **daemon** rather than the launcher, as the first
 argument only: `{completions}`, under which the reference daemon computes shell completions,
 and `{admin}`, its administrative interface. The launcher recognises them only to run such an
 invocation without touching the terminal, reading stdin or installing signal handlers, since
-it runs behind the user's shell — for instance under a completion function's `< <(...)`. An
-application built on the reference daemon cannot use either as its own first argument.
+it runs behind the user's shell — for instance under a completion function's `< <(...)`; its
+`init` carries no `invoked-as`. An application built on the reference daemon cannot use either
+as its own first argument.
 
 Nothing else is intercepted. In particular the launcher never removes an argument from the
 middle of the vector.
@@ -39,7 +40,7 @@ process, so for each of these the document is its only source.
 | `pid` | The launcher's process id |
 | `uid` | The invoking user: the *real* user id on Unix (`getuid`), the user's SID (`S-1-5-…`) on Windows, read from the process token; empty if that fails |
 | `username` | `$USER`, then `$LOGNAME`, on Unix; `%USERNAME%` on Windows. Whatever the environment says, in other words, and not authenticated |
-| `script` | The canonical path of the running executable, asked of the operating system — never derived from `argv[0]` |
+| `script` | The canonical path of the running executable, asked of the operating system; `argv[0]` is consulted only if the operating system cannot say (the executable unlinked mid-run, `/proc` not mounted), and then read as `execvp` reads it |
 | `invoked-as` | `argv[0]` exactly as the caller supplied it, so a multi-call binary — one executable installed under several names by symbolic links — can dispatch on the name it was invoked by. It is the caller's to choose and may be anything, including a path that does not exist; never use it to locate a file. The daemon and its state directory are keyed on the executable, not on this name, so every alias shares one warm daemon, and a daemon must therefore serve concurrent invocations under different names |
 | `pwd` | The working directory |
 | `argument` | The arguments, in order, after the launcher's own (above) |
@@ -64,8 +65,8 @@ UTF-8; on Windows, an unpaired UTF-16 surrogate — is delivered with U+FFFD in 
 sequence that cannot be represented. This is a documented loss, not a failure: the launcher
 does not abort on such a value, and the substitution is exactly the one the JVM makes when it
 decodes its own argument vector, so an application sees what it would have seen if run
-directly. A re-exec after a self-upgrade passes the original bytes on, since they are still
-the launcher's to give.
+directly. A re-exec after a self-upgrade passes the original bytes on, `argv[0]` included,
+since they are still the launcher's to give.
 
 The bytes are not lost, though: for every argument, environment entry and working directory
 whose text form made a substitution, `init` also carries a `raw` record — the value's kind,
@@ -97,8 +98,11 @@ following the client.
 Every document the launcher writes carries the signature of the schema composition it was
 written under (BinTEL §6.1, §8.2): the base `ethereal-launcher` schema, or the base with the
 first *n* of its layers. The launcher settles on one composition per invocation, before it
-connects, and uses it for every document of the session — and for the `verify` it may ask on
-a connection of its own beforehand — and expects every document the daemon writes under it.
+connects, and uses it for every document of the session, and expects every document the daemon
+writes under it. The `verify` it may ask on a connection of its own beforehand is written under
+a provisional choice from the same file, read leniently: the file may be a dead daemon's
+leftover, and a daemon of another base answers `verify` as one that predates it does, by
+closing the connection.
 
 It chooses by reading the daemon's `acceptance` file from the state directory, and the rule is
 in `layout.md` under *Negotiating the composition*: the first alternative whose requirement is
@@ -214,16 +218,20 @@ the launcher:
 2. puts the terminal into raw mode — no canonical line editing, no echo, and no signal
    generation from keys (`ISIG` off, `VINTR` undefined), with output post-processing kept on —
    so that every keystroke reaches the application as bytes;
-3. asks the terminal for its background colour (OSC 11), waiting briefly for the reply, and
-   delivers it as `TERMINAL_BG`; any other bytes the user typed meanwhile are pushed back
-   ahead of stdin, not lost. On Windows the query is made only under Windows Terminal
+3. asks the terminal for its background colour (OSC 11), when stdout is the terminal too,
+   waiting briefly for the reply, and delivers it as `TERMINAL_BG`; any other bytes the user
+   typed meanwhile are pushed back ahead of stdin, not lost. On Windows the query is made only
+   under Windows Terminal
    (`WT_SESSION` set), since the classic console leaves an unanswered query in the input;
 4. measures the terminal's size and delivers it as `COLUMNS` and `LINES`, and as the `columns`
    and `rows` fields;
 5. applies the `mode` documents the daemon sends on the session: `canonical` asks for the
    driver's own line editing (cooked mode), and `echo` for what is typed to be shown; each
    is set as the document says, so the four combinations are reachable, and canonical
-   without echo is how a password is read. A `mode` without either flag is raw mode again.
+   without echo is how a password is read. Canonical mode restores the terminal's own settings
+   wholesale, so while it holds the terminal generates signals again: Ctrl-C is SIGINT, which
+   arrives as a `signal` document rather than a byte (below), and Ctrl-Z stops the launcher. A
+   `mode` without either flag is raw mode again.
 
 When stdin is a terminal but the launcher is **not in the foreground** — a background job under
 job control, `mytool > log &` — none of the above happens, since any of it would stop the job
@@ -336,13 +344,13 @@ is never interleaved with another's.
 **Ctrl-C reaches the daemon by one of two routes**, and a daemon implementation must handle
 both:
 
-- *Stdin is a terminal in the foreground.* Raw mode has turned signal generation off, so the
-  terminal does not send SIGINT at all. Ctrl-C arrives as the **byte 0x03** in the ordinary
+- *Stdin is a terminal in the foreground, in raw mode.* Raw mode has turned signal generation
+  off, so the terminal does not send SIGINT at all. Ctrl-C arrives as the **byte 0x03** in the ordinary
   stdin stream, and it is the daemon's — ultimately the application's — job to notice it. An
   unnoticed 0x03 does nothing. This is deliberate: a full-screen application may treat Ctrl-C
   as input.
-- *Stdin is a pipe, a file, or a background terminal.* The terminal still sends SIGINT to the
-  foreground process group, the launcher's handler catches it, and it arrives as a **`signal`
+- *Stdin is a pipe, a file, a background terminal, or a terminal in canonical mode.* The
+  terminal still sends SIGINT to the foreground process group, the launcher's handler catches it, and it arrives as a **`signal`
   document naming `INT`**. If the invocation rejects it, or does not answer, the launcher
   dies of SIGINT as described above.
 
@@ -353,8 +361,10 @@ that want it.
 
 **Windows** has no signals. The console control events `CTRL_C_EVENT`, `CTRL_BREAK_EVENT`,
 `CTRL_CLOSE_EVENT`, `CTRL_LOGOFF_EVENT` and `CTRL_SHUTDOWN_EVENT` are forwarded as `signal`
-documents named `CTRL_C`, `CTRL_BREAK`, `CTRL_CLOSE`, `CTRL_LOGOFF` and `CTRL_SHUTDOWN`, in
-either terminal state. The last three carry a `deadline`, in milliseconds (5000): Windows ends
+documents named `CTRL_C`, `CTRL_BREAK`, `CTRL_CLOSE`, `CTRL_LOGOFF` and `CTRL_SHUTDOWN`. Raw
+mode on an attached console disables the console's processing of Ctrl-C, which then arrives as
+the byte 0x03, as on Unix; the other events are forwarded in either terminal state. The last
+three carry a `deadline`, in milliseconds (5000): Windows ends
 the process about that long after the event whatever it is doing, so the application knows how
 long it has to finish. A rejected or unanswered event ends the launcher with the system's own
 status for a process ended by a control event, `STATUS_CONTROL_C_EXIT` (`0xC000013A`); an
@@ -370,6 +380,11 @@ instead, a few times a second while stdout is a console, and sends `WINCH` with 
 
 The daemon ends the session with `exit-status`, the last document it writes, after every
 chunk of every stream; the launcher writes out what it holds of stdout and stderr and exits
-with the status. A launcher that cannot reach the daemon exits with 2, and so does one whose
-session ends without an `exit-status` (*Losing the other side*). One that was terminated by a
+with the status. A launcher that could not **start** a daemon exits with 1 — no suitable Java
+and no leave to download one, a JVM that could not be spawned or died during startup, a
+daemon that bound no socket within the startup limit, or a `fail` file fresh from such an
+attempt — after reporting why. One that found a daemon and could not **reach** it exits with
+2 — a socket that refuses connections, or that is not the invoking user's — and so does one
+whose session ends without an `exit-status` (*Losing the other side*), one whose daemon speaks
+another protocol, and one whose state directory cannot be used. One that was terminated by a
 signal dies of that signal, as above, whatever status the daemon then reports.

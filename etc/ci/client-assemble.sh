@@ -7,7 +7,7 @@
 # script to upload.
 #
 # This is the `assemble` step named in etc/release, run by propensive/.github's release.sh when a
-# `xek-<version>` tag is pushed; the gates before it (a signed tag, CI green on the commit, no
+# version tag is pushed; the gates before it (a signed tag, CI green on the commit, no
 # release of that version yet) and the upload, digest check, notes and rollback after it are the
 # ones every repository's release goes through. Beyond $RELEASE_ASSETS and a temporary directory
 # it writes only the three `res/core/xek/client.*` resources, and restores them when it exits,

@@ -117,13 +117,13 @@ make test            # the test suite, through the `fume` client
 make cargo-test      # the client's own unit tests
 
 make client-build   # cross-compile the five stubs into dist/client
-make client-fetch RUNNERS_VERSION=0.5   # or download them, hash-verified
+make client-fetch RUNNERS_VERSION=1.1.0 # or download a release's, hash-verified
 
 make e2e             # package the example app around a real stub and run it
 ```
 
-The Scala side resolves Soundness components from `~/.ivy2/local`; `make sync-releases
-VERSION=X.Y.Z` in a Soundness checkout puts them there. The compiler is the
+The Scala side resolves Soundness components from `~/.ivy2/local`; `make sync-deps` installs
+the release pinned in `etc/refs` there, as CI does (`AGENTS.md`). The compiler is the
 [proscala](https://github.com/propensive/proscala) fork, downloaded and cached automatically.
 
 ## Releasing client stubs
@@ -169,10 +169,11 @@ RELEASE_DRY_RUN=1 ./etc/shared release.sh 1.0.0
 
 Extracted from Soundness, where this machinery grew as the `ziggurat` library and the Rust
 client inside `ethereal`. Client releases up to `runners-0.5` were published from that
-repository under the `client-` tag prefix; releases from here use `xek-`, and `xek-0.6` — the
-first made from this repository — supersedes them and adds the builder as a release asset: a
-polyglot shell script up to `xek-0.9`, and the `xek` command after it. `1.0.0` is the first
-three-part version, and the first whose base signature the daemon side adopted after release.
+repository under the `client-` tag prefix. `xeq-0.6` — the first made from this repository,
+under the project's earlier name — supersedes them and adds the builder as a release asset: a
+polyglot shell script up to `xeq-0.9`, and the `xek` command from `xek-0.10`, the one release
+tagged under the new name before versions became `X.Y.Z`. `1.0.0` is the first three-part
+version, and the first whose base signature the daemon side adopted after release.
 
 ## Licence
 

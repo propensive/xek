@@ -64,7 +64,7 @@ A new message kind, a required field, or a change to what an existing field mean
 base, and so its signature. The rollout order is then strict:
 
 1. **This repository first.** Change the contract here, change the client, and publish a new
-   `xek-<version>` release. Nothing depends on the daemon, so this can ship alone.
+   release (tagged with the bare version). Nothing depends on the daemon, so this can ship alone.
 2. **The daemon next.** Update its copy of the schema, its pinned signature, and the client
    version its tests fetch; release.
 3. **The packager last**, if it needs anything from the new daemon release.

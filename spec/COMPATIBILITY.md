@@ -10,21 +10,22 @@ at the first message rather than misreading fields. Above the base, the schema m
 | `1.1.0` | `ethereal-launcher` BinTEL | `55d18c247b88db8fc6af7a197c56ee2b680084d1800afe8947a2f613c70492e563` | v4 | Soundness ≥ 0.70.0 (`ethereal-core`) |
 | `1.0.0` | `ethereal-launcher` BinTEL | `55d18c247b88db8fc6af7a197c56ee2b680084d1800afe8947a2f613c70492e563` | v3 | Soundness ≥ 0.70.0 (`ethereal-core`) |
 | `xek-0.10` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
-| `xek-0.9` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
-| `xek-0.8` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
-| `xek-0.7` | `ethereal-launcher` BinTEL | `eeced165c15f73119cf7710812671924aa558722927d29f37538e7b3953296c2ce` | v3 | none: Soundness moved from `xek-0.6` straight to `xek-0.8` |
-| `xek-0.6` | `ethereal-launcher` BinTEL | `4701ec19cd0fd3ecfc0e1b8a6525b4edc3a3b1deda370f681986db9aa39c1da692` | v3 | Soundness ≥ 0.65.0 (`ethereal-core`) |
+| `xeq-0.9` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
+| `xeq-0.8` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
+| `xeq-0.7` | `ethereal-launcher` BinTEL | `eeced165c15f73119cf7710812671924aa558722927d29f37538e7b3953296c2ce` | v3 | none: Soundness moved from `xek-0.6` straight to `xek-0.8` |
+| `xeq-0.6` | `ethereal-launcher` BinTEL | `4701ec19cd0fd3ecfc0e1b8a6525b4edc3a3b1deda370f681986db9aa39c1da692` | v3 | Soundness ≥ 0.65.0 (`ethereal-core`) |
 | `runners-0.5` | `ethereal-launcher` BinTEL | `4701ec19cd0fd3ecfc0e1b8a6525b4edc3a3b1deda370f681986db9aa39c1da692` | v2 | Soundness ≥ 0.65.0 (`ethereal-core`) |
 | `runners-0.4` | `ethereal-launcher` BinTEL | `4701ec19cd0fd3ecfc0e1b8a6525b4edc3a3b1deda370f681986db9aa39c1da692` | v2 | Soundness 0.65.0 (`ethereal-core`) |
 | `runners-0.3` and earlier | line-oriented (`i`/`e`/`m`/`s`/`x`/`v` opcodes) | — | v2 | Soundness ≤ 0.64.0 |
 
 Releases up to and including `runners-0.5` were published from the Soundness repository, at
 `propensive/soundness`, before this project was extracted, under the tag prefix `client-`.
-Releases from this repository use the prefix `xek-`, and each carries the five stubs and the
-`xek` builder. Up to `xek-0.9` the builder was a polyglot shell script (as `xek` and `xek.cmd`,
-the same bytes); from `xek-0.10` it is the `xek` command, itself an XEK executable, published as
-a polyglot `xek` (and `xek.cmd`) and as a native `xek-<platform>` for each platform. Their hashes
-are recorded in `etc/client/`.
+Releases from this repository were tagged `xeq-<version>` under the project's earlier name,
+`xek-0.10` once renamed, and with the bare version from `1.0.0`; each carries the five stubs and
+the `xek` builder. Up to `xeq-0.9` the builder was a polyglot shell script (as `xek` and
+`xek.cmd`, the same bytes); from `xek-0.10` it is the `xek` command, itself an XEK executable,
+published as a polyglot `xek` (and `xek.cmd`) and as a native `xek-<platform>` for each
+platform. Their hashes are recorded in `etc/client/`.
 
 The signature is pinned in three places, which the test suites check against each other:
 
@@ -38,12 +39,12 @@ The daemon derives the signature at runtime from its own copy of the schema text
 for byte — descriptions and layers included, since they are part of what is hashed — or this
 file records a signature no side actually sends.
 
-`xek-0.7` changed `record Init`: the single `tty` flag, which reported only stdin, became
+`xeq-0.7` changed `record Init`: the single `tty` flag, which reported only stdin, became
 `stdin-tty`, `stdout-tty` and `stderr-tty`, and `argument` and `environment` moved to indices
 8 and 9. A command can now tell whether *its own output* is a terminal, which is what a tool
 emitting binary data needs in order to refuse to run without a redirection.
 
-`xek-0.8` revises the protocol again: `record Init` gains `invoked-as`, `umask`,
+`xeq-0.8` revises the protocol again: `record Init` gains `invoked-as`, `umask`,
 `columns`, `rows`, `input-codepage` and `output-codepage` (indices 10–15, after the existing
 fields, which keep theirs); `record Signal` gains `columns`, `rows` and `deadline`; and two
 variants are added at the end of `select Message`, `closed` (an output stream has lost its
@@ -51,10 +52,10 @@ reader) and `shutdown` (a request that the daemon exit). `uid` becomes the platf
 identifier — a SID on Windows — rather than a number. What each means is in
 [`launcher.md`](launcher.md) and [`layout.md`](layout.md).
 
-`xek-0.9` leaves the base untouched — its signature is `xek-0.8`'s — and adds the
+`xeq-0.9` leaves the base untouched — its signature is `xeq-0.8`'s — and adds the
 negotiation described under *Layers and acceptances* below: the launcher reads the daemon's
 acceptance before its first connection and writes under the richest composition both hold.
-Against a daemon that publishes no acceptance it behaves exactly as `xek-0.8` does.
+Against a daemon that publishes no acceptance it behaves exactly as `xeq-0.8` does.
 
 `1.0.0` — versions are `X.Y.Z` from here, tagged bare, a third part marking a client fix that
 changes no contract — revises the base: an invocation becomes **one connection**, a session of framed
@@ -137,11 +138,11 @@ client's tests against fixture hashes until the first feature that needs a layer
 ## Record versions
 
 The `ETHRCFG` column is the version of the configuration record ([`ethrcfg.md`](ethrcfg.md)).
-It is independent of the protocol: `xek-0.6` changed the record without touching the wire, so
-a daemon built for `runners-0.5` runs unchanged under an `xek-0.6` launcher.
+It is independent of the protocol: `xeq-0.6` changed the record without touching the wire, so
+a daemon built for `runners-0.5` runs unchanged under an `xeq-0.6` launcher.
 
 What it does affect is self-upgrade. A running executable verifies a `.pending` replacement
 by finding *its own* magic in it, so an executable built from `runners-0.5` (v2) rejects a
-`.pending` built from `xek-0.6` (v3) as having no record, deletes it, and carries on. Moving an
+`.pending` built from `xeq-0.6` (v3) as having no record, deletes it, and carries on. Moving an
 installed application from v2 to v3 is therefore a fresh install, not an upgrade. No v2
 executable was ever published with a signing key, so no working upgrade channel is lost.

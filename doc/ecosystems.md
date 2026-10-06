@@ -92,8 +92,8 @@ If a second runtime were ever wanted, the changes here would be small and the re
 be elsewhere:
 
 - **The record.** A runtime discriminator in the ten reserved bytes, with zero meaning the JVM
-  so that every v3 executable keeps its meaning, and the version-policy fields reinterpreted
-  per runtime; or `ETHRCFG\x04` if the fields themselves must differ.
+  so that every v4 executable keeps its meaning, and the version-policy fields reinterpreted
+  per runtime; or `ETHRCFG\x05` if the fields themselves must differ.
 - **The spawn.** The JVM discovery and Adoptium download are the only module to replace:
   `python3 <self>`, `julia <self>`, and so on, with the `-D` properties delivered as
   environment variables.

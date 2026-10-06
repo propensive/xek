@@ -6,7 +6,7 @@ Shipping a JVM application to someone who just wants to run it starts with distr
 becomes a self-contained executable — a native launcher per platform, or a single polyglot
 installer script that runs as shell script, batch file and PowerShell alike. Building one is
 joining a bare client stub, a 5108-byte configuration record and the JAR (`stub ‖ record ‖
-jar`); the reference implementation is the `xek` script published with each client release.
+jar`); the reference implementation is the `xek` command published with each client release.
 
 ### On distribution
 
@@ -35,7 +35,7 @@ launcher on demand and verifying it by hash:
 ```scala
 val jarPath = t"/tmp/mytool.jar".as[Path on Linux]
 val outputPath = t"/tmp/mytool".as[Path on Linux]
-val clientSource = Client.standard
+val clientSource = Packaging.ClientSource.standard
 
 val packaging = Packaging
   ( name         = t"mytool",
@@ -77,7 +77,8 @@ Toolchain(jarEdges(), executableEdges()).produce
 committed manifest, while `client.local` reads prebuilt stubs from a directory instead. Targets
 default to every platform the client source names, and `executableOptions.target` adds one
 explicitly. `executableOptions.java` sets the minimum and preferred JVM versions, `bundle.jre`
-and `bundle.jdk` ship one alongside, and `signing`, `appId` and `buildId` configure the keys,
+and `bundle.jdk` say which the launcher downloads when none is installed (nothing is embedded),
+and `signing`, `appId` and `buildId` configure the keys,
 the application and the upgrade ordering recorded in each executable.
 
 ### Where the stubs come from
