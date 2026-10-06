@@ -73,6 +73,7 @@ object ui:
     private def of(action: Command.Action): Subcommand = Subcommand(action.name, action.description)
 
     val Build = of(Command.Action.Build)
+    val Installer = of(Command.Action.Installer)
     val Keygen = of(Command.Action.Keygen)
     val PublicKey = of(Command.Action.PublicKeyOf)
     val Sign = of(Command.Action.Sign)
@@ -97,6 +98,11 @@ object ui:
   val Client = Flag[Text](t"client", false, Nil, Command.Client.description)
   val ClientUrl = Flag[Text](t"client-url", false, Nil, Command.ClientUrl.description)
   val ClientManifest = Flag[Text](t"client-manifest", false, Nil, Command.ClientManifest.description)
+  val Url = Flag[Text](t"url", false, Nil, Command.Url.description)
+  val Name = Flag[Text](t"name", false, Nil, Command.Name.description)
+  val Release = Flag[Text](t"release", false, Nil, Command.Release.description)
+  val Manifest = Flag[Text](t"manifest", false, Nil, Command.Manifest.description)
+  val OutDir = Flag[Text](t"out", false, Nil, Command.OutDir.description)
   val In = Flag[Text](t"in", false, Nil, Command.In.description)
   val Out = Flag[Text](t"out", false, Nil, Command.Out.description)
   val Key = Flag[Text](t"key", false, Nil, Command.Key.description)
@@ -138,6 +144,15 @@ private def complete(arguments: List[Argument])(using Cli, Interpreter, WorkingD
   arguments match
     case ui.subcommand.Build() :: rest =>
       completeBuild(rest)
+
+    case ui.subcommand.Installer() :: rest =>
+      paths { ui.Manifest.present; ui.OutDir.present }
+      ui.Url.present
+      ui.Name.present
+      ui.Release.present
+
+      operands(rest).each: argument =>
+        argument.suggest(Pathname.complete(argument(), argument.tab.or(Prim)))
 
     case ui.subcommand.Keygen() :: _ =>
       paths(ui.Out.present)
@@ -274,6 +289,7 @@ object Driver:
         parsed.action.let: action =>
           if parsed.has(Command.Help) then out(help(action))
           else if action == Command.Action.Build then build(parsed, path, here, variable)(err)
+          else if action == Command.Action.Installer then installer(parsed, path)(err)
           else Signer.run(action, parsed, path, variable)(out, err)
 
           Exit.Ok
@@ -311,6 +327,12 @@ object Driver:
         val plan: Build.Plan = Build.plan(options, host, here)
         val written: List[Path on Local] = Build.execute(plan, cache)(err(_))
         written.each { file => err(t"Wrote ${file.encode}") }
+
+  private def installer(parsed: Command.Parsed, path: Text => Path on Local)(err: Text => Unit)
+  :   Unit raises Assembler.Error =
+
+    val options: _root_.xek.Installer.Options = Command.installer(parsed, path)
+    _root_.xek.Installer.write(options).each { file => err(t"Wrote ${file.encode}") }
 
   private def property(name: String): Text = java.lang.System.getProperty(name).nn.tt
 
@@ -369,6 +391,16 @@ object Driver:
             t"                     platform, URL and SHA-256, separated by tabs",
             t"",
             t"Platforms: $platforms" )
+
+      case Command.Action.Installer =>
+        List
+          ( t"",
+            t"Writes install.sh, for `curl -fsSL <url> | sh`, and install.ps1, for `irm <url> | iex`,",
+            t"into <directory> (by default, the working directory). Each downloads",
+            t"<base-url>/<name>-<platform>[.exe] for the platform it runs on and checks it against",
+            t"the digest embedded for that platform. The executables are named <name>-<platform>",
+            t"or <name>-<platform>.exe, as `xek build -p` writes them; with --manifest, the",
+            t"digests are read from its lines of platform and SHA-256 instead, and --name is needed." )
 
       case _ =>
         List(t"", t"${action.description.s.capitalize.nn.tt}. Needs Java 24 or later.")

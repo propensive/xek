@@ -29,8 +29,13 @@ other. On Linux or macOS, install it with
 curl -fsSL https://propensive.dev/xek | sh
 ```
 
-which puts it in `~/.local/bin` (or `$XEK_INSTALL_DIR`); on Windows, download `xek-windows-x64.exe`
-from the [latest release](https://github.com/propensive/xek/releases/latest). Then:
+which puts it in `~/.local/bin` (or `$XEK_INSTALL_DIR`). On Windows, in PowerShell,
+
+```powershell
+irm https://propensive.dev/xek.ps1 | iex
+```
+
+puts it in `%LOCALAPPDATA%\Programs\xek` (or `$env:XEK_INSTALL_DIR`) and on your `PATH`. Then:
 
 ```sh
 xek build app.jar                              # ./app, a native executable for this platform
@@ -42,13 +47,17 @@ xek build --polyglot --platforms linux-x64,macos-arm64 app.jar
 xek build --download app.jar                   # a polyglot file which fetches its stub on first run
 xek build --dispatch executables.tsv app       # a polyglot file which fetches a whole executable
 xek build --java 25 --java-min 21 --jdk app.jar
+xek installer --url https://example.com/app/1.0 app-*  # install.sh and install.ps1 for a release
 ```
 
 Every command line begins with a subcommand: `build`, or one of those which sign a release for
 self-upgrade — `keygen`, `public-key`, `sign`, `statement`, `attach` and `verify`, described in
 [`spec/ethrcfg.md`](spec/ethrcfg.md). Signing needs Java 24 or later, which provides ML-DSA.
 After the subcommand, options may come before or after the JAR; `xek --help` lists the
-subcommands, and `xek build --help` the options of one. The `--java` options
+subcommands, and `xek build --help` the options of one. `xek installer` writes the two install
+scripts of a release — `install.sh` for `curl -fsSL <url> | sh` and `install.ps1` for
+`irm <url> | iex` — from the executables `xek build -p` wrote, embedding the SHA-256 of each
+and the URL they are published at; it is how this repository's own installers are made. The `--java` options
 record which runtime an executable wants: the client uses a suitable installed Java, and
 otherwise downloads the preferred version from Adoptium on first run. `xek '{admin}' install`
 installs tab-completions for `xek`, as for any XEK executable.
