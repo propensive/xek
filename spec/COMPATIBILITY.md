@@ -7,7 +7,8 @@ at the first message rather than misreading fields. Above the base, the schema m
 
 | Release | Protocol | Base signature (BLAKE3-256 + cadence) | `ETHRCFG` | Reference daemon |
 |---|---|---|---|---|
-| `1.0.0` | `ethereal-launcher` BinTEL | `55d18c247b88db8fc6af7a197c56ee2b680084d1800afe8947a2f613c70492e563` | v3 | none yet: the Soundness release after 0.69.0 |
+| `1.1.0` | `ethereal-launcher` BinTEL | `55d18c247b88db8fc6af7a197c56ee2b680084d1800afe8947a2f613c70492e563` | v4 | Soundness ≥ 0.70.0 (`ethereal-core`) |
+| `1.0.0` | `ethereal-launcher` BinTEL | `55d18c247b88db8fc6af7a197c56ee2b680084d1800afe8947a2f613c70492e563` | v3 | Soundness ≥ 0.70.0 (`ethereal-core`) |
 | `xek-0.10` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
 | `xek-0.9` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
 | `xek-0.8` | `ethereal-launcher` BinTEL | `e50b7e82c11b06783dafa8a2ecc4e35f7ba31044ecd38fc5d9fe9e47a7c11e59e5` | v3 | Soundness ≥ 0.69.0 (`ethereal-core`) |
@@ -68,7 +69,7 @@ the daemon have a command run on the client's terminal; and `record Init` gains 
 describes the session, its flow control, the descriptors and the terminal. The variant indices are renumbered, so nothing of the
 old base's wire form survives, which the signature says.
 
-The release after `1.0.0` moves the configuration record to `ETHRCFG` v4
+`1.1.0` moves the configuration record to `ETHRCFG` v4
 ([`ethrcfg.md`](ethrcfg.md)): 5108 bytes, adding the application id and a recovery key, and
 signed over a statement rather than the whole file. A v3 client never finds a v4 record and a v4
 client never finds a v3 one, so the two cannot upgrade into each other — which loses nothing,
