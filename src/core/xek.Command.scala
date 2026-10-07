@@ -93,6 +93,7 @@ object Command:
   val Release = Spec(t"release", Unset, t"version", t"the version the scripts announce; by default, the URL's last segment")
   val Manifest = Spec(t"manifest", Unset, t"file", t"take the digests from a manifest of platform and SHA-256 lines")
   val OutDir = Spec(t"out", Unset, t"directory", t"the directory to write install.sh and install.ps1 in")
+  val Force = Spec(t"force", 'f', Unset, t"overwrite an installed manpage")
   val Help = Spec(t"help", 'h', Unset, t"show this help")
   val Version = Spec(t"version", 'v', Unset, t"show the version")
 
@@ -113,6 +114,9 @@ object Command:
         t"--url <base-url> [--name <name>] [--release <version>] [--out <directory>] <executable>...",
         t"write install scripts for sh and PowerShell, embedding the digests of a release",
         List(Url, Name, Release, Manifest, OutDir) )
+
+    case Install
+    extends Action(t"install", t"[--force]", t"install shell tab-completions and the manpage", List(Force))
 
     case Keygen
     extends Action(t"keygen", t"--out <prefix>", t"generate a key pair for signing releases", List(Prefix))

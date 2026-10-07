@@ -35,13 +35,16 @@ import ambience.*
 import anticipation.*
 import contingency.*
 import denominative.*
+import distillate.*
 import ethereal.*
+import eucalyptus.*
 import exoskeleton.*
 import fulminate.*
 import galilei.*
 import gossamer.*
 import parasite.*
 import prepositional.*
+import revolution.*
 import rudiments.*
 import serpentine.*
 import symbolism.*
@@ -51,6 +54,7 @@ import vacuous.*
 import backstops.stackTraceBackstop
 import executives.completionsExecutive
 import interpreters.posixInterpreter
+import logging.silentLogging
 import threading.virtualThreading
 import errorDiagnostics.emptyDiagnostics
 import systems.javaBaseSystem
@@ -60,6 +64,7 @@ object Unusable extends Status(1, t"the command line could not be acted on")
 object Malformed extends Status(2, t"a file was malformed, or a download did not match its hash")
 object Unreachable extends Status(3, t"a download failed")
 object Unverified extends Status(4, t"a signature did not verify, or was for another application")
+object InstallFailed extends Status(5, t"the tab-completions or manpage could not be installed")
 
 // The subcommands and flags of `xek`, declared to Exoskeleton so that they complete and appear in
 // its help. They are not how the command line is read — `Command.parse` does that, since `xek`
@@ -74,6 +79,7 @@ object ui:
 
     val Build = of(Command.Action.Build)
     val Installer = of(Command.Action.Installer)
+    val Install = of(Command.Action.Install)
     val Keygen = of(Command.Action.Keygen)
     val PublicKey = of(Command.Action.PublicKeyOf)
     val Sign = of(Command.Action.Sign)
@@ -109,6 +115,7 @@ object ui:
   val KeyEnv = Flag[Text](t"key-env", false, Nil, Command.KeyEnv.description)
   val Signature = Flag[Text](t"signature", false, Nil, Command.Signature.description)
   val ForeignKey = Flag[Unit](t"foreign-key", false, Nil, Command.ForeignKey.description)
+  val Force = Flag[Unit](t"force", false, flag(Command.Force), Command.Force.description)
   val Help = Flag[Unit](t"help", false, flag(Command.Help), Command.Help.description)
   val Version = Flag[Unit](t"version", false, flag(Command.Version), Command.Version.description)
 
@@ -127,12 +134,53 @@ def command(): Unit = cli:
     val variable: Text => Optional[Text] = interface.environment.variable(_)
     val here: Path on Local = workingDirectory
 
-    Driver.run(words, here, variable)(Out.println(_), Err.println(_)) match
+    Driver.run(words, here, variable, install(_))(Out.println(_), Err.println(_)) match
       case Exit.Ok => Exit.Ok
       case Exit.Fail(1) => Unusable
       case Exit.Fail(2) => Malformed
       case Exit.Fail(3) => Unreachable
-      case Exit.Fail(_) => Unverified
+      case Exit.Fail(4) => Unverified
+      case Exit.Fail(_) => InstallFailed
+
+// Installs the shell tab-completions and the manpage, as every Pyrocosm tool's `install` does.
+// `Completions.ensure` needs an `Entrypoint`, which the ambient `DaemonService` is; so this
+// only runs in the daemon, never under `bootstrap`. The manpage's structure is the subcommand
+// and flag tree the completions register, from `service.help()`, so `man xek` cannot disagree
+// with the command line; `force = true` for the completions installs them even before `xek`
+// is on the `PATH`.
+private def install(force: Boolean)
+  ( using service: DaemonService[?], cli: Cli, environment: Environment )
+  ( using WorkingDirectory )
+  ( using erased Effectful )
+:   Exit =
+
+  given entrypoint: Entrypoint = service
+
+  val prose: Text =
+    t"xek builds native executables, for every platform, from a JVM application's JAR, and " +
+      t"signs their releases for self-upgrade."
+
+  given manual: Manual = Manual(prose = prose, version = safely(Driver.version.as[Semver]))
+
+  recover:
+    case error: exoskeleton.Install.Error =>
+      Out.println(t"Could not install the tab-completions or manpage")
+      Exit.Fail(5)
+
+  . protect:
+      Completions.ensure(force = true).each(Out.println(_))
+
+      Manpages.install(service.help().roff, force) match
+        case Manpages.InstallResult.Installed(path) =>
+          Out.println(t"Installed the manpage to $path")
+
+        case Manpages.InstallResult.AlreadyInstalled(path) =>
+          Out.println(t"A manpage is already installed at $path; use --force to overwrite it")
+
+        case Manpages.InstallResult.NoWritableLocation =>
+          Out.println(t"No writable location was found for the manpage")
+
+      Exit.Ok
 
 // Offers the subcommands for the first word, and then the flags of the one chosen.
 private def complete(arguments: List[Argument])(using Cli, Interpreter, WorkingDirectory): Unit =
@@ -153,6 +201,9 @@ private def complete(arguments: List[Argument])(using Cli, Interpreter, WorkingD
 
       operands(rest).each: argument =>
         argument.suggest(Pathname.complete(argument(), argument.tab.or(Prim)))
+
+    case ui.subcommand.Install() :: _ =>
+      ui.Force.present
 
     case ui.subcommand.Keygen() :: _ =>
       paths(ui.Out.present)
@@ -264,7 +315,13 @@ private def operands(arguments: List[Argument]): List[Argument] =
 // Running `xek`, from its words to its exit status: shared by the daemon and by `bootstrap`,
 // which differ only in where their working directory, environment and output come from.
 object Driver:
-  def run(words: List[Text], here: Path on Local, variable: Text => Optional[Text])
+  // `install` is what `xek install` does, given `--force`: it needs the daemon, so `bootstrap`
+  // passes one which refuses.
+  def run
+    ( words:    List[Text],
+      here:     Path on Local,
+      variable: Text => Optional[Text],
+      install:  Boolean => Exit )
     ( out: Text => Unit, err: Text => Unit )
   :   Exit =
 
@@ -287,12 +344,17 @@ object Driver:
         val parsed: Command.Parsed = Command.parse(words)
 
         parsed.action.let: action =>
-          if parsed.has(Command.Help) then out(help(action))
-          else if action == Command.Action.Build then build(parsed, path, here, variable)(err)
-          else if action == Command.Action.Installer then installer(parsed, path)(err)
-          else Signer.run(action, parsed, path, variable)(out, err)
+          if parsed.has(Command.Help) then
+            out(help(action))
+            Exit.Ok
+          else if action == Command.Action.Install then
+            install(parsed.has(Command.Force))
+          else
+            if action == Command.Action.Build then build(parsed, path, here, variable)(err)
+            else if action == Command.Action.Installer then installer(parsed, path)(err)
+            else Signer.run(action, parsed, path, variable)(out, err)
 
-          Exit.Ok
+            Exit.Ok
 
         . or:
             if parsed.has(Command.Help) then out(help)
@@ -365,7 +427,7 @@ object Driver:
         t"Subcommands:" )
     . join(t"\n")+t"\n"+subcommands.join(t"\n")+t"\n\n"
     + t"Run `xek <subcommand> --help` for a subcommand's options. Signing needs Java 24 or later.\n"
-    + t"Install tab-completions with: xek '{admin}' install"
+    + t"Install tab-completions and the manpage with: xek install"
 
   def help(action: Command.Action): Text =
     val options: List[Text] = (action.specs + List(Command.Help)).map(line(_))
@@ -402,6 +464,14 @@ object Driver:
             t"or <name>-<platform>.exe, as `xek build -p` writes them; with --manifest, the",
             t"digests are read from its lines of platform and SHA-256 instead, and --name is needed." )
 
+      case Command.Action.Install =>
+        List
+          ( t"",
+            t"Writes the tab-completions for each shell installed — zsh, bash, fish and PowerShell —",
+            t"where that shell looks for them, and the manpage to ~/.local/share/man/man1 (or",
+            t"$$XDG_DATA_HOME/man/man1), which `man` searches by default. An installed manpage is",
+            t"left alone unless --force is given." )
+
       case _ =>
         List(t"", t"${action.description.s.capitalize.nn.tt}. Needs Java 24 or later.")
 
@@ -419,10 +489,14 @@ def bootstrap(arguments: String*): Unit =
     val value: String | Null = java.lang.System.getenv(name.s)
     if value == null then Unset else value.tt
 
+  def err(text: Text): Unit = java.lang.System.err.nn.println(text.s)
+
+  def install(force: Boolean): Exit =
+    err(t"xek: install needs the xek command, which is not what this is: build it with `make xek`")
+    Exit.Fail(1)
+
   val exit: Exit =
-    Driver.run(words, here, variable)
-      ( text => java.lang.System.out.nn.println(text.s),
-        text => java.lang.System.err.nn.println(text.s) )
+    Driver.run(words, here, variable, install(_))(text => java.lang.System.out.nn.println(text.s), err(_))
 
   exit match
     case Exit.Ok         => ()
