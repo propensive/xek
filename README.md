@@ -60,8 +60,9 @@ scripts of a release — `install.sh` for `curl -fsSL <url> | sh` and `install.p
 `irm <url> | iex` — from the executables `xek build -p` wrote, embedding the SHA-256 of each
 and the URL they are published at; it is how this repository's own installers are made. The `--java` options
 record which runtime an executable wants: the client uses a suitable installed Java, and
-otherwise downloads the preferred version from Adoptium on first run. `xek '{admin}' install`
-installs tab-completions for `xek`, as for any XEK executable.
+otherwise downloads the preferred version from Adoptium on first run. `xek install` installs
+tab-completions for `xek` into each shell present, and its manpage (`--force` overwrites one
+already installed).
 
 ## What's here
 

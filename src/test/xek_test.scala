@@ -635,6 +635,14 @@ object Tests extends Suite(m"XEK tests"):
          fault(xek.Command.parse(List(t"build", t"--key", t"k", t"app.jar"))))
       .assert(_ == (xek.Command.Action.Sign, t"k", Assembler.Fault.Usage, Assembler.Fault.Usage))
 
+      test(m"reads install's --force, long and short, and nothing else"):
+        val short = xek.Command.parse(List(t"install", t"-f"))
+        val long = xek.Command.parse(List(t"install", t"--force"))
+        val bare = xek.Command.parse(List(t"install"))
+        (short.has(xek.Command.Force), long.has(xek.Command.Force), bare.has(xek.Command.Force),
+         fault(xek.Command.parse(List(t"install", t"--out", t"x"))))
+      .assert(_ == (true, true, false, Assembler.Fault.Usage))
+
       test(m"names the output for the JAR by default"):
         plan(parse(t"app.jar")).files.map(_.name)
       .assert(_ == List(t"app"))

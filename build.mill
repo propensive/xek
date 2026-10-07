@@ -114,6 +114,8 @@ object settings:
     val cli = Seq(
       mvn"dev.propensive:ethereal-core:$v",
       mvn"dev.propensive:exoskeleton-completions:$v",
+      mvn"dev.propensive:exoskeleton-manpage:$v", // `xek install` writes the manpage
+      mvn"dev.propensive:revolution-semver:$v",   // the version in the manpage's header
       mvn"dev.propensive:ambience-core:$v")      // the invocation's environment
 
     // `xek.toolchain`: the `Jar` → executable edge of an Anthology toolchain.
