@@ -24,8 +24,13 @@ argument only: `{completions}`, under which the reference daemon computes shell 
 and `{admin}`, its administrative interface. The launcher recognises them only to run such an
 invocation without touching the terminal, reading stdin or installing signal handlers, since
 it runs behind the user's shell — for instance under a completion function's `< <(...)`; its
-`init` carries no `invoked-as`. An application built on the reference daemon cannot use either
-as its own first argument.
+`init` carries no `invoked-as`. Not touching the terminal includes the launcher's own status
+line (`Fetching dependencies…`, `Starting…`, `Downloading Java…`, `Updating…`), which it
+otherwise draws on stderr while it waits: a completion function captures only stdout, so
+stderr is still the terminal, and a line drawn there lands on the prompt the shell is
+rendering. An internal invocation that finds no daemon running still starts one, and still
+waits for it, but silently. An application built on the reference daemon cannot use either as
+its own first argument.
 
 Nothing else is intercepted. In particular the launcher never removes an argument from the
 middle of the vector.
