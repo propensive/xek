@@ -83,6 +83,17 @@ fn main() {
     let (script, args, download) = parse_arguments(raw);
     let name = script.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
     debug!("main: script={} name={} args={:?}", script.display(), name, args);
+
+    // Internal invocations (completions, admin) must not touch the TTY, fork a
+    // stdin-forwarding thread, or install signal handlers — doing so can steal input from
+    // the parent shell or trigger SIGTTOU when the process runs in a background process
+    // group (e.g. under `< <(...)`). The status line counts as touching the TTY: stderr is
+    // still the terminal under a completion function, so `Fetching dependencies…` or
+    // `Starting…` would be drawn over the prompt. It is muted before the update check, the
+    // Java download and the daemon launch, every one of which may draw.
+    let internal = args.first().is_some_and(|arg| INTERNAL_SENTINELS.iter().any(|s| arg == s));
+    debug!("main: internal={}", internal);
+    if internal { xek::mute(); }
     // This path is handed to the JVM as the JAR, and `update` renames it. A resolution that
     // landed on a directory or a missing file must stop here, legibly, rather than surface
     // downstream as `Invalid or corrupt jarfile` — or as a rename of whatever it hit.
@@ -120,13 +131,6 @@ fn main() {
     // connection. The binding choice is made once the daemon that will serve the invocation
     // is known to be up, which may be one this launcher is about to start.
     let composition = acceptance::load(&acceptance_file).unwrap_or_else(|_| bintel::Composition::base());
-
-    // Internal invocations (completions, admin) must not touch the TTY, fork a
-    // stdin-forwarding thread, or install signal handlers — doing so can steal input from
-    // the parent shell or trigger SIGTTOU when the process runs in a background process
-    // group (e.g. under `< <(...)`).
-    let internal = args.first().is_some_and(|arg| INTERNAL_SENTINELS.iter().any(|s| arg == s));
-    debug!("main: internal={}", internal);
 
     state::backout(&fail_file, &pid_file, &name);
     // Nothing connects to a socket another user could have planted: the check comes before the
