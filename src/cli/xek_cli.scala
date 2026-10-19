@@ -151,7 +151,7 @@ def command(): Unit = cli:
 private def install(force: Boolean)
   ( using service: DaemonService[?], cli: Cli, environment: Environment )
   ( using WorkingDirectory )
-  ( using erased Effectful )
+  ( using erased effectful: Effectful )
 :   Exit =
 
   given entrypoint: Entrypoint = service
