@@ -6,6 +6,7 @@
 // intermixed with the status line.
 use std::io::{self, IsTerminal, Write};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 // 256-colour mid-gray and mid-blue: legible on both dark and light backgrounds.
@@ -30,6 +31,22 @@ struct Line {
 static LINE: Mutex<Line> =
     Mutex::new(Line { shown: false, spinner: false, frame: 0, turned: None, message: String::new() });
 
+// Whether the line may be drawn at all. An internal invocation (`{completions}`, `{admin}`)
+// runs behind the user's shell with stderr still attached to the terminal — a completion
+// function captures only stdout — so a status line drawn there lands on top of the prompt
+// the shell is in the middle of rendering. `mute` turns `step`, `spin` and `tick` into no-ops;
+// `clear` stays harmless, since nothing was ever shown.
+static MUTED: AtomicBool = AtomicBool::new(false);
+
+// Stops the status line being drawn for the rest of this process. Called as soon as the
+// arguments identify an internal invocation, before anything that might draw.
+pub fn mute() { MUTED.store(true, Ordering::Relaxed); }
+
+fn muted() -> bool { MUTED.load(Ordering::Relaxed) }
+
+// Whether a line may be drawn now: never once muted, and otherwise only to a terminal.
+fn drawable(terminal: bool) -> bool { !muted() && terminal }
+
 // Shows `message` in gray, replacing whatever the line showed before.
 pub fn step(message: &str) { show(message, false); }
 
@@ -40,6 +57,7 @@ pub fn spin(message: &str) { show(message, true); }
 // Advances the spinner, if one is showing and a frame interval has passed. Called from polling
 // loops, at whatever rate they poll; a no-op otherwise.
 pub fn tick() {
+    if muted() { return; }
     let mut line = LINE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if !line.shown || !line.spinner { return; }
     let now = Instant::now();
@@ -61,7 +79,7 @@ pub fn clear() {
 }
 
 fn show(message: &str, spinner: bool) {
-    if !io::stderr().is_terminal() { return; }
+    if !drawable(io::stderr().is_terminal()) { return; }
     let mut line = LINE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if !line.shown { install_cursor_guard(); }
     line.shown = true;
@@ -144,6 +162,21 @@ mod tests {
     fn without_colour_only_the_cursor_and_erase_sequences_remain() {
         assert_eq!(render(&line("Updating…", false, 0), true), "\r\x1b[?25lUpdating…\x1b[K\r");
         assert_eq!(render(&line("Downloading Java 21…", true, 9), true), "\r\x1b[?25l⠏ Downloading Java 21…\x1b[K\r");
+    }
+
+    #[test]
+    fn once_muted_nothing_is_drawn_even_to_a_terminal() {
+        // Stderr is never a terminal under `cargo test`, so the gate is tested with the
+        // terminal answer supplied, and the mute is checked to hold on its own.
+        assert!(drawable(true));
+        assert!(!drawable(false));
+        mute();
+        assert!(!drawable(true));
+        step("Starting…");
+        spin("Fetching dependencies 1/2 (512 B)…");
+        tick();
+        let line = LINE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert!(!line.shown);
     }
 
     #[test]
