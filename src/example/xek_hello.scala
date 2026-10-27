@@ -51,7 +51,7 @@ import vacuous.*
 import backstops.stackTraceBackstop
 import executives.completionsExecutive
 import interpreters.posixInterpreter
-import threading.virtualThreading
+import threads.virtualThreads
 
 // The end-to-end fixture: the smallest possible daemonized application. Packaging this with
 // `Packager`, running the result, and seeing `Hello world` exercises everything at once — a
@@ -87,10 +87,12 @@ def hello(): Unit = cli:
       execute(Out.print(rest.map(_()).join(t"\n")) yet Exit.Ok)
 
     // Standard input, copied to standard output once it has ended.
+    // Copies stdin to stdout as bytes, not as text, so that any input round-trips exactly.
     case Argument("cat") :: Nil =>
       execute:
-        val bytes = summon[Stdio].in.readAllBytes().nn
-        Out.print(String(bytes, "UTF-8").tt)
+        val stdio: Stdio = summon[Stdio]
+        stdio.out.write(stdio.in.readAllBytes().nn)
+        stdio.out.flush()
         Exit.Ok
 
     case Argument("exit") :: Argument(As[Int](status)) :: Nil =>
