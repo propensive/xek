@@ -30,7 +30,9 @@ pub fn launch(
     socket_file: &Path,
     fail_file: &Path,
     progress_file: &Path,
+    options_file: &Path,
     config: &BuildConfig,
+    java_options: &[String],
     download: bool,
 ) {
     crate::debug!("launch: start name={} script={}", name, script.display());
@@ -61,6 +63,9 @@ pub fn launch(
     crate::daemon::sanitize(&mut command);
     command.current_dir(crate::daemon::working_directory());
     command.env(crate::WRAP_VARIABLE, "1").arg(&java);
+    // The application's Java options come first, so that the launcher's own properties, which
+    // the daemon relies on, cannot be overridden by them.
+    for option in java_options { command.arg(option); }
     for argument in build_java_arguments(&script, name, &progress_file, config) { command.arg(argument); }
     // Capture the JVM invocation time as late as possible — after the
     // argument-building work (the `PATH` search for the command) — so `uptime` in the
@@ -91,6 +96,7 @@ pub fn launch(
     // A progress file left by a bootstrap that died mid-download would otherwise
     // count as this daemon's first sign of life.
     let _ = std::fs::remove_file(&progress_file);
+    crate::java_options::record(options_file, java_options);
     crate::debug!("launch: spawning daemon: {} (wrapper)", executable.display());
 
     let mut child = match command.spawn() {
@@ -107,7 +113,8 @@ pub fn launch(
 
     let _ = std::fs::write(pid_file, format!("{}\n", child.id()));
 
-    let outcome = await_startup(socket_file, fail_file, &progress_file, Some(&mut child));
+    let debugger = crate::java_options::suspended(java_options);
+    let outcome = await_startup(socket_file, fail_file, &progress_file, Some(&mut child), debugger.as_deref());
     let _ = std::fs::remove_file(&progress_file);
     crate::debug!("launch: post-poll socket_ready={} fail_exists={}",
         crate::state::socket_ready(socket_file), fail_file.exists());
@@ -152,15 +159,24 @@ pub fn launch(
 // process when this launcher spawned it (its exit is then detected immediately rather than at
 // the deadline); a launcher waiting on another launcher's daemon passes `None`. The status line
 // is left showing on return; the caller clears it, or prints its diagnostic after clearing it.
+//
+// A JVM started with a JDWP agent and `suspend=y` runs nothing until a debugger attaches to
+// `debugger`, its address, so no deadline applies: it is waited for for as long as it takes.
 pub fn await_startup(
     socket_file: &Path,
     fail_file: &Path,
     progress_file: &Path,
     mut child: Option<&mut Child>,
+    debugger: Option<&str>,
 ) -> Outcome {
     let start = Instant::now();
     let mut watch = Watch::new(start);
     let mut shown = false;
+
+    if let Some(address) = debugger {
+        crate::xek::spin(&format!("Waiting for a Java debugger on {address}…"));
+        shown = true;
+    }
 
     loop {
         if crate::state::socket_ready(socket_file) { return Outcome::Bound; }
@@ -186,7 +202,7 @@ pub fn await_startup(
         }
         crate::xek::tick();
 
-        if watch.expired(now, STARTUP_IDLE_LIMIT) {
+        if debugger.is_none() && watch.expired(now, STARTUP_IDLE_LIMIT) {
             return Outcome::Idle(watch.current());
         }
 

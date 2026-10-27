@@ -68,18 +68,18 @@ data_offset=$(printf '%s\n' "$indexcontent" | tr ',' '\n' | grep "^data=" | cut 
 if [ -z "$data_offset" ]
 then printf 'No embedded data payload\n' >&2; rm -f "$t"; exit 1
 fi
-stubsize=$(wc -c < "$t" | tr -d ' ')
 record_offset=$(printf '%s\n' "$indexcontent" | tr ',' '\n' | grep "^record=" | cut -d= -f2)
-recsize=0
 if [ -n "$record_offset" ]
 then
   rabs=$((indexnum + record_offset + 1))
   tail -n +"$rabs" "$s" | sed -n '/^-----END/q; p' | { base64 -d 2>/dev/null || base64 -D; } >> "$t"
-  recsize=5108
 fi
+# The stub, the record and any block of Java options after it: what the JAR's ZIP64 locator
+# is rebased by.
+prefixsize=$(wc -c < "$t" | tr -d ' ')
 absline=$((indexnum + data_offset + 1))
 tail -n +"$absline" "$s" | sed -n '/^-----END/q; p' | { base64 -d 2>/dev/null || base64 -D; } >> "$t"
-xek_rebase_zip64 "$t" $((stubsize + recsize))
+xek_rebase_zip64 "$t" "$prefixsize"
 xek_msg 32 ████████ 1 "Assembled"
 
 chmod +x "$t"
