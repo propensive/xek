@@ -393,10 +393,11 @@ object Tests extends Suite(m"XEK tests"):
       val rust: Text = resource("bintel.rs")
 
       def hex(data: Data): Text =
+        val bytes: scala.Array[Byte] = Array.unsafeJvm(data)
         val builder = StringBuilder()
         var i = 0
-        while i < data.length do
-          builder.append(String.format("%02x", Integer.valueOf(data.readable(i) & 0xff)))
+        while i < bytes.length do
+          builder.append(String.format("%02x", Integer.valueOf(bytes(i) & 0xff)))
           i += 1
         builder.toString.tt
 

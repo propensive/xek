@@ -8,4 +8,4 @@
 # applications with the current ones, which `res/core/xek/client.*` name. Set it back to
 # `current` in the pull request that moves etc/refs to a Soundness release whose daemon speaks
 # the current base (spec/COMPATIBILITY.md says which).
-0.10
+current

@@ -81,12 +81,11 @@ publishLocal:
 # Needs dist/client (from `client-build` or `client-fetch`), and resolves a daemon
 # implementation — the one place anything here does.
 #
-# E2E_DAEMON=legacy says the daemon the pinned Soundness release provides predates this
-# client's protocol base, so the only thing to check is that the pair refuses each other
-# legibly. Drop it when etc/refs moves to a Soundness release whose daemon speaks the base
-# in spec/ethereal-launcher.tel.
+# Should etc/refs ever pin a Soundness release whose daemon predates this client's protocol
+# base, run it as `E2E_DAEMON=legacy ./etc/ci/e2e.sh`, which checks only that the pair refuse
+# each other legibly.
 e2e: xek
-	E2E_DAEMON=legacy ./etc/ci/e2e.sh
+	./etc/ci/e2e.sh
 
 clean:
 	$(MILL) clean

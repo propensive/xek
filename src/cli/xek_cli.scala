@@ -55,7 +55,7 @@ import backstops.stackTraceBackstop
 import executives.completionsExecutive
 import interpreters.posixInterpreter
 import logging.silentLogging
-import threading.virtualThreading
+import threads.virtualThreads
 import errorDiagnostics.emptyDiagnostics
 import systems.javaBaseSystem
 
@@ -146,13 +146,13 @@ def command(): Unit = cli:
       case Exit.Fail(_) => InstallFailed
 
 // Installs the shell tab-completions and the manpage, as every Pyrocosm tool's `install` does.
-// `Completions.ensure` needs an `Entrypoint`, which the ambient `DaemonService` is; so this
+// `Completions.ensure` needs an `Entrypoint`, which the ambient `Resident` is; so this
 // only runs in the daemon, never under `bootstrap`. The manpage's structure is the subcommand
 // and flag tree the completions register, from `service.help()`, so `man xek` cannot disagree
 // with the command line; `force = true` for the completions installs them even before `xek`
 // is on the `PATH`.
 private def install(force: Boolean)
-  ( using service: DaemonService[?], cli: Cli, environment: Environment )
+  ( using service: Resident, cli: Cli )
   ( using WorkingDirectory )
   ( using erased effectful: Effectful )
 :   Exit =
