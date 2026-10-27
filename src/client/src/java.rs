@@ -69,15 +69,22 @@ fn find_downloaded(java_home: &Path, minimum: u16, bundle: &str) -> Option<PathB
 
 pub fn java_not_found_message(minimum: u16, invocation: &str) {
     eprintln!("\nJava {} or later is required, but no suitable version of Java was found.", minimum);
-    eprintln!("You can install java with one of the following commands:\n");
-    if which("pacman").is_some() { eprintln!("  > pacman -S jre-openjdk"); }
-    if which("emerge").is_some() { eprintln!("  > emerge dev-java/openjdk-{}", minimum); }
-    if which("yum").is_some()    { eprintln!("  > yum install java-{}-openjdk", minimum); }
-    if which("dnf").is_some()    { eprintln!("  > dnf install java-{}-openjdk", minimum); }
-    if which("apt").is_some()    { eprintln!("  > apt update && apt install openjdk-{}-jre", minimum); }
-    if which("zypper").is_some() { eprintln!("  > zypper install openjdk-{}-headless", minimum); }
-    if which("brew").is_some()   { eprintln!("  > brew update && brew install java"); }
-    eprintln!("  > {} --download\n", invocation);
+    let mut commands = Vec::new();
+    if which("pacman").is_some() { commands.push("pacman -S jre-openjdk".to_string()); }
+    if which("emerge").is_some() { commands.push(format!("emerge dev-java/openjdk-{}", minimum)); }
+    if which("yum").is_some()    { commands.push(format!("yum install java-{}-openjdk", minimum)); }
+    if which("dnf").is_some()    { commands.push(format!("dnf install java-{}-openjdk", minimum)); }
+    if which("apt").is_some()    { commands.push(format!("apt update && apt install openjdk-{}-jre", minimum)); }
+    if which("zypper").is_some() { commands.push(format!("zypper install openjdk-{}-headless", minimum)); }
+    if which("brew").is_some()   { commands.push("brew update && brew install java".to_string()); }
+    commands.push(format!("{} --download", invocation));
+    if commands.len() == 1 {
+        eprintln!("You can install Java with the following command:\n");
+    } else {
+        eprintln!("You can install Java with one of the following commands:\n");
+    }
+    for command in &commands { eprintln!("  > {}", command); }
+    eprintln!();
 }
 
 pub fn check_version(java: &Path, minimum: u16) -> bool {
