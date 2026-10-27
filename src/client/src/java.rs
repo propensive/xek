@@ -77,7 +77,7 @@ pub fn java_not_found_message(minimum: u16, invocation: &str) {
     if which("apt").is_some()    { commands.push(format!("apt update && apt install openjdk-{}-jre", minimum)); }
     if which("zypper").is_some() { commands.push(format!("zypper install openjdk-{}-headless", minimum)); }
     if which("brew").is_some()   { commands.push("brew update && brew install java".to_string()); }
-    commands.push(format!("{} --download", invocation));
+    commands.push(format!("{} --install-java", invocation));
     if commands.len() == 1 {
         eprintln!("You can install Java with the following command:\n");
     } else {

@@ -59,10 +59,10 @@ const STARTUP_FAILURE_EXIT_CODE: i32 = 2;
 pub const WRAP_VARIABLE: &str = "XEK_WRAP_JAVA";
 
 // Asks the launcher to download a JVM when none suitable is found. Recognised as an
-// environment variable, or as `--download` when it is the *sole* argument; in any other
-// position `--download` belongs to the application. See `spec/launcher.md`.
+// environment variable, or as `--install-java` when it is the *sole* argument; in any other
+// position `--install-java` belongs to the application. See `spec/launcher.md`.
 pub const DOWNLOAD_VARIABLE: &str = "XEK_DOWNLOAD";
-const DOWNLOAD_FLAG: &str = "--download";
+const INSTALL_JAVA_FLAG: &str = "--install-java";
 
 // Argument values the daemon side reserves for its own internal invocations (shell
 // completion and administration). They are the daemon's contract, not the launcher's; the
@@ -291,13 +291,13 @@ fn parse_arguments(raw: Vec<OsString>) -> (PathBuf, Vec<OsString>, bool) {
     (strip_extended_prefix(script), args, download)
 }
 
-// The launcher's own arguments, separated from the application's. `--download` is a
+// The launcher's own arguments, separated from the application's. `--install-java` is a
 // launcher concern — it matters only when no JVM is present — so it is recognised only as
 // the sole argument, where it cannot be an application's option value or follow a `--`
 // separator. `XEK_DOWNLOAD` in the environment asks for the same thing from a script.
 fn intercept(args: &[OsString]) -> (Vec<OsString>, bool) {
     let requested = env::var_os(DOWNLOAD_VARIABLE).is_some_and(|v| !v.is_empty() && v != "0");
-    if args.len() == 1 && args[0] == DOWNLOAD_FLAG { (Vec::new(), true) }
+    if args.len() == 1 && args[0] == INSTALL_JAVA_FLAG { (Vec::new(), true) }
     else { (args.to_vec(), requested) }
 }
 
@@ -557,14 +557,14 @@ mod tests {
     fn os(values: &[&str]) -> Vec<OsString> { values.iter().map(OsString::from).collect() }
 
     #[test]
-    fn download_is_recognised_only_as_the_sole_argument() {
+    fn install_java_is_recognised_only_as_the_sole_argument() {
         // The variable is process-wide state; every case here leaves it unset.
         unsafe { env::remove_var(DOWNLOAD_VARIABLE); }
-        assert_eq!(intercept(&os(&["--download"])), (Vec::new(), true));
+        assert_eq!(intercept(&os(&["--install-java"])), (Vec::new(), true));
         assert_eq!(intercept(&os(&[])), (Vec::new(), false));
-        assert_eq!(intercept(&os(&["install", "--download"])), (os(&["install", "--download"]), false));
-        assert_eq!(intercept(&os(&["--download", "install"])), (os(&["--download", "install"]), false));
-        assert_eq!(intercept(&os(&["--", "--download"])), (os(&["--", "--download"]), false));
+        assert_eq!(intercept(&os(&["install", "--install-java"])), (os(&["install", "--install-java"]), false));
+        assert_eq!(intercept(&os(&["--install-java", "install"])), (os(&["--install-java", "install"]), false));
+        assert_eq!(intercept(&os(&["--", "--install-java"])), (os(&["--", "--install-java"]), false));
     }
 
     #[test]
