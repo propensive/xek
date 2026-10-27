@@ -190,11 +190,9 @@ expect "a piped stdin reaches EOF" "$(printf 'one\ntwo')" "$actual"
 actual=$(limit 20 "$OUT" cat < /dev/null) || true
 expect "an empty stdin reaches EOF" "" "$actual"
 
-# `--install-java` is the launcher's only when it is the sole argument (#6).
-expect "--install-java after another argument reaches the application" \
-  "$(printf 'install\n--install-java')" "$("$OUT" args install --install-java)"
-expect "--install-java after -- reaches the application" \
-  "$(printf -- '--\n--install-java')" "$("$OUT" args -- --install-java)"
+# The launcher reserves no argument: its old `--download`, once taken as the sole argument,
+# reaches the application like any other (#6).
+expect "--download reaches the application" "--download" "$("$OUT" args --download)"
 
 # The wrapper mode is selected by an environment variable, so its old sentinel is an
 # ordinary argument (#6).

@@ -9,12 +9,11 @@ of it, and a daemon implementation has to expect it.
 ## Reserved arguments and environment variables
 
 The launcher's own controls live in the environment, so that an application can receive any
-argument vector at all. One argument form is also accepted, for a user at a shell:
+argument vector at all:
 
 | Name | Meaning |
 |---|---|
-| `XEK_DOWNLOAD` | Set (to anything but the empty string or `0`): download a JVM if no suitable one is installed, rather than failing with instructions |
-| `--install-java` | The same request, recognised **only when it is the sole argument**. `mytool --install-java` downloads a JVM if necessary, starts the daemon, and runs the application *with no arguments*. In any other position — `mytool install --install-java`, `mytool -- --install-java` — the argument belongs to the application and is delivered unchanged |
+| `XEK_INSTALL_JAVA` | Set (to anything but the empty string or `0`): download a JVM if no suitable one is installed, rather than failing with instructions. The instructions say how to set it: `XEK_INSTALL_JAVA=1 mytool`, or `$env:XEK_INSTALL_JAVA=1; mytool` in PowerShell on Windows |
 | `XEK_WRAP_JAVA` | Internal. Set by the launcher on the process it starts the JVM through, so the daemon appears under the application's name; never set it yourself |
 | `ETHEREAL_DEBUG` | Set (to anything but the empty string or `0`): the launcher traces its progress to stderr. An internal invocation (`{completions}`, `{admin}`), whose stderr belongs to the shell, traces instead to `$TMPDIR/ethereal-launcher.log`, which is otherwise never written |
 | `ETHEREAL_SIGNAL_TIMEOUT_MS` | How long the launcher waits for the daemon to acknowledge a forwarded signal before taking the signal's fallback action (below); default 250 |

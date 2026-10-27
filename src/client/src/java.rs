@@ -77,7 +77,7 @@ pub fn java_not_found_message(minimum: u16, invocation: &str) {
     if which("apt").is_some()    { commands.push(format!("apt update && apt install openjdk-{}-jre", minimum)); }
     if which("zypper").is_some() { commands.push(format!("zypper install openjdk-{}-headless", minimum)); }
     if which("brew").is_some()   { commands.push("brew update && brew install java".to_string()); }
-    commands.push(format!("{} --install-java", invocation));
+    commands.push(install_java_command(invocation));
     if commands.len() == 1 {
         eprintln!("You can install Java with the following command:\n");
     } else {
@@ -85,6 +85,21 @@ pub fn java_not_found_message(minimum: u16, invocation: &str) {
     }
     for command in &commands { eprintln!("  > {}", command); }
     eprintln!();
+}
+
+// The invocation with `XEK_INSTALL_JAVA` set, in the syntax of the shell a user most likely
+// has: PowerShell on Windows, and a POSIX shell (or fish, which accepts the same form) elsewhere.
+fn install_java_command(invocation: &str) -> String {
+    let plain = !invocation.contains(|c: char| c == ' ' || c == '\'');
+    if cfg!(windows) {
+        let invocation = if plain { invocation.to_string() }
+                         else { format!("& '{}'", invocation.replace('\'', "''")) };
+        format!("$env:{}=1; {}", crate::INSTALL_JAVA_VARIABLE, invocation)
+    } else {
+        let invocation = if plain { invocation.to_string() }
+                         else { format!("'{}'", invocation.replace('\'', "'\\''")) };
+        format!("{}=1 {}", crate::INSTALL_JAVA_VARIABLE, invocation)
+    }
 }
 
 pub fn check_version(java: &Path, minimum: u16) -> bool {
@@ -316,6 +331,13 @@ mod tests {
         let java = bin.join(JAVA);
         std::fs::write(&java, format!("#!/bin/sh\necho 'openjdk version \"{version}\"' >&2\n")).unwrap();
         std::fs::set_permissions(&java, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[test]
+    fn the_install_command_sets_the_variable_and_quotes_the_path() {
+        assert_eq!(install_java_command("/usr/bin/mytool"), "XEK_INSTALL_JAVA=1 /usr/bin/mytool");
+        assert_eq!(install_java_command("/opt/my tool"), "XEK_INSTALL_JAVA=1 '/opt/my tool'");
+        assert_eq!(install_java_command("/opt/it's"), "XEK_INSTALL_JAVA=1 '/opt/it'\\''s'");
     }
 
     #[test]

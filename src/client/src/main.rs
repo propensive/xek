@@ -58,11 +58,9 @@ const STARTUP_FAILURE_EXIT_CODE: i32 = 2;
 // is reserved: the application may receive any argv at all.
 pub const WRAP_VARIABLE: &str = "XEK_WRAP_JAVA";
 
-// Asks the launcher to download a JVM when none suitable is found. Recognised as an
-// environment variable, or as `--install-java` when it is the *sole* argument; in any other
-// position `--install-java` belongs to the application. See `spec/launcher.md`.
-pub const DOWNLOAD_VARIABLE: &str = "XEK_DOWNLOAD";
-const INSTALL_JAVA_FLAG: &str = "--install-java";
+// Asks the launcher to download a JVM when none suitable is found. An environment variable
+// rather than an argument, so that no argument is reserved. See `spec/launcher.md`.
+pub const INSTALL_JAVA_VARIABLE: &str = "XEK_INSTALL_JAVA";
 
 // Argument values the daemon side reserves for its own internal invocations (shell
 // completion and administration). They are the daemon's contract, not the launcher's; the
@@ -80,7 +78,8 @@ fn main() {
 
     let argv0: Option<OsString> = raw.first().cloned();
     let invoked_as = raw.first().map(|arg| arg.to_string_lossy().into_owned());
-    let (script, args, download) = parse_arguments(raw);
+    let (script, args) = parse_arguments(raw);
+    let download = requested(env::var_os(INSTALL_JAVA_VARIABLE));
     let name = script.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
     debug!("main: script={} name={} args={:?}", script.display(), name, args);
 
@@ -284,21 +283,18 @@ fn conclude(outcome: session::Outcome, name: &str) -> i32 {
     }
 }
 
-fn parse_arguments(raw: Vec<OsString>) -> (PathBuf, Vec<OsString>, bool) {
+// Every argument after the executable belongs to the application: the launcher reserves none.
+fn parse_arguments(raw: Vec<OsString>) -> (PathBuf, Vec<OsString>) {
     let executable = raw.first().cloned().unwrap_or_default();
-    let (args, download) = intercept(&raw[raw.len().min(1)..]);
+    let args = raw[raw.len().min(1)..].to_vec();
     let script = resolve_script(&executable.to_string_lossy(), std::env::current_exe().ok());
-    (strip_extended_prefix(script), args, download)
+    (strip_extended_prefix(script), args)
 }
 
-// The launcher's own arguments, separated from the application's. `--install-java` is a
-// launcher concern — it matters only when no JVM is present — so it is recognised only as
-// the sole argument, where it cannot be an application's option value or follow a `--`
-// separator. `XEK_DOWNLOAD` in the environment asks for the same thing from a script.
-fn intercept(args: &[OsString]) -> (Vec<OsString>, bool) {
-    let requested = env::var_os(DOWNLOAD_VARIABLE).is_some_and(|v| !v.is_empty() && v != "0");
-    if args.len() == 1 && args[0] == INSTALL_JAVA_FLAG { (Vec::new(), true) }
-    else { (args.to_vec(), requested) }
+// Whether a launcher switch in the environment is on: set to anything but the empty string
+// or `0`.
+fn requested(value: Option<OsString>) -> bool {
+    value.is_some_and(|value| !value.is_empty() && value != "0")
 }
 
 // The file the client hands the JVM is its OWN executable — stub, record and JAR are one file
@@ -557,14 +553,18 @@ mod tests {
     fn os(values: &[&str]) -> Vec<OsString> { values.iter().map(OsString::from).collect() }
 
     #[test]
-    fn install_java_is_recognised_only_as_the_sole_argument() {
-        // The variable is process-wide state; every case here leaves it unset.
-        unsafe { env::remove_var(DOWNLOAD_VARIABLE); }
-        assert_eq!(intercept(&os(&["--install-java"])), (Vec::new(), true));
-        assert_eq!(intercept(&os(&[])), (Vec::new(), false));
-        assert_eq!(intercept(&os(&["install", "--install-java"])), (os(&["install", "--install-java"]), false));
-        assert_eq!(intercept(&os(&["--install-java", "install"])), (os(&["--install-java", "install"]), false));
-        assert_eq!(intercept(&os(&["--", "--install-java"])), (os(&["--", "--install-java"]), false));
+    fn a_switch_is_on_unless_unset_empty_or_zero() {
+        assert!(requested(Some(OsString::from("1"))));
+        assert!(requested(Some(OsString::from("yes"))));
+        assert!(!requested(Some(OsString::from("0"))));
+        assert!(!requested(Some(OsString::new())));
+        assert!(!requested(None));
+    }
+
+    #[test]
+    fn every_argument_reaches_the_application() {
+        let (_, args) = parse_arguments(os(&["mytool", "--download", "--install-java"]));
+        assert_eq!(args, os(&["--download", "--install-java"]));
     }
 
     #[test]
