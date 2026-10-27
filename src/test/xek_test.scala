@@ -663,6 +663,60 @@ object Tests extends Suite(m"XEK tests"):
           sh"pwsh -NoProfile -Command $check".exec[Text]().trim
         .assert(_ == t"parsed")
 
+    suite(m"inspect"):
+      def value(lines: List[Inspector.Line], label: Text): Text =
+        lines.filter(_.label == label).prim.let(_.value).or(t"")
+
+      test(m"reads a signed native executable, with its Java options, keys and main class"):
+        val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir)
+        invoke(dir, t"keygen", t"--out", t"release")
+        val words =
+          List
+            ( t"build", jar.encode, (dir/t"tool").encode, t"--client", client.encode, t"--build-id", t"9",
+              t"--java", t"25", t"--jdk", t"--public-key", (dir/t"release.pub").encode,
+              t"--app-id", t"propensive/fume", t"--java-option", t"-Xmx2g", t"--java-option", t"-XX:Flags=a,b" )
+
+        build(xek.Command.options(xek.Command.parse(words), Files.path(_)), dir)
+        invoke(dir, t"sign", t"--key", t"release.seed", t"--in", t"tool", t"--out", t"signed")
+        val lines = Inspector.inspect(bytes(dir/t"signed"), t"signed", t"propensive/fume")
+        val options = lines.filter { line => line.label == t"Java options" || line.label == t"" }.map(_.value)
+
+        ( value(lines, t"Build id"), value(lines, t"Preferred Java"), value(lines, t"Downloads"), options,
+          value(lines, t"Application id").starts(t"propensive/fume ("),
+          value(lines, t"Release key") == t"SHA-256 ${Files.sha256(bytes(dir/t"release.pub"))}",
+          value(lines, t"Self-upgrade"), value(lines, t"Signature"), value(lines, t"Main class") )
+      .assert(_ == (t"9", t"25", t"a JDK, if no Java is found", List(t"-Xmx2g", t"-XX:Flags=a,b"), true, true,
+                    t"enabled", t"verifies under the release key", t"app.Main"))
+
+      test(m"reads a polyglot file through its index"):
+        val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir); val out = dir/t"tool"
+        val options =
+          Options
+            ( jar = local(jar), output = local(out), polyglot = true, targets = List(Target.LinuxX64, host),
+              record = Record(buildId = 5, javaOptions = List(t"-Xss4m")), source = Stubs.Source.Directory(local(client)) )
+
+        build(options, dir)
+        val lines = Inspector.inspect(bytes(out), t"tool", Unset)
+        val stubs = lines.filter { line => line.label == t"Stubs" || (line.label == t"" && line.value.contains(t"-")) }
+
+        (value(lines, t"Kind"), stubs.map(_.value).has(t"linux-x64"), value(lines, t"Build id"),
+         value(lines, t"Java options"), value(lines, t"Main class"))
+      .assert(_ == (t"polyglot file, which unpacks the stub for its platform", true, t"5", t"-Xss4m", t"app.Main"))
+
+      test(m"names the platform of a stub from its header"):
+        def header(values: Int*): scala.Array[Byte] = scala.Array.from(values.map(_.toByte)) ++ new scala.Array[Byte](32)
+        ( Inspector.platform(header(0x7f, 'E', 'L', 'F', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 0)),
+          Inspector.platform(header(0x7f, 'E', 'L', 'F', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 183, 0)),
+          Inspector.platform(header(0xcf, 0xfa, 0xed, 0xfe, 0x0c, 0, 0, 0x01)),
+          Inspector.platform(header(0xcf, 0xfa, 0xed, 0xfe, 0x07, 0, 0, 0x01)),
+          Inspector.platform(header('M', 'Z')),
+          Inspector.platform(header('#', '!')) )
+      .assert(_ == (Target.LinuxX64, Target.LinuxArm64, Target.MacosArm64, Target.MacosX64, Target.WindowsX64, Unset))
+
+      test(m"refuses a file which is not an executable"):
+        fault(Inspector.inspect("just text\n".getBytes("UTF-8").nn, t"notes", Unset))
+      .assert(_ == Assembler.Fault.Format)
+
     suite(m"command line"):
       test(m"needs a subcommand, and suggests one for a JAR"):
         (fault(xek.Command.parse(Nil)), fault(xek.Command.parse(List(t"app.jar"))),

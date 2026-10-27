@@ -36,8 +36,10 @@ agent for `DEBUG_PORT`, the options in `JAVA_OPTIONS`, and the launcher's own `-
 take effect only when a daemon starts, and a daemon serves every later invocation, so the
 launcher records the options in the state directory's `java-options` file as it starts one
 ([`layout.md`](layout.md)). An invocation which would start a daemon with other options than
-the running one's is still served by the running one, and the launcher says so on stderr: the
-new options take effect once the tool has been shut down. An internal invocation is not told.
+the running one's is still served by the running one, and the launcher says so on stderr: *Java
+options take effect only when the mytool daemon is not already running; it is running now with
+different ones, which it will keep until it has been shut down.* An internal invocation is not
+told.
 
 A JVM whose JDWP agent has `suspend=y` runs nothing until a debugger attaches, so the launcher
 does not apply its startup deadline to it: it shows `Waiting for a Java debugger on <address>…`

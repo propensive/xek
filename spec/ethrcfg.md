@@ -188,6 +188,12 @@ accepted as an argument.
   the build id: the gate a release script runs on every executable before publishing it. A
   signature or application that does not match exits with status 4.
 
+`xek inspect [--app-id <identifier>] <executable>` prints what any executable, or polyglot file,
+holds: the stub's platform, every field of the record, the Java options after it, each key as the
+SHA-256 that `sha256sum` prints for its `.pub` file, and which of the record's keys the signature
+verifies under (Java 24 or later), with the JAR's main class. It needs no key, and changes nothing.
+The record holds only the hash of the application id, so `--app-id` says whether it matches.
+
 ## Changing the layout
 
 Any change to the field layout or to the placement rule increments the version byte in the

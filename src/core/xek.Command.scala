@@ -86,6 +86,7 @@ object Command:
   val ForeignKey = Spec(t"foreign-key", Unset, Unset, t"sign with a key the executable's record does not carry")
   val VerifyKey = Spec(t"public-key", Unset, t"file", t"the public key the signature must verify under")
   val VerifyApp = Spec(t"app-id", Unset, t"identifier", t"the application the executable must be for")
+  val InspectApp = Spec(t"app-id", Unset, t"identifier", t"say whether the executable is for this application")
   val Client = Spec(t"client", Unset, t"directory", t"take unverified stubs from a local directory")
   val ClientUrl = Spec(t"client-url", Unset, t"url", t"download stubs from this URL instead")
   val ClientManifest = Spec(t"client-manifest", Unset, t"file", t"verify downloaded stubs against this manifest")
@@ -156,6 +157,13 @@ object Command:
         t"--public-key <file> [--app-id <identifier>] --in <executable>",
         t"check a release's signature, and print its build id",
         List(VerifyKey, VerifyApp, In) )
+
+    case Inspect
+    extends Action
+      ( t"inspect",
+        t"[--app-id <identifier>] <executable>",
+        t"print what an executable was built with",
+        List(InspectApp) )
 
   object Action:
     def parse(name: Text): Optional[Action] = values.find(_.name == name).getOrElse(Unset)

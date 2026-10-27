@@ -184,11 +184,12 @@ fn main() {
     debug!("main: socket is alive");
 
     // Java options take effect only when a daemon starts, so a daemon already running with
-    // others is still the one this invocation gets; it is told so, unless it runs behind the
-    // user's shell.
+    // others is still the one this invocation gets; it is told so on stderr, unless it runs
+    // behind the user's shell. "Different ones" rather than "these": the invocation may have
+    // asked for none, where the running daemon has some.
     if !internal && java_options::recorded(&options_file) != java_options {
         xek::clear();
-        eprintln!("{name} is already running with other Java options; the new ones will take effect once it has been shut down.");
+        eprintln!("Java options take effect only when the {name} daemon is not already running; it is running now with different ones, which it will keep until it has been shut down.");
     }
     let composition = negotiate(&acceptance_file, &name);
 
