@@ -94,11 +94,11 @@ fn install_java_command(invocation: &str) -> String {
     if cfg!(windows) {
         let invocation = if plain { invocation.to_string() }
                          else { format!("& '{}'", invocation.replace('\'', "''")) };
-        format!("$env:{}=1; {}", crate::INSTALL_JAVA_VARIABLE, invocation)
+        format!("$env:{}=1; {}", crate::settings::generic(crate::settings::INSTALL_JAVA), invocation)
     } else {
         let invocation = if plain { invocation.to_string() }
                          else { format!("'{}'", invocation.replace('\'', "'\\''")) };
-        format!("{}=1 {}", crate::INSTALL_JAVA_VARIABLE, invocation)
+        format!("{}=1 {}", crate::settings::generic(crate::settings::INSTALL_JAVA), invocation)
     }
 }
 

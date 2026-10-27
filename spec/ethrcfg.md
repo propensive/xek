@@ -6,6 +6,12 @@ An XEK executable is three files joined end to end:
 stub ‖ record ‖ jar
 ```
 
+or, for an application built with Java options, four:
+
+```
+stub ‖ record ‖ java options ‖ jar
+```
+
 The *stub* is a bare, generic client for one platform, published as-is and never modified. The
 *record* is a fixed 5108-byte block, written by the builder, that configures the client for
 one application: the build id that orders upgrades, the Java version policy, the application's
@@ -42,7 +48,7 @@ All integers are little-endian.
 | 16 | 2 | `java_min` | `u16`; the minimum acceptable JVM major version. `0` means "unset", read as 21 |
 | 18 | 2 | `java_pref` | `u16`; the preferred JVM major version to download when none is found. `0` means "unset", read as 24 |
 | 20 | 1 | `bundle` | `0` = JRE, `1` = JDK — which runtime to fetch if one must be fetched |
-| 21 | 1 | `flags` | bit 0 = downgrade permitted; all other bits reserved and zero |
+| 21 | 1 | `flags` | bit 0 = downgrade permitted; bit 1 = a block of Java options follows the record; all other bits reserved and zero |
 | 22 | 10 | reserved | zero |
 | 32 | 32 | `app_id` | SHA3-256 of the application's identifier, as UTF-8 — for example of `propensive/fume`. All-zero is "unset" |
 | 64 | 1312 | `release_key` | The ML-DSA-44 public key ordinary releases are signed with. All-zero is "unset" |
@@ -52,16 +58,39 @@ All integers are little-endian.
 Total: 5108 bytes. Without both a `release_key` and an `app_id` a client accepts no upgrade, which
 is the safe default.
 
+## Java options
+
+When bit 1 of `flags` is set, the record is followed at once by the options the application's
+JVM is always started with:
+
+| Length | Field | Meaning |
+|---|---|---|
+| 4 | `length` | `u32`; the length of `options`, in bytes; at most 65536 |
+| `length` | `options` | Each option as UTF-8, ended by a NUL |
+
+The launcher puts them before its other options ([`launcher.md`](launcher.md), *Java options*).
+A block that is longer than the limit, runs past the end of the file, or is not UTF-8 holds no
+options. The block is part of the file, so the signature covers it. A client which predates it
+ignores bit 1, and reads the block as more bytes in front of the JAR, which the JVM does not see.
+
+`xek build --java-option <option>`, repeatable, writes the block. It refuses an option which
+starts a debugger agent (`-agentlib:jdwp`, `-Xrunjdwp`, `-Xdebug`) or loads an agent from a path
+on the user's machine (`-javaagent:`, `-agentpath:`), since every user of the executable would run
+it: a debugger is attached at run time instead, with `XEK_DEBUG_PORT`. Options the JVM reads from
+a JAR's manifest — `Add-Opens`, `Add-Exports`, `Enable-Native-Access` and `Launcher-Agent-Class` —
+belong there instead, and need nothing from the record.
+
 ## Building an executable
 
 1. Obtain the bare stub for the target platform.
 2. Write a record: the magic, the fields above, the application id and keys (or zeros), and
-   2420 zero bytes of signature.
-3. Concatenate stub, record and JAR, in that order, and mark the result executable (not on
+   2420 zero bytes of signature, followed by the block of Java options if bit 1 is set.
+3. Concatenate stub, record (with its block) and JAR, in that order, and mark the result executable (not on
    Windows, where the name's `.exe` suffix does that).
 4. If the JAR has a ZIP64 end-of-central-directory locator — the 20-byte block starting
    `PK\x06\x07` immediately before the end-of-central-directory record — add
-   `size(stub) + 5108` to the `u64` at offset 8 within the locator. That is the one physical
+   the size of everything in front of the JAR — `size(stub) + 5108`, plus the size of the block
+   of Java options if there is one — to the `u64` at offset 8 within the locator. That is the one physical
    offset in a ZIP; every other offset is relative and a reader recovers the shift by itself.
    Left stale, the JVM refuses to open the JAR at all.
 
@@ -92,8 +121,8 @@ The signature is over a 40-byte *statement*:
 ```
 
 It is a pure ML-DSA-44 signature (FIPS 204, with an empty context string) over those 40 bytes.
-The hash covers every byte of the file — the stub, the JAR, and every field of the record
-including `build_id`, `flags`, `app_id` and both keys — so a change to any of them invalidates
+The hash covers every byte of the file — the stub, the JAR, the block of Java options, and every
+field of the record including `build_id`, `flags`, `app_id` and both keys — so a change to any of them invalidates
 the signature. Signing a short statement rather than the file means a signer that never sees
 the file — a KMS, a hardware token, an offline machine — can produce the signature, and the
 client can hash a candidate where it lies rather than copy it.

@@ -12,8 +12,10 @@ mod config;
 mod daemon;
 mod descriptors;
 mod session;
+mod settings;
 mod state;
 mod java;
+mod java_options;
 mod launch;
 mod progress;
 mod protocol;
@@ -26,13 +28,13 @@ mod verify;
 mod wrapper;
 mod xek;
 
-// Debug-trace helper: when `ETHEREAL_DEBUG=1` is set, writes a timestamped
-// line to stderr from the launcher. Intentionally lazy — avoids any cost
-// when the env var isn't set.
+// Debug-trace helper: when `XEK_DEBUG_LOG=1` (or `<TOOL>_DEBUG_LOG=1`) is set, writes a
+// timestamped line to stderr from the launcher. Intentionally lazy — avoids any cost
+// when the variable isn't set.
 #[macro_export]
 macro_rules! debug {
     ($($arg:tt)*) => {{
-        if std::env::var_os("ETHEREAL_DEBUG").is_some_and(|v| !v.is_empty() && v != "0") {
+        if $crate::settings::tracing() {
             let ms = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
@@ -58,10 +60,6 @@ const STARTUP_FAILURE_EXIT_CODE: i32 = 2;
 // is reserved: the application may receive any argv at all.
 pub const WRAP_VARIABLE: &str = "XEK_WRAP_JAVA";
 
-// Asks the launcher to download a JVM when none suitable is found. An environment variable
-// rather than an argument, so that no argument is reserved. See `spec/launcher.md`.
-pub const INSTALL_JAVA_VARIABLE: &str = "XEK_INSTALL_JAVA";
-
 // Argument values the daemon side reserves for its own internal invocations (shell
 // completion and administration). They are the daemon's contract, not the launcher's; the
 // launcher only recognises them so as not to touch the terminal for an invocation that runs
@@ -79,7 +77,8 @@ fn main() {
     let argv0: Option<OsString> = raw.first().cloned();
     let invoked_as = raw.first().map(|arg| arg.to_string_lossy().into_owned());
     let (script, args) = parse_arguments(raw);
-    let download = requested(env::var_os(INSTALL_JAVA_VARIABLE));
+    // Asks the launcher to download a JVM when none suitable is found; see `settings.rs`.
+    let download = settings::on(settings::INSTALL_JAVA);
     let name = script.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
     debug!("main: script={} name={} args={:?}", script.display(), name, args);
 
@@ -104,6 +103,8 @@ fn main() {
     // once, before anything consults the build id or the keys.
     let build_config = config::load(&script);
     debug!("main: build_id={} java_min={} java_pref={}", build_config.build_id, build_config.java_min, build_config.java_pref);
+    let java_options = java_options::chosen(config::java_options());
+    debug!("main: java_options={:?}", java_options);
 
     update::check_updates(&script, argv0.as_deref(), &args, &name);
     debug!("main: post-update-check");
@@ -120,6 +121,7 @@ fn main() {
     let fail_file   = base_dir.join("fail");
     let progress_file = base_dir.join("progress");
     let acceptance_file = base_dir.join("acceptance");
+    let options_file = base_dir.join("java-options");
     debug!("main: base_dir={}", base_dir.display());
 
     // The composition this invocation's documents are written under, chosen from the
@@ -146,7 +148,7 @@ fn main() {
                 launch::launch(
                     &script, &name, &base_dir,
                     &build_file, &pid_file, &socket_file, &fail_file, &progress_file,
-                    &build_config, download,
+                    &options_file, &build_config, &java_options, download,
                 );
                 debug!("main: launch::launch returned");
             }
@@ -154,7 +156,8 @@ fn main() {
                 // Wait by the same rule as the launcher doing the spawning: a cold
                 // Burdock cache being fetched by that daemon is progress here too.
                 debug!("main: another launcher holds the lock; awaiting socket");
-                let outcome = launch::await_startup(&socket_file, &fail_file, &progress_file, None);
+                let debugger = java_options::suspended(&java_options::recorded(&options_file));
+                let outcome = launch::await_startup(&socket_file, &fail_file, &progress_file, None, debugger.as_deref());
                 xek::clear();
                 if !matches!(outcome, launch::Outcome::Bound) {
                     debug!("main: socket did not appear");
@@ -179,6 +182,14 @@ fn main() {
         std::process::exit(STARTUP_FAILURE_EXIT_CODE);
     }
     debug!("main: socket is alive");
+
+    // Java options take effect only when a daemon starts, so a daemon already running with
+    // others is still the one this invocation gets; it is told so, unless it runs behind the
+    // user's shell.
+    if !internal && java_options::recorded(&options_file) != java_options {
+        xek::clear();
+        eprintln!("{name} is already running with other Java options; the new ones will take effect once it has been shut down.");
+    }
     let composition = negotiate(&acceptance_file, &name);
 
     if internal {
@@ -289,12 +300,6 @@ fn parse_arguments(raw: Vec<OsString>) -> (PathBuf, Vec<OsString>) {
     let args = raw[raw.len().min(1)..].to_vec();
     let script = resolve_script(&executable.to_string_lossy(), std::env::current_exe().ok());
     (strip_extended_prefix(script), args)
-}
-
-// Whether a launcher switch in the environment is on: set to anything but the empty string
-// or `0`.
-fn requested(value: Option<OsString>) -> bool {
-    value.is_some_and(|value| !value.is_empty() && value != "0")
 }
 
 // The file the client hands the JVM is its OWN executable — stub, record and JAR are one file
@@ -539,7 +544,7 @@ pub fn now_ms() -> u64 {
 }
 
 fn debug_log(message: impl AsRef<str>) {
-    if std::env::var_os("ETHEREAL_DEBUG").is_none() { return; }
+    if !settings::tracing() { return; }
     let log_path = std::env::temp_dir().join("ethereal-launcher.log");
     if let Ok(mut log_file) = std::fs::OpenOptions::new().create(true).append(true).open(&log_path) {
         let _ = writeln!(log_file, "[{}] {}", std::process::id(), message.as_ref());
@@ -551,15 +556,6 @@ mod tests {
     use super::*;
 
     fn os(values: &[&str]) -> Vec<OsString> { values.iter().map(OsString::from).collect() }
-
-    #[test]
-    fn a_switch_is_on_unless_unset_empty_or_zero() {
-        assert!(requested(Some(OsString::from("1"))));
-        assert!(requested(Some(OsString::from("yes"))));
-        assert!(!requested(Some(OsString::from("0"))));
-        assert!(!requested(Some(OsString::new())));
-        assert!(!requested(None));
-    }
 
     #[test]
     fn every_argument_reaches_the_application() {

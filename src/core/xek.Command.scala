@@ -71,6 +71,7 @@ object Command:
   val Java = Spec(t"java", Unset, t"version", t"the Java version to download when none is installed")
   val JavaMin = Spec(t"java-min", Unset, t"version", t"the oldest Java version the application runs on")
   val Jdk = Spec(t"jdk", Unset, Unset, t"download a full JDK rather than a JRE")
+  val JavaOption = Spec(t"java-option", Unset, t"option", t"start the JVM with this option; repeatable")
   val BuildId = Spec(t"build-id", Unset, t"number", t"the build number self-upgrades are ordered by")
   val PublicKey = Spec(t"public-key", Unset, t"file", t"the release key self-upgrades are verified against")
   val RecoveryKey = Spec(t"recovery-key", Unset, t"file", t"a second key, kept offline, which may sign any self-upgrade")
@@ -105,8 +106,8 @@ object Command:
         t"[options] <app.jar> [<output>]",
         t"build an executable from an application's JAR",
         List
-          ( Platform, Polyglot, Download, Exclude, Dispatch, Java, JavaMin, Jdk, BuildId, PublicKey,
-            RecoveryKey, AppId, AllowDowngrade, Client, ClientUrl, ClientManifest ) )
+          ( Platform, Polyglot, Download, Exclude, Dispatch, Java, JavaMin, Jdk, JavaOption, BuildId,
+            PublicKey, RecoveryKey, AppId, AllowDowngrade, Client, ClientUrl, ClientManifest ) )
 
     case Installer
     extends Action
@@ -172,6 +173,10 @@ object Command:
       options.filter(_(0) == spec).map(_(1)).flatMap(_.cut(t",")).map(_.trim).filter(_ != t"")
 
     def value(spec: Spec): Optional[Text] = options.filter(_(0) == spec).map(_(1)).reverse.prim
+
+    // Every value of a repeatable option, as written: unlike `values`, not cut at commas, which a
+    // Java option may contain.
+    def every(spec: Spec): List[Text] = options.filter(_(0) == spec).map(_(1))
 
   private def usage(message: Message)(using Diagnostics): Assembler.Error =
     Assembler.Error(Assembler.Fault.Usage, message)
@@ -296,7 +301,8 @@ object Command:
           allowDowngrade = parsed.has(AllowDowngrade),
           appId          = parsed.value(AppId),
           releaseKey     = key(PublicKey),
-          recoveryKey    = key(RecoveryKey) )
+          recoveryKey    = key(RecoveryKey),
+          javaOptions    = parsed.every(JavaOption) )
 
     Options
       ( jar      = jar,

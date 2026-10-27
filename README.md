@@ -48,6 +48,7 @@ xek build --polyglot --platforms linux-x64,macos-arm64 app.jar
 xek build --download app.jar                   # a polyglot file which fetches its stub on first run
 xek build --dispatch executables.tsv app       # a polyglot file which fetches a whole executable
 xek build --java 25 --java-min 21 --jdk app.jar
+xek build --java-option -Xmx2g --java-option -XX:+UseZGC app.jar  # the JVM always starts with these
 xek installer --url https://example.com/app/1.0 app-*  # install.sh and install.ps1 for a release
 ```
 
