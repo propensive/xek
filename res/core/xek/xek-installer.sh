@@ -69,13 +69,14 @@ fi
 xek_msg 33 ████████ 0 "Unpacking…"
 case "${os}-${arch}" in windows*) gz=0 ;; *) gz=1 ;; esac
 extract "$offset" "$gz" > "$tmpout"
-stubsize=$(wc -c < "$tmpout" | tr -d ' ')
 
-# The ETHRCFG v4 record (spec/ethrcfg.md), embedded once, appended after the stub.
+# The ETHRCFG v4 record (spec/ethrcfg.md), embedded once, appended after the stub, with the
+# block of Java options that may follow it.
 record_offset=$(get_offset "record")
 if [ -n "$record_offset" ]
 then extract "$record_offset" 0 >> "$tmpout"
 fi
+prefixsize=$(wc -c < "$tmpout" | tr -d ' ')
 
 data_offset=$(get_offset "data")
 if [ -n "$data_offset" ]
@@ -83,8 +84,7 @@ then extract "$data_offset" 0 >> "$tmpout"
 fi
 
 # Rebase the JAR's ZIP64 locator, if any, by the bytes now in front of it.
-recsize=0; [ -n "$record_offset" ] && recsize=5108
-xek_rebase_zip64 "$tmpout" $((stubsize + recsize))
+xek_rebase_zip64 "$tmpout" "$prefixsize"
 
 size=$(wc -c < "$tmpout" | tr -d ' ')
 xek_msg 32 ████████ 1 "Unpacked ($size bytes)"

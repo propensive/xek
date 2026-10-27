@@ -46,9 +46,8 @@ fn install_state(signaler: Arc<Signaler>, termination: Arc<AtomicI32>, saved_tty
     let _ = TERMINATION.set(termination);
     let _ = SAVED_TTY.set(saved_tty);
     RAW_MODE_OWNED.store(raw_mode_owned, Ordering::SeqCst);
-    let timeout = std::env::var("ETHEREAL_SIGNAL_TIMEOUT_MS")
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
+    let timeout = crate::settings::get(crate::settings::SIGNAL_TIMEOUT_MS)
+        .and_then(|value| value.to_str()?.parse::<u32>().ok())
         .unwrap_or(DEFAULT_TIMEOUT_MS);
     TIMEOUT_MS.store(timeout, Ordering::SeqCst);
 }

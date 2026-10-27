@@ -86,6 +86,7 @@ object ui:
     val Statement = of(Command.Action.Statement)
     val Attach = of(Command.Action.Attach)
     val Verify = of(Command.Action.Verify)
+    val Inspect = of(Command.Action.Inspect)
 
   val Platform =
     Flag[Text](t"platform", true, Command.Platform.aliases + flag(Command.Platform), Command.Platform.description)
@@ -96,10 +97,12 @@ object ui:
   val Java = Flag[Text](t"java", false, Nil, Command.Java.description)
   val JavaMin = Flag[Text](t"java-min", false, Nil, Command.JavaMin.description)
   val Jdk = Flag[Unit](t"jdk", false, Nil, Command.Jdk.description)
+  val JavaOption = Flag[Text](t"java-option", true, Nil, Command.JavaOption.description)
   val BuildId = Flag[Text](t"build-id", false, Nil, Command.BuildId.description)
   val PublicKey = Flag[Text](t"public-key", false, Nil, Command.PublicKey.description)
   val RecoveryKey = Flag[Text](t"recovery-key", false, Nil, Command.RecoveryKey.description)
   val AppId = Flag[Text](t"app-id", false, Nil, Command.AppId.description)
+  val InspectApp = Flag[Text](t"app-id", false, Nil, Command.InspectApp.description)
   val AllowDowngrade = Flag[Unit](t"allow-downgrade", false, Nil, Command.AllowDowngrade.description)
   val Client = Flag[Text](t"client", false, Nil, Command.Client.description)
   val ClientUrl = Flag[Text](t"client-url", false, Nil, Command.ClientUrl.description)
@@ -230,6 +233,12 @@ private def complete(arguments: List[Argument])(using Cli, Interpreter, WorkingD
       paths { ui.PublicKey.present; ui.In.present }
       ui.AppId.present
 
+    case ui.subcommand.Inspect() :: rest =>
+      ui.InspectApp.present
+
+      operands(rest).each: argument =>
+        argument.suggest(Pathname.complete(argument(), argument.tab.or(Prim)))
+
     case _ =>
       ()
 
@@ -268,6 +277,7 @@ private def completeBuild(arguments: List[Argument])(using Cli, Interpreter, Wor
     ui.Client.present
     ui.ClientManifest.present
 
+  ui.JavaOption.present
   ui.BuildId.present
   ui.AppId.present
   ui.ClientUrl.present
@@ -352,6 +362,7 @@ object Driver:
           else
             if action == Command.Action.Build then build(parsed, path, here, variable)(err)
             else if action == Command.Action.Installer then installer(parsed, path)(err)
+            else if action == Command.Action.Inspect then inspect(parsed, path)(out)
             else Signer.run(action, parsed, path, variable)(out, err)
 
             Exit.Ok
@@ -395,6 +406,18 @@ object Driver:
 
     val options: _root_.xek.Installer.Options = Command.installer(parsed, path)
     _root_.xek.Installer.write(options).each { file => err(t"Wrote ${file.encode}") }
+
+  private def inspect(parsed: Command.Parsed, path: Text => Path on Local)(out: Text => Unit)
+  :   Unit raises Assembler.Error =
+
+    parsed.operands match
+      case List(operand) =>
+        val bytes: scala.Array[Byte] = Files.read(path(operand))
+        val lines = Inspector.inspect(bytes, operand, parsed.value(Command.InspectApp))
+        Inspector.render(lines).each(out(_))
+
+      case _ =>
+        abort(Assembler.Error(Assembler.Fault.Usage, m"xek inspect needs exactly one executable"))
 
   private def property(name: String): Text = java.lang.System.getProperty(name).nn.tt
 
@@ -471,6 +494,15 @@ object Driver:
             t"where that shell looks for them, and the manpage to ~/.local/share/man/man1 (or",
             t"$$XDG_DATA_HOME/man/man1), which `man` searches by default. An installed manpage is",
             t"left alone unless --force is given." )
+
+      case Command.Action.Inspect =>
+        List
+          ( t"",
+            t"Prints what an executable, or a polyglot file, was built with: its kind and platform,",
+            t"the build id, the Java versions it accepts and the Java options it starts the JVM with,",
+            t"its application id and keys, whether it can upgrade itself, whether its signature",
+            t"verifies, and its JAR's main class. The record holds only a hash of the application id,",
+            t"which --app-id checks. Checking a signature needs Java 24 or later." )
 
       case _ =>
         List(t"", t"${action.description.s.capitalize.nn.tt}. Needs Java 24 or later.")

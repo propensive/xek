@@ -222,6 +222,21 @@ object Tests extends Suite(m"XEK tests"):
         hex(Array.unsafeJvm(record.data))
       .assert(_ == resource("fixtures/ethrcfg-v4.hex").s.filter(!_.isWhitespace).tt)
 
+      test(m"is followed by its block of Java options, and announces it in its flags"):
+        val record = Record(allowDowngrade = true, javaOptions = List(t"-Xmx2g", t"-XX:Flags=a,b"))
+        val data = Array.unsafeJvm(record.data)
+        (data.length, data(21).toInt, le(data).getInt(5108), String(data, 5112, data.length - 5112, "UTF-8").tt)
+      .assert(_ == (5108 + 4 + 21, 3, 21, t"-Xmx2g\u0000-XX:Flags=a,b\u0000"))
+
+      test(m"refuses to build in a debugger or an agent from the user's machine"):
+        ( fault(Record(javaOptions = List(t"-agentlib:jdwp=transport=dt_socket,server=y,address=5005")).data),
+          fault(Record(javaOptions = List(t"-javaagent:/tmp/agent.jar")).data) )
+      .assert(_ == (Assembler.Fault.Usage, Assembler.Fault.Usage))
+
+      test(m"refuses a Java option which is not an option"):
+        (fault(Record(javaOptions = List(t"Xmx2g")).data), fault(Record(javaOptions = List(t"-jar")).data))
+      .assert(_ == (Assembler.Fault.Usage, Assembler.Fault.Usage))
+
       test(m"refuses a key of the wrong size"):
         fault(Record(appId = t"a/b", releaseKey = Array.unsafeFrozen(scala.Array.fill[Byte](10)(1))).data)
       .assert(_ == Assembler.Fault.Format)
@@ -341,6 +356,22 @@ object Tests extends Suite(m"XEK tests"):
           (recovered, refused, foreign)
         .assert(_ == (List(t"7"), Assembler.Fault.Usage, List(t"7")))
 
+        test(m"signing keeps the flag announcing the Java options"):
+          val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir)
+          invoke(dir, t"keygen", t"--out", t"release")
+          val words =
+            List
+              ( t"build", jar.encode, (dir/t"tool").encode, t"--client", client.encode,
+                t"--public-key", (dir/t"release.pub").encode, t"--app-id", t"propensive/fume",
+                t"--java-option", t"-Xmx2g" )
+
+          build(xek.Command.options(xek.Command.parse(words), Files.path(_)), dir)
+          invoke(dir, t"sign", t"--key", t"release.seed", t"--in", t"tool", t"--out", t"signed", t"--allow-downgrade")
+          val signed = bytes(dir/t"signed")
+          val flags = signed(Signer.record(signed).or(0) + 21).toInt
+          (flags, invoke(dir, t"verify", t"--public-key", t"release.pub", t"--in", t"signed")(0))
+        .assert(_ == (3, List(t"0")))
+
         test(m"a signature made elsewhere over the statement can be attached"):
           val dir = tempDir(); keyed(dir)
           val statement = unhex(invoke(dir, t"statement", t"--in", t"tool")(0).prim.or(t""))
@@ -441,6 +472,19 @@ object Tests extends Suite(m"XEK tests"):
         val ran = sh"$out".exec[Text]().trim
         (ran, sha(out) == sha(cat(dir, stubOf(client, host), record(dir), jar)))
       .assert(_ == (t"ran-$hostLabel", true))
+
+      test(m"rebases a ZIP64 JAR by the record and its Java options, so it still opens"):
+        val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir, 65600); val out = dir/t"tool"
+        val options =
+          Options
+            ( jar = local(jar), output = local(out), polyglot = true,
+              record = Record(javaOptions = List(t"-Xmx2g")), source = Stubs.Source.Directory(local(client)) )
+
+        build(options, dir)
+        sh"$out".exec[Text]()
+        val zip = juz.ZipFile(out.encode.s)
+        try zip.size finally zip.close()
+      .assert(_ == 65601)
 
       test(m"leaves out an excluded shell's section, and still runs in sh"):
         val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir); val out = dir/t"tool"
@@ -619,6 +663,60 @@ object Tests extends Suite(m"XEK tests"):
           sh"pwsh -NoProfile -Command $check".exec[Text]().trim
         .assert(_ == t"parsed")
 
+    suite(m"inspect"):
+      def value(lines: List[Inspector.Line], label: Text): Text =
+        lines.filter(_.label == label).prim.let(_.value).or(t"")
+
+      test(m"reads a signed native executable, with its Java options, keys and main class"):
+        val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir)
+        invoke(dir, t"keygen", t"--out", t"release")
+        val words =
+          List
+            ( t"build", jar.encode, (dir/t"tool").encode, t"--client", client.encode, t"--build-id", t"9",
+              t"--java", t"25", t"--jdk", t"--public-key", (dir/t"release.pub").encode,
+              t"--app-id", t"propensive/fume", t"--java-option", t"-Xmx2g", t"--java-option", t"-XX:Flags=a,b" )
+
+        build(xek.Command.options(xek.Command.parse(words), Files.path(_)), dir)
+        invoke(dir, t"sign", t"--key", t"release.seed", t"--in", t"tool", t"--out", t"signed")
+        val lines = Inspector.inspect(bytes(dir/t"signed"), t"signed", t"propensive/fume")
+        val options = lines.filter { line => line.label == t"Java options" || line.label == t"" }.map(_.value)
+
+        ( value(lines, t"Build id"), value(lines, t"Preferred Java"), value(lines, t"Downloads"), options,
+          value(lines, t"Application id").starts(t"propensive/fume ("),
+          value(lines, t"Release key") == t"SHA-256 ${Files.sha256(bytes(dir/t"release.pub"))}",
+          value(lines, t"Self-upgrade"), value(lines, t"Signature"), value(lines, t"Main class") )
+      .assert(_ == (t"9", t"25", t"a JDK, if no Java is found", List(t"-Xmx2g", t"-XX:Flags=a,b"), true, true,
+                    t"enabled", t"verifies under the release key", t"app.Main"))
+
+      test(m"reads a polyglot file through its index"):
+        val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir); val out = dir/t"tool"
+        val options =
+          Options
+            ( jar = local(jar), output = local(out), polyglot = true, targets = List(Target.LinuxX64, host),
+              record = Record(buildId = 5, javaOptions = List(t"-Xss4m")), source = Stubs.Source.Directory(local(client)) )
+
+        build(options, dir)
+        val lines = Inspector.inspect(bytes(out), t"tool", Unset)
+        val stubs = lines.filter { line => line.label == t"Stubs" || (line.label == t"" && line.value.contains(t"-")) }
+
+        (value(lines, t"Kind"), stubs.map(_.value).has(t"linux-x64"), value(lines, t"Build id"),
+         value(lines, t"Java options"), value(lines, t"Main class"))
+      .assert(_ == (t"polyglot file, which unpacks the stub for its platform", true, t"5", t"-Xss4m", t"app.Main"))
+
+      test(m"names the platform of a stub from its header"):
+        def header(values: Int*): scala.Array[Byte] = scala.Array.from(values.map(_.toByte)) ++ new scala.Array[Byte](32)
+        ( Inspector.platform(header(0x7f, 'E', 'L', 'F', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 0)),
+          Inspector.platform(header(0x7f, 'E', 'L', 'F', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 183, 0)),
+          Inspector.platform(header(0xcf, 0xfa, 0xed, 0xfe, 0x0c, 0, 0, 0x01)),
+          Inspector.platform(header(0xcf, 0xfa, 0xed, 0xfe, 0x07, 0, 0, 0x01)),
+          Inspector.platform(header('M', 'Z')),
+          Inspector.platform(header('#', '!')) )
+      .assert(_ == (Target.LinuxX64, Target.LinuxArm64, Target.MacosArm64, Target.MacosX64, Target.WindowsX64, Unset))
+
+      test(m"refuses a file which is not an executable"):
+        fault(Inspector.inspect("just text\n".getBytes("UTF-8").nn, t"notes", Unset))
+      .assert(_ == Assembler.Fault.Format)
+
     suite(m"command line"):
       test(m"needs a subcommand, and suggests one for a JAR"):
         (fault(xek.Command.parse(Nil)), fault(xek.Command.parse(List(t"app.jar"))),
@@ -651,6 +749,10 @@ object Tests extends Suite(m"XEK tests"):
         val options = parse(t"app.jar", t"out", t"--platform=linux-x64", t"-pwindows-x64", t"--java", t"25")
         (options.output.let(_.name), options.targets, options.record.javaPreferred)
       .assert(_ == (t"out", List(Target.LinuxX64, Target.WindowsX64), 25))
+
+      test(m"reads each --java-option whole, commas and all"):
+        parse(t"app.jar", t"--java-option", t"-XX:Flags=a,b", t"--java-option=-Dk=v").record.javaOptions
+      .assert(_ == List(t"-XX:Flags=a,b", t"-Dk=v"))
 
       test(m"splits comma-separated lists, and accepts --platforms"):
         parse(t"app.jar", t"--polyglot", t"--platforms", t"linux-x64,macos-arm64", t"-x", t"bat").pipe: options =>
