@@ -46,4 +46,4 @@ object Shell:
 
   def parse(name: Text): Optional[Shell] =
     val lower: Text = name.lower
-    all.filter { shell => shell.name == lower || shell.aliases.has(lower) }.prim
+    all.filter { shell => shell.name == lower || shell.aliases.has(lower) }.head

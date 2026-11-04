@@ -344,7 +344,7 @@ object Driver:
       Files.local(jnf.Path.of(here.encode.s).nn.resolve(expanded.s).nn)
 
     // Which subcommand a mistake belongs to, so that its own help can be suggested.
-    val action: Optional[Command.Action] = words.prim.let(Command.Action.parse(_))
+    val action: Optional[Command.Action] = words.head.let(Command.Action.parse(_))
 
     attempt[Assembler.Error]:
       if words.nil then
