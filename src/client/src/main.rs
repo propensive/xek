@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod acceptance;
 mod bintel;
@@ -67,6 +67,9 @@ pub const WRAP_VARIABLE: &str = "XEK_WRAP_JAVA";
 const INTERNAL_SENTINELS: [&str; 2] = ["{completions}", "{admin}"];
 
 fn main() {
+    // When this invocation began, so that a daemon it could not reach is reported with how long
+    // the launcher spent trying.
+    let started = Instant::now();
     let raw: Vec<OsString> = env::args_os().collect();
     debug!("main: argv={:?}", raw);
     if env::var_os(WRAP_VARIABLE).is_some() {
@@ -176,9 +179,9 @@ fn main() {
     state::backout(&fail_file, &pid_file, &name);
 
     if state::socket_ready(&socket_file) { require_private_socket(&socket_file, &name); }
-    if !state::socket_alive(&socket_file) {
-        debug!("main: socket not alive, exiting STARTUP_FAILURE");
-        state::report_failure(&base_dir, &name, "its socket does not accept connections");
+    if let Err(error) = state::probe(&socket_file) {
+        debug!("main: socket not alive ({}), exiting STARTUP_FAILURE", error);
+        state::report_unreachable(&base_dir, &name, &socket_file, state::read_pid(&pid_file), started.elapsed(), &error);
         std::process::exit(STARTUP_FAILURE_EXIT_CODE);
     }
     debug!("main: socket is alive");
@@ -227,6 +230,7 @@ fn main() {
         Err(e) => {
             debug!("main: connect failed: {}", e);
             tty::restore_tty_state(&saved_tty);
+            state::report_unreachable(&base_dir, &name, &socket_file, state::read_pid(&pid_file), started.elapsed(), &e);
             std::process::exit(STARTUP_FAILURE_EXIT_CODE);
         }
     };
