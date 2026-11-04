@@ -72,7 +72,7 @@ object Stubs:
     text.cut(t"\n").map(_.trim).filter { line => line != t"" && !line.starts(t"#") }.map: line =>
       val separator: Text = if line.contains(t"\t") then t"\t" else t"="
       val fields = line.cut(separator)
-      (fields.prim.or(t"").trim, fields.reverse.prim.or(t"").trim)
+      (fields.head.trim, fields.reverse.head.or(t"").trim)
     . to[Map]
 
   def hash(source: Source, target: Target): Optional[Text] = source match
