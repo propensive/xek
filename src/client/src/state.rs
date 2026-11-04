@@ -125,9 +125,15 @@ pub fn socket_ready(path: &Path) -> bool {
 
 // A stale socket file from a dead daemon will pass `socket_ready` but reject
 // connections. Probe it to confirm a daemon is actually listening.
-pub fn socket_alive(path: &Path) -> bool {
-    if !socket_ready(path) { return false; }
-    UnixStream::connect(path).is_ok()
+pub fn socket_alive(path: &Path) -> bool { probe(path).is_ok() }
+
+// The same probe, keeping what the connection was refused with. A missing socket is
+// `NotFound`, as connecting to it would be.
+pub fn probe(path: &Path) -> std::io::Result<()> {
+    if !socket_ready(path) {
+        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "no socket file"));
+    }
+    UnixStream::connect(path).map(|_| ())
 }
 
 fn poll_until(path: &Path, max_attempts: u32, ready: impl Fn(&Path) -> bool) -> bool {
@@ -155,8 +161,44 @@ const LOG_TAIL_LINES: usize = 20;
 // wrong sat unread in `daemon.log`. That is how a JAR the JVM would not open (#1680) presented
 // itself as a flake. An *empty* log is itself a diagnosis, so say so rather than staying quiet.
 pub fn report_failure(base_dir: &Path, name: &str, reason: &str) {
+    report(base_dir, &format!("The {name} daemon failed to start: {reason}."),
+        "the JVM died before it could say why");
+}
+
+// A daemon that is running, or was found running, but whose socket did not take this
+// invocation's connection: one too busy to accept (a full backlog while it thrashes in garbage
+// collection, say) as much as one that has hung. Exiting with status 2 and no word was
+// indistinguishable, to a script, from an invocation that ran and reported nothing (fuel#49), so
+// say which daemon, which socket, how long the launcher had been running, and what the
+// connection was refused with.
+pub fn report_unreachable(
+    base_dir: &Path,
+    name: &str,
+    socket_file: &Path,
+    pid: Option<u32>,
+    elapsed: Duration,
+    error: &std::io::Error,
+) {
+    let daemon = match pid {
+        Some(pid) => format!("The {name} daemon (pid {pid})"),
+        None => format!("The {name} daemon"),
+    };
+    report(base_dir, &format!(
+        "{daemon} could not be reached at its socket {} after {}: {error}.",
+        socket_file.display(), seconds(elapsed),
+    ), "the daemon has written nothing to it");
+}
+
+// A duration as seconds to one decimal place. Integer arithmetic on purpose: formatting an f64
+// links ~10 kB of float-printing code into the stub.
+fn seconds(elapsed: Duration) -> String {
+    let tenths = (elapsed.as_millis() + 50) / 100;
+    format!("{}.{}s", tenths / 10, tenths % 10)
+}
+
+fn report(base_dir: &Path, headline: &str, empty: &str) {
     crate::xek::clear();
-    eprintln!("\nThe {name} daemon failed to start: {reason}.");
+    eprintln!("\n{headline}");
     eprintln!("Its state directory is {}", base_dir.display());
     let log = base_dir.join("daemon.log");
 
@@ -168,7 +210,7 @@ pub fn report_failure(base_dir: &Path, name: &str, reason: &str) {
                 eprintln!("  {line}");
             }
         }
-        Ok(_) => eprintln!("{} is empty: the JVM died before it could say why.", log.display()),
+        Ok(_) => eprintln!("{} is empty: {empty}.", log.display()),
         Err(_) => eprintln!("{} could not be read.", log.display()),
     }
 }
@@ -402,6 +444,21 @@ mod tests {
 
     fn record(size: Option<u64>, mtime_ms: Option<u64>) -> BuildRecord {
         BuildRecord { build_id: 1, size, mtime_ms }
+    }
+
+    #[test]
+    fn seconds_are_rounded_to_one_decimal_place() {
+        assert_eq!(seconds(Duration::from_millis(0)), "0.0s");
+        assert_eq!(seconds(Duration::from_millis(4949)), "4.9s");
+        assert_eq!(seconds(Duration::from_millis(4950)), "5.0s");
+        assert_eq!(seconds(Duration::from_secs(12)), "12.0s");
+    }
+
+    #[test]
+    fn a_missing_socket_is_reported_as_not_found() {
+        let path = std::env::temp_dir().join(format!("ethereal-state-test-{}-nosocket", std::process::id()));
+        assert_eq!(probe(&path).unwrap_err().kind(), std::io::ErrorKind::NotFound);
+        assert!(!socket_alive(&path));
     }
 
     #[test]

@@ -451,7 +451,9 @@ with the status. A launcher that could not **start** a daemon exits with 1 — n
 and no leave to download one, a JVM that could not be spawned or died during startup, a
 daemon that bound no socket within the startup limit, or a `fail` file fresh from such an
 attempt — after reporting why. One that found a daemon and could not **reach** it exits with
-2 — a socket that refuses connections, or that is not the invoking user's — and so does one
+2 — a socket that refuses connections, or that is not the invoking user's — after reporting
+which daemon (with its pid, when known), which socket, how long the launcher had been running,
+and the error the connection failed with, then the tail of `daemon.log`; so does one
 whose session ends without an `exit-status` (*Losing the other side*), one whose daemon speaks
 another protocol, and one whose state directory cannot be used. One that was terminated by a
 signal dies of that signal, as above, whatever status the daemon then reports.
