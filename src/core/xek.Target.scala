@@ -55,7 +55,7 @@ object Target:
 
   def parse(label: Text): Optional[Target] =
     val lower: Text = label.lower
-    all.filter(_.label == lower).prim
+    all.filter(_.label == lower).head
 
   // The platform named by a JVM's `os.name` and `os.arch` properties, mapped exactly as the
   // launcher templates map `uname -s` and `uname -m`. There is no Windows ARM64 stub, so a
