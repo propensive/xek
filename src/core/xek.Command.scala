@@ -180,7 +180,7 @@ object Command:
     def values(spec: Spec): List[Text] =
       options.filter(_(0) == spec).map(_(1)).flatMap(_.cut(t",")).map(_.trim).filter(_ != t"")
 
-    def value(spec: Spec): Optional[Text] = options.filter(_(0) == spec).map(_(1)).reverse.prim
+    def value(spec: Spec): Optional[Text] = options.filter(_(0) == spec).map(_(1)).reverse.head
 
     // Every value of a repeatable option, as written: unlike `values`, not cut at commas, which a
     // Java option may contain.
@@ -190,12 +190,12 @@ object Command:
     Assembler.Error(Assembler.Fault.Usage, message)
 
   def spec(name: Text, specs: List[Spec] = specs): Optional[Spec] =
-    specs.filter { spec => spec.name == name || spec.aliases.has(name) }.prim
+    specs.filter { spec => spec.name == name || spec.aliases.has(name) }.head
 
-  def spec(short: Char): Optional[Spec] = specs.filter(_.short == short).prim
+  def spec(short: Char): Optional[Spec] = specs.filter(_.short == short).head
 
   def parse(words: List[Text]): Parsed raises Assembler.Error =
-    words.prim.let(Action.parse(_)).lay(standalone(words)): action =>
+    words.head.let(Action.parse(_)).lay(standalone(words)): action =>
       parse(action, words.skip(1))
 
   // A command line with no subcommand, which may only ask for help or the version. Anything else
@@ -206,7 +206,7 @@ object Command:
 
     if !words.nil && parsed.operands.nil && parsed.options.size == words.size then parsed else
       val names: Text = List(Action.values*).map(_.name).join(t", ")
-      val first: Text = words.prim.or(t"")
+      val first: Text = words.head.or(t"")
 
       if words.exists(_.ends(t".jar")) then
         val line: Text = words.join(t" ")
@@ -241,7 +241,7 @@ object Command:
 
         case word :: rest if word.starts(t"-") && word.length > 1 =>
           val short: Char = word.s.charAt(1)
-          val found: Spec = accepted.filter(_.short == short).prim.lest(unknown(t"-$short"))
+          val found: Spec = accepted.filter(_.short == short).head.lest(unknown(t"-$short"))
           val remainder: Text = word.skip(2)
           val joined: Optional[Text] = if remainder == t"" then Unset else remainder.s.stripPrefix("=").tt
           option(found, t"-$short", joined, rest, options, operands)
@@ -285,11 +285,11 @@ object Command:
       abort(usage(m"there are more arguments than expected: $extra"))
 
     val jar: Optional[Path on Local] =
-      if dispatch.present then Unset else parsed.operands.prim.let(path)
+      if dispatch.present then Unset else parsed.operands.head.let(path)
 
     val output: Optional[Path on Local] =
-      if dispatch.present then parsed.operands.prim.let(path)
-      else parsed.operands.skip(1).prim.let(path)
+      if dispatch.present then parsed.operands.head.let(path)
+      else parsed.operands.skip(1).head.let(path)
 
     def key(spec: Spec): Optional[Data] =
       parsed.value(spec).let(path).let { key => Array.unsafeFrozen(Files.read(key)) }
@@ -344,7 +344,7 @@ object Command:
         val name: Text = file.name.s.stripSuffix(".exe").tt
 
         val target: Target =
-          Target.all.filter { target => name.ends(t"-${target.label}") }.prim.lest:
+          Target.all.filter { target => name.ends(t"-${target.label}") }.head.lest:
             usage(m"$operand is not named <name>-<platform>[.exe], for a platform of $platforms")
 
         (name.keep(name.length - target.label.length - 1), target, file)
@@ -355,7 +355,7 @@ object Command:
     then abort(usage(m"the executables are named for different commands: ${names.join(t", ")}"))
 
     val name: Text =
-      parsed.value(Name).or(names.prim.lest(usage(m"--name is needed with --manifest")))
+      parsed.value(Name).or(names.head.lest(usage(m"--name is needed with --manifest")))
 
     if name == t"" || name.contains(t"/") || name.contains(t" ")
     then abort(usage(m"$name is not a command name"))
@@ -380,7 +380,7 @@ object Command:
       else
         val targets: List[Target] = executables.map(_(1))
 
-        targets.filter { target => targets.count(_ == target) > 1 }.prim.let: target =>
+        targets.filter { target => targets.count(_ == target) > 1 }.head.let: target =>
           abort(usage(m"more than one executable is for ${target.label}"))
 
         executables.map { (_, target, file) => (target, Files.sha256(Files.read(file))) }.to[Map]

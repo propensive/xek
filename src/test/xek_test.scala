@@ -253,7 +253,7 @@ object Tests extends Suite(m"XEK tests"):
 
     // The vector in `spec/fixtures/ml-dsa-44.tsv`, which the client's own tests check too.
     def vector(name: Text): scala.Array[Byte] =
-      val row: Text = resource("fixtures/ml-dsa-44.tsv").cut(t"\n").filter(_.starts(t"$name\t")).prim.or(t"")
+      val row: Text = resource("fixtures/ml-dsa-44.tsv").cut(t"\n").filter(_.starts(t"$name\t")).head.or(t"")
       unhex(row.skip(name.length + 1))
 
     // `xek`'s own subcommands, run in-process as the daemon runs them, against a directory.
@@ -374,7 +374,7 @@ object Tests extends Suite(m"XEK tests"):
 
         test(m"a signature made elsewhere over the statement can be attached"):
           val dir = tempDir(); keyed(dir)
-          val statement = unhex(invoke(dir, t"statement", t"--in", t"tool")(0).prim.or(t""))
+          val statement = unhex(invoke(dir, t"statement", t"--in", t"tool")(0).head.or(t""))
           val signature = Signer.sign(statement, bytes(dir/t"release.seed"))
           jnf.Files.write(jnf.Path.of((dir/t"sig").encode.s), signature)
           invoke(dir, t"attach", t"--in", t"tool", t"--signature", t"sig", t"--out", t"attached")
@@ -507,7 +507,7 @@ object Tests extends Suite(m"XEK tests"):
               source = Stubs.Source.Directory(local(client)) )
 
         build(options, dir)
-        String(bytes(out), "UTF-8").tt.cut(t"\n").filter(_.starts(t"index:")).prim.or(t"")
+        String(bytes(out), "UTF-8").tt.cut(t"\n").filter(_.starts(t"index:")).head.or(t"")
       .assert(_.starts(t"index:linux-x64=1,"))
 
       if safely(sh"pwsh -Version".exec[Exit]()) == Exit.Ok then
@@ -640,7 +640,7 @@ object Tests extends Suite(m"XEK tests"):
         val install = dir/t"install.sh"
         val output = sh"env TOOL_INSTALL_DIR=${bin.encode} sh ${install.encode}".exec[Text]()
         val installed = bin/t"tool"
-        val file: Text = files.prim.or(t"")
+        val file: Text = files.head.or(t"")
         (output.contains(t"Installed tool 9.9"), sha(installed) == sha(sub(dir, file)), sh"$installed".exec[Text]().trim == file)
       .assert(_ == (true, true, true))
 
@@ -648,7 +648,7 @@ object Tests extends Suite(m"XEK tests"):
         val dir = tempDir()
         val files = release(dir, t"tool", List(host))
         written(dir, (t"--url" :: t"file://${dir.encode}" :: files)*)
-        writeText(sub(dir, files.prim.or(t"")), t"#!/bin/sh\necho tampered\n")
+        writeText(sub(dir, files.head.or(t"")), t"#!/bin/sh\necho tampered\n")
         val bin = tempDir()
         val exit = sh"env TOOL_INSTALL_DIR=${bin.encode} sh ${(dir/t"install.sh").encode}".exec[Exit]()
         (exit, jnf.Files.exists(jnf.Path.of((bin/t"tool").encode.s)))
@@ -666,7 +666,7 @@ object Tests extends Suite(m"XEK tests"):
 
     suite(m"inspect"):
       def value(lines: List[Inspector.Line], label: Text): Text =
-        lines.filter(_.label == label).prim.let(_.value).or(t"")
+        lines.filter(_.label == label).head.let(_.value).or(t"")
 
       test(m"reads a signed native executable, with its Java options, keys and main class"):
         val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir)
