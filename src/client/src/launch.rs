@@ -13,6 +13,9 @@ const STARTUP_POLL: Duration = Duration::from_millis(50);
 // deadline measured from the spawn.
 const STARTUP_IDLE_LIMIT: Duration = Duration::from_secs(10);
 const BUILD_FILE_GRACE_ATTEMPTS: u32 = 20;
+// How long startup may run before the status line shows anything at all. A warm start, whose
+// bootstrap only verifies JARs it already has, finishes well within this and stays silent.
+const STATUS_DELAY: Duration = Duration::from_secs(2);
 
 pub enum Outcome {
     Bound,
@@ -150,8 +153,8 @@ pub fn launch(
 // Waits for the daemon to bind its socket, restarting the idle window on every change to the
 // progress file and echoing the bootstrap's position to the terminal. `child` is the daemon
 // process when this launcher spawned it (its exit is then detected immediately rather than at
-// the deadline); a launcher waiting on another launcher's daemon passes `None`. The status line
-// is left showing on return; the caller clears it, or prints its diagnostic after clearing it.
+// the deadline); a launcher waiting on another launcher's daemon passes `None`. Nothing is drawn
+// until `STATUS_DELAY` has passed. The status line is left showing on return; the caller clears it, or prints its diagnostic after clearing it.
 pub fn await_startup(
     socket_file: &Path,
     fail_file: &Path,
@@ -178,21 +181,23 @@ pub fn await_startup(
         let now = Instant::now();
         let current = progress::read(progress_file);
 
-        if watch.observe(current, now) {
-            if let Some(progress) = current {
-                crate::xek::spin(&progress::message(&progress));
-                shown = true;
+        // Progress is observed on every poll, since it restarts the idle window, but drawn only
+        // once `STATUS_DELAY` has passed; the latest position is then shown at once, even if
+        // it last changed before the delay ran out.
+        let changed = watch.observe(current, now);
+        if start.elapsed() >= STATUS_DELAY && (changed || !shown) {
+            match watch.current() {
+                Some(progress) => crate::xek::spin(&progress::message(&progress)),
+                None if !shown => crate::xek::step("Starting…"),
+                // The progress file was removed once downloads finished: leave the line as is.
+                None => (),
             }
+            shown = true;
         }
         crate::xek::tick();
 
         if watch.expired(now, STARTUP_IDLE_LIMIT) {
             return Outcome::Idle(watch.current());
-        }
-
-        if !shown && start.elapsed() >= Duration::from_secs(2) {
-            crate::xek::step("Starting…");
-            shown = true;
         }
 
         std::thread::sleep(STARTUP_POLL);
