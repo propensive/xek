@@ -48,12 +48,14 @@ xek build --polyglot --platforms linux-x64,macos-arm64 app.jar
 xek build --download app.jar                   # a polyglot file which fetches its stub on first run
 xek build --dispatch executables.tsv app       # a polyglot file which fetches a whole executable
 xek build --java 25 --java-min 21 --jdk app.jar
+xek build --java-option -Xmx2g --java-option -XX:+UseZGC app.jar  # the JVM always starts with these
 xek installer --url https://example.com/app/1.0 app-*  # install.sh and install.ps1 for a release
+xek inspect app                                # what ./app was built with, and whether it is signed
 ```
 
-Every command line begins with a subcommand: `build`, or one of those which sign a release for
-self-upgrade — `keygen`, `public-key`, `sign`, `statement`, `attach` and `verify`, described in
-[`spec/ethrcfg.md`](spec/ethrcfg.md). Signing needs Java 24 or later, which provides ML-DSA.
+Every command line begins with a subcommand: `build`; `inspect`, which prints what an executable
+was built with; or one of those which sign a release for self-upgrade — `keygen`, `public-key`,
+`sign`, `statement`, `attach` and `verify`, described in [`spec/ethrcfg.md`](spec/ethrcfg.md). Signing needs Java 24 or later, which provides ML-DSA.
 After the subcommand, options may come before or after the JAR; `xek --help` lists the
 subcommands, and `xek build --help` the options of one. `xek installer` writes the two install
 scripts of a release — `install.sh` for `curl -fsSL <url> | sh` and `install.ps1` for

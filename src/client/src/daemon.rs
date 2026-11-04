@@ -16,30 +16,33 @@ pub const ENVIRONMENT_ON_STDIN: &str = "stdin";
 // The variables the daemon's own environment keeps: who the user is, where their files and the
 // state directory are, the locale and time zone, the search path for the commands the daemon
 // itself runs, and the options the JVM reads as it starts, which are how a daemon's heap is
-// sized. Everything else — the terminal's variables, the shell's, every application's — is
-// removed.
+// sized, and the switch that traces the launcher, under both of its names (`settings.rs`), for
+// the wrapper process the JVM is started through. Everything else — the terminal's variables,
+// the shell's, every application's — is removed.
 #[cfg(unix)]
-const KEPT: [&str; 17] = [
+const KEPT: [&str; 16] = [
     "PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "TZ", "TMPDIR",
     "XDG_RUNTIME_DIR", "XDG_STATE_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME",
-    "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS", "ETHEREAL_DEBUG",
+    "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS",
 ];
 
 #[cfg(windows)]
-const KEPT: [&str; 18] = [
+const KEPT: [&str; 17] = [
     "SystemRoot", "SystemDrive", "windir", "ComSpec", "PATH", "PATHEXT", "TEMP", "TMP",
     "USERPROFILE", "APPDATA", "LOCALAPPDATA", "USERNAME", "HOMEDRIVE", "HOMEPATH",
-    "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS", "ETHEREAL_DEBUG",
+    "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS",
 ];
 
-// Whether a variable survives into the daemon's environment: one of `KEPT`, or a locale
-// category (`LC_ALL`, `LC_CTYPE`, …). Windows variable names are case-insensitive.
+// Whether a variable survives into the daemon's environment: one of `KEPT`, a name of the
+// tracing switch, or a locale category (`LC_ALL`, `LC_CTYPE`, …). Windows variable names are
+// case-insensitive.
 pub fn kept(name: &OsStr) -> bool {
     let name = name.to_string_lossy();
+    let tracing = crate::settings::names(crate::settings::DEBUG_LOG);
     #[cfg(unix)]
-    { KEPT.contains(&name.as_ref()) || name.starts_with("LC_") }
+    { KEPT.contains(&name.as_ref()) || tracing.contains(&name.to_string()) || name.starts_with("LC_") }
     #[cfg(windows)]
-    { KEPT.iter().any(|kept| kept.eq_ignore_ascii_case(&name)) }
+    { KEPT.iter().copied().chain(tracing.iter().map(String::as_str)).any(|kept| kept.eq_ignore_ascii_case(&name)) }
 }
 
 // Gives the command the daemon's environment: cleared, then refilled with the kept variables.
@@ -156,15 +159,18 @@ mod tests {
     #[test]
     fn keeps_identity_paths_and_locale() {
         for name in ["PATH", "HOME", "TMPDIR", "XDG_RUNTIME_DIR", "LANG", "LC_ALL", "LC_CTYPE",
-                     "JAVA_TOOL_OPTIONS"] {
+                     "JAVA_TOOL_OPTIONS", "XEK_DEBUG_LOG"] {
             assert!(kept(OsStr::new(name)), "{name} should be kept");
         }
+        let specific = format!("{}_DEBUG_LOG", crate::settings::tool());
+        assert!(kept(OsStr::new(&specific)), "{specific} should be kept");
     }
 
     #[test]
     fn removes_terminal_shell_and_application_variables() {
         for name in ["TERM", "COLUMNS", "LINES", "PWD", "OLDPWD", "SHLVL", "TMUX", "SSH_AUTH_SOCK",
-                     "DISPLAY", "CLAUDECODE", "CODEX_SANDBOX", "XEK", "JAVA_HOME", "XEK_WRAP_JAVA"] {
+                     "DISPLAY", "CLAUDECODE", "CODEX_SANDBOX", "XEK", "JAVA_HOME", "XEK_WRAP_JAVA",
+                     "XEK_JAVA_OPTIONS", "XEK_DEBUG_PORT", "XEK_INSTALL_JAVA", "ETHEREAL_DEBUG"] {
             assert!(!kept(OsStr::new(name)), "{name} should be removed");
         }
     }

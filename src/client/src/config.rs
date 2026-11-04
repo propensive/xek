@@ -16,13 +16,19 @@
 //   [16..18]      java_min     (u16 little-endian)
 //   [18..20]      java_pref    (u16 little-endian)
 //   [20]          bundle       (0 = jre, 1 = jdk)
-//   [21]          flags        (bit 0 = downgrade_permitted, others reserved)
+//   [21]          flags        (bit 0 = downgrade_permitted, bit 1 = Java options follow,
+//                 others reserved)
 //   [22..32]      reserved     (0)
 //   [32..64]      app_id       (SHA3-256 of the application's identifier; zero = unset)
 //   [64..1376]    release_key  (ML-DSA-44 public key; zero = unset)
 //   [1376..2688]  recovery_key (ML-DSA-44 public key; zero = none)
 //   [2688..5108]  signature    (ML-DSA-44, over the statement in `signing.rs`; zero in an
 //                 unsigned file)
+//
+// When bit 1 of the flags is set, the record is followed directly by a block of Java options:
+// their length in bytes (u32 little-endian), then each option as UTF-8, ended by a NUL. The
+// block lies between the record and the JAR, so the signature covers it, and a client which
+// predates it reads it as bytes in front of the JAR, which the JVM ignores.
 //
 // A stub run bare — no record appended — sees the compiled-in defaults below, which are also
 // what a zero field means: Java 21 minimum, 24 preferred, a JRE, build id 0, and no keys,
@@ -31,7 +37,7 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
-pub use crate::signing::{BUILD_ID_OFFSET, MAGIC_LEN, RECORD_LEN};
+pub use crate::signing::{BUILD_ID_OFFSET, FLAGS_OFFSET, FLAG_JAVA_OPTIONS, MAGIC_LEN, RECORD_LEN};
 
 use crate::verify::Keys;
 
@@ -43,6 +49,8 @@ pub const DEFAULT_JAVA_PREF: u16 = 24;
 // bound only limits the cost of a mis-built file that carries no record at all.
 const SCAN_LIMIT: u64 = 16 * 1024 * 1024;
 const CHUNK: usize = 64 * 1024;
+// The most a block of Java options may hold. A longer length is a mis-built file.
+pub const JAVA_OPTIONS_LIMIT: usize = 64 * 1024;
 
 // `ETHRCFG\x04`, each byte XORed with `OBFUSCATION_KEY`. See the module comment.
 const OBFUSCATION_KEY: u8 = 0x5A;
@@ -82,6 +90,8 @@ impl BuildConfig {
 
 // The record loaded by `load`, or absent when `load` was never called or found nothing.
 static RECORD: OnceLock<Option<[u8; RECORD_LEN]>> = OnceLock::new();
+// The Java options in the block after the record, if it has one.
+static JAVA_OPTIONS: OnceLock<Vec<String>> = OnceLock::new();
 
 // The offset of the first complete record in `bytes`: the first occurrence of the magic that
 // has `RECORD_LEN` bytes from its start. A magic too close to the end is not a record.
@@ -108,10 +118,23 @@ pub fn parse(record: &[u8; RECORD_LEN]) -> BuildConfig {
     }
 }
 
+// The options in a block of Java options, which starts with its length: each ended by a NUL.
+// A block that is malformed — too long for the file, or not UTF-8 — holds none.
+pub fn parse_java_options(block: &[u8]) -> Vec<String> {
+    let Some(length) = block.get(..4) else { return Vec::new(); };
+    let length = u32::from_le_bytes(length.try_into().unwrap()) as usize;
+    let Some(body) = block.get(4..4 + length).filter(|_| length <= JAVA_OPTIONS_LIMIT) else {
+        return Vec::new();
+    };
+    let Ok(text) = std::str::from_utf8(body) else { return Vec::new(); };
+    text.split_terminator('\0').map(str::to_string).collect()
+}
+
 // Scan a file forwards for the first record, reading it in chunks that overlap by one byte
 // less than the magic so that a magic straddling a chunk boundary is still seen. Returns the
-// record, or `None` when the file has none within `SCAN_LIMIT`.
-fn scan_file(path: &Path) -> Option<[u8; RECORD_LEN]> {
+// record and the Java options after it, or `None` when the file has no record within
+// `SCAN_LIMIT`.
+fn scan_file(path: &Path) -> Option<([u8; RECORD_LEN], Vec<String>)> {
     use std::io::{Read, Seek, SeekFrom};
 
     let mut file = std::fs::File::open(path).ok()?;
@@ -130,7 +153,17 @@ fn scan_file(path: &Path) -> Option<[u8; RECORD_LEN]> {
             let mut record = [0u8; RECORD_LEN];
             file.seek(SeekFrom::Start(offset)).ok()?;
             file.read_exact(&mut record).ok()?;
-            return Some(record);
+            let mut options = Vec::new();
+            if record[FLAGS_OFFSET] & FLAG_JAVA_OPTIONS != 0 {
+                let mut length = [0u8; 4];
+                if file.read_exact(&mut length).is_ok() {
+                    let size = (u32::from_le_bytes(length) as usize).min(JAVA_OPTIONS_LIMIT + 1);
+                    let mut block = length.to_vec();
+                    block.resize(4 + size, 0);
+                    if file.read_exact(&mut block[4..]).is_ok() { options = parse_java_options(&block); }
+                }
+            }
+            return Some((record, options));
         }
 
         carry = MAGIC_LEN - 1;
@@ -149,9 +182,17 @@ pub fn load(path: &Path) -> BuildConfig {
     let record = RECORD.get_or_init(|| {
         let found = scan_file(path);
         crate::debug!("config: record {} in {}", if found.is_some() { "found" } else { "absent" }, path.display());
-        found
+        let (record, options) = found.unzip();
+        let _ = JAVA_OPTIONS.set(options.unwrap_or_default());
+        record
     });
     record.as_ref().map(parse).unwrap_or(BuildConfig::DEFAULT)
+}
+
+// The Java options the application was built with: none when it has no block, or when `load`
+// was never called.
+pub fn java_options() -> &'static [String] {
+    JAVA_OPTIONS.get().map(Vec::as_slice).unwrap_or(&[])
 }
 
 pub fn read_config() -> BuildConfig {
@@ -240,9 +281,51 @@ mod tests {
         bytes.extend_from_slice(&record(99, 0, 0, false, 0));
         bytes.extend_from_slice(&[0x22u8; 4096]);
         let path = temp_file("straddle", &bytes);
-        let found = scan_file(&path).expect("record");
+        let (found, options) = scan_file(&path).expect("record");
         assert_eq!(parse(&found).build_id, 99);
+        assert!(options.is_empty());
         let _ = std::fs::remove_file(path);
+    }
+
+    fn java_options_block(options: &[&str]) -> Vec<u8> {
+        let body: Vec<u8> = options.iter().flat_map(|option| option.bytes().chain(std::iter::once(0))).collect();
+        let mut block = (body.len() as u32).to_le_bytes().to_vec();
+        block.extend_from_slice(&body);
+        block
+    }
+
+    #[test]
+    fn scan_reads_the_java_options_after_the_record() {
+        let mut bytes = vec![0x11u8; 300];
+        bytes.extend_from_slice(&record(7, 0, 0, false, FLAG_JAVA_OPTIONS));
+        bytes.extend_from_slice(&java_options_block(&["-Xmx2g", "-Dname=a b"]));
+        bytes.extend_from_slice(&[0x22u8; 4096]);
+        let path = temp_file("options", &bytes);
+        let (_, options) = scan_file(&path).expect("record");
+        let _ = std::fs::remove_file(path);
+        assert_eq!(options, vec!["-Xmx2g".to_string(), "-Dname=a b".to_string()]);
+    }
+
+    #[test]
+    fn java_options_are_read_only_when_the_flag_says_so() {
+        let mut bytes = vec![0x11u8; 300];
+        bytes.extend_from_slice(&record(7, 0, 0, false, 0));
+        bytes.extend_from_slice(&java_options_block(&["-Xmx2g"]));
+        let path = temp_file("no-options", &bytes);
+        let (_, options) = scan_file(&path).expect("record");
+        let _ = std::fs::remove_file(path);
+        assert!(options.is_empty());
+    }
+
+    #[test]
+    fn a_malformed_java_options_block_holds_none() {
+        let mut too_long = java_options_block(&["-Xmx2g"]);
+        too_long[..4].copy_from_slice(&((JAVA_OPTIONS_LIMIT + 1) as u32).to_le_bytes());
+        assert!(parse_java_options(&too_long).is_empty());
+        let mut not_utf8 = java_options_block(&["-Xmx2g"]);
+        not_utf8[5] = 0xff;
+        assert!(parse_java_options(&not_utf8).is_empty());
+        assert!(parse_java_options(&[1, 0]).is_empty());
     }
 
     #[test]
@@ -274,7 +357,7 @@ mod tests {
         let mut bytes = vec![0x44u8; 777];
         bytes.extend_from_slice(&r);
         let path = temp_file("keys", &bytes);
-        let keys = Keys::of(&scan_file(&path).expect("record"));
+        let keys = Keys::of(&scan_file(&path).expect("record").0);
         assert_eq!(keys.app_id, [9u8; APP_ID_LEN]);
         assert_eq!(&keys.release_key[..8], &[0, 1, 2, 3, 4, 5, 6, 7]);
         assert_eq!(keys.recovery_key, [3u8; PUBKEY_LEN]);

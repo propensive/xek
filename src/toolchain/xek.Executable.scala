@@ -39,7 +39,7 @@ import gossamer.*
 // installer script embedding every platform's client (`EmbedAll`), a launcher script that
 // downloads the right client on first run (`Download`), or a single self-contained binary for
 // one platform (`Native`).
-case class Executable(delivery: Packaging.Delivery) extends Format.Application:
+case class Executable(delivery: Packaging.Delivery) extends Artifact.Application:
   def id: Text = delivery match
     case Packaging.Delivery.EmbedAll => t"xek-embedall"
     case Packaging.Delivery.Download => t"xek-download"

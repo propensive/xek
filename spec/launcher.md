@@ -9,15 +9,42 @@ of it, and a daemon implementation has to expect it.
 ## Reserved arguments and environment variables
 
 The launcher's own controls live in the environment, so that an application can receive any
-argument vector at all. One argument form is also accepted, for a user at a shell:
+argument vector at all. Each is read under two names: `XEK_<option>`, for every tool, and
+`<TOOL>_<option>`, for one tool alone, where `<TOOL>` is the executable's name in upper case,
+without the `.exe` of a Windows executable, and with every character but a letter or a digit
+made `_` (so `my-tool` reads `MY_TOOL_DEBUG_LOG`). When both are set, the tool's own name wins,
+so `FLAME_DEBUG_LOG=0` turns tracing off for `flame` alone while `XEK_DEBUG_LOG=1` turns it on
+for every other tool. A *switch* is on when it is set to anything but the empty string or `0`.
 
-| Name | Meaning |
+| Option | Meaning |
 |---|---|
-| `XEK_DOWNLOAD` | Set (to anything but the empty string or `0`): download a JVM if no suitable one is installed, rather than failing with instructions |
-| `--download` | The same request, recognised **only when it is the sole argument**. `mytool --download` downloads a JVM if necessary, starts the daemon, and runs the application *with no arguments*. In any other position — `mytool install --download`, `mytool -- --download` — the argument belongs to the application and is delivered unchanged |
-| `XEK_WRAP_JAVA` | Internal. Set by the launcher on the process it starts the JVM through, so the daemon appears under the application's name; never set it yourself |
-| `ETHEREAL_DEBUG` | Set (to anything but the empty string or `0`): the launcher traces its progress to stderr. An internal invocation (`{completions}`, `{admin}`), whose stderr belongs to the shell, traces instead to `$TMPDIR/ethereal-launcher.log`, which is otherwise never written |
-| `ETHEREAL_SIGNAL_TIMEOUT_MS` | How long the launcher waits for the daemon to acknowledge a forwarded signal before taking the signal's fallback action (below); default 250 |
+| `INSTALL_JAVA` | A switch: download a JVM if no suitable one is installed, rather than failing with instructions. The instructions say how to set it: `XEK_INSTALL_JAVA=1 mytool`, or `$env:XEK_INSTALL_JAVA=1; mytool` in PowerShell on Windows |
+| `JAVA_OPTIONS` | Options for the JVM a daemon is started with, split at white space except within single or double quotes, as `java` splits `JDK_JAVA_OPTIONS`. They follow the options the application was built with ([`ethrcfg.md`](ethrcfg.md)), so they override them; see *Java options* |
+| `DEBUG_PORT` | Start the JVM with a JDWP agent, `-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=<address>`, for a debugger to attach to. A bare port listens on `localhost`; `host:port`, such as `*:5005`, is given to the agent as it is. The agent does not suspend the JVM: to debug startup, give an agent with `suspend=y` in `JAVA_OPTIONS` instead. `0` is none |
+| `DEBUG_LOG` | A switch: the launcher traces its progress to stderr. An internal invocation (`{completions}`, `{admin}`), whose stderr belongs to the shell, traces instead to `$TMPDIR/ethereal-launcher.log`, which is otherwise never written |
+| `SIGNAL_TIMEOUT_MS` | How long the launcher waits for the daemon to acknowledge a forwarded signal before taking the signal's fallback action (below); default 250 |
+
+One variable has a single name. `XEK_WRAP_JAVA` is internal: it is set by the launcher on the
+process it starts the JVM through, so the daemon appears under the application's name; never
+set it yourself.
+
+### Java options
+
+A daemon's JVM is started with, in order: the options the application was built with, a JDWP
+agent for `DEBUG_PORT`, the options in `JAVA_OPTIONS`, and the launcher's own `-D` properties
+([`properties.md`](properties.md)), which come last so that no option can override them. They
+take effect only when a daemon starts, and a daemon serves every later invocation, so the
+launcher records the options in the state directory's `java-options` file as it starts one
+([`layout.md`](layout.md)). An invocation which would start a daemon with other options than
+the running one's is still served by the running one, and the launcher says so on stderr: *Java
+options take effect only when the mytool daemon is not already running; it is running now with
+different ones, which it will keep until it has been shut down.* An internal invocation is not
+told.
+
+A JVM whose JDWP agent has `suspend=y` runs nothing until a debugger attaches, so the launcher
+does not apply its startup deadline to it: it shows `Waiting for a Java debugger on <address>…`
+and waits for as long as it takes. A launcher waiting on another launcher's daemon reads the
+recorded options to know the same.
 
 Two argument values are reserved by the **daemon** rather than the launcher, as the first
 argument only: `{completions}`, under which the reference daemon computes shell completions,
@@ -122,10 +149,11 @@ search path for the commands the daemon itself runs, and the options the JVM rea
 
 - **Unix**: `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`, every `LC_*`, `TZ`, `TMPDIR`,
   `XDG_RUNTIME_DIR`, `XDG_STATE_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`,
-  the three JVM option variables, and `ETHEREAL_DEBUG`.
+  the three JVM option variables, and both names of `DEBUG_LOG`.
 - **Windows** (names compared without regard to case): `SystemRoot`, `SystemDrive`, `windir`,
   `ComSpec`, `PATH`, `PATHEXT`, `TEMP`, `TMP`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`,
-  `USERNAME`, `HOMEDRIVE`, `HOMEPATH`, the three JVM option variables, and `ETHEREAL_DEBUG`.
+  `USERNAME`, `HOMEDRIVE`, `HOMEPATH`, the three JVM option variables, and both names of
+  `DEBUG_LOG`.
 
 The `XDG_*` variables, `HOME` and `LOCALAPPDATA` are kept so that the daemon computes the same
 state directory the launcher did ([`layout.md`](layout.md)). Everything else is removed: the
@@ -147,7 +175,7 @@ It chooses by reading the daemon's `acceptance` file from the state directory, a
 in `layout.md` under *Negotiating the composition*: the first alternative whose requirement is
 a prefix of the launcher's own chain of layers, extended by every further layer the daemon
 names, in order. In short, the richest composition both sides hold. Under
-`ETHEREAL_DEBUG` the depth and signature chosen are traced.
+`DEBUG_LOG` the depth and signature chosen are traced.
 
 The launcher compiles in, for each layer it knows, the layer's hash and the members it appends
 to each record, so a layer's fields take the keyword indices after the base's (and after any
@@ -353,7 +381,7 @@ and `CONT`. `WINCH` and `CONT` carry the terminal's current size in `columns` an
 a signal has no payload of its own and the daemon holds no terminal to ask. The daemon answers
 each with a `signal-ack` saying whether the invocation accepted it; the launcher sends one
 signal at a time, and does not send the next until it has the answer, or has given up waiting
-(`ETHEREAL_SIGNAL_TIMEOUT_MS`). What the launcher does next depends on the signal:
+(`SIGNAL_TIMEOUT_MS`). What the launcher does next depends on the signal:
 
 | Signal | Accepted | Rejected, or no answer within the timeout |
 |---|---|---|

@@ -93,7 +93,7 @@ object executableOptions:
 
   def buildId(id: Long): Toolchain.Setting = xek(_.copy(buildId = id))
 
-// The xek packaging edges of a toolchain: `Jar` to each delivery mode's bundle, all a thin
+// The xek packaging edges of a toolchain: `Artifact.Jar` to each delivery mode's bundle, all a thin
 // facade over `xek.Packager` — which patches ethereal's reusable client stubs, appends
 // the JAR, and wraps the result in a polyglot script where the delivery calls for one.
 object executableEdges:
@@ -104,7 +104,7 @@ object executableEdges:
         edge(Packaging.Delivery.Native) )
 
   private def edge(delivery: Packaging.Delivery): Edge =
-    Edge(Jar, Executable(delivery), ExecutableTool(delivery))
+    Edge(Artifact.Jar, Executable(delivery), ExecutableTool(delivery))
 
   private case class ExecutableTool(delivery: Packaging.Delivery) extends Tool:
     type Settings = ExecutableConfiguration

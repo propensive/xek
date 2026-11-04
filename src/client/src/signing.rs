@@ -21,6 +21,8 @@ pub const SIGNATURE_OFFSET: usize    = 2688;
 pub const SIGNATURE_LEN: usize       = 2420;        // ML-DSA-44 |sig|
 
 pub const FLAG_DOWNGRADE_PERMITTED: u8 = 0x01;
+// The record is followed by the block of Java options the application was built with.
+pub const FLAG_JAVA_OPTIONS: u8 = 0x02;
 
 pub const STATEMENT_PREFIX: [u8; 8] = *b"XEKSIGN\x04";
 pub const STATEMENT_LEN: usize      = STATEMENT_PREFIX.len() + 32;

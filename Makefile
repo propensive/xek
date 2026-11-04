@@ -52,12 +52,12 @@ client-release:
 sync-deps:
 	./etc/shared sync-deps.sh
 
-# Check every source against Consequent Style and the project's own rules with flair (the
+# Check every source against Consequent Style and the project's own rules with flare (the
 # release pinned in etc/tools; `make tools` installs it), as configured in
-# .pyrocosm/flair/config.tel. Findings are warnings and the count is not yet zero, so CI does
+# .pyrocosm/flare/config.tel. Findings are warnings and the count is not yet zero, so CI does
 # not run this; PATHS restricts the check to files beneath them.
 check:
-	flair check $(PATHS)
+	flare check $(PATHS)
 
 # Install the commands pinned in etc/tools (fume) through their releases' installers.
 tools:
@@ -81,12 +81,11 @@ publishLocal:
 # Needs dist/client (from `client-build` or `client-fetch`), and resolves a daemon
 # implementation — the one place anything here does.
 #
-# E2E_DAEMON=legacy says the daemon the pinned Soundness release provides predates this
-# client's protocol base, so the only thing to check is that the pair refuses each other
-# legibly. Drop it when etc/refs moves to a Soundness release whose daemon speaks the base
-# in spec/ethereal-launcher.tel.
+# Should etc/refs ever pin a Soundness release whose daemon predates this client's protocol
+# base, run it as `E2E_DAEMON=legacy ./etc/ci/e2e.sh`, which checks only that the pair refuse
+# each other legibly.
 e2e: xek
-	E2E_DAEMON=legacy ./etc/ci/e2e.sh
+	./etc/ci/e2e.sh
 
 clean:
 	$(MILL) clean

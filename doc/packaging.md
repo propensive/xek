@@ -106,11 +106,28 @@ xek build --polyglot -x bat -p linux-x64,macos-arm64 app.jar dist/
 xek build --download app.jar                   # a polyglot file which fetches its stub on first run
 xek build --dispatch executables.tsv app       # a polyglot file which fetches a complete executable
 xek build --java 25 --java-min 21 --jdk app.jar
+xek build --java-option -Xmx2g app.jar         # the JVM always starts with -Xmx2g
 xek build --build-id 42 --app-id propensive/mytool --public-key release.pub --recovery-key recovery.pub app.jar
 xek sign --key release.seed --in mytool --out mytool.signed
+xek inspect mytool.signed                      # its platform, record, Java options and signature
 ```
 
 `xek --help` lists the subcommands, `xek build --help` the options of one, and `xek '{admin}' install` installs its tab-completions.
+
+### Java options at run time
+
+A user can add options for one run, and attach a debugger, through the environment; see
+[`spec/launcher.md`](../spec/launcher.md). Each variable is also read under the tool's own
+name, so `MYTOOL_DEBUG_PORT` reaches `mytool` alone:
+
+```sh
+XEK_JAVA_OPTIONS='-Xmx4g -Dapp.trace=true' mytool   # options for the JVM, after the built-in ones
+XEK_DEBUG_PORT=5005 mytool                          # a debugger can attach on localhost:5005
+XEK_DEBUG_LOG=1 mytool                              # trace the launcher's progress
+```
+
+The options apply to the daemon that run starts, which serves every later run, so they take
+effect only when the daemon is not already running; otherwise the launcher says so, on stderr.
 
 ### The other end
 

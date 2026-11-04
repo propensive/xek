@@ -185,7 +185,11 @@ object Signer:
       java.nio.ByteBuffer.wrap(bytes, record + 8, 8).nn.order(java.nio.ByteOrder.LITTLE_ENDIAN).nn.getLong
 
     // The flags are part of what is signed, so they are set before the statement is taken.
-    def permitDowngrade(permit: Boolean): Unit = bytes(record + 21) = (if permit then 1 else 0).toByte
+    // Only the downgrade bit is changed: the others, like the one announcing Java options, stay.
+    def permitDowngrade(permit: Boolean): Unit =
+      val others: Int = bytes(record + Record.flagsOffset) & ~Record.downgradeFlag
+      val flags: Int = if permit then others | Record.downgradeFlag else others
+      bytes(record + Record.flagsOffset) = flags.toByte
 
     def statement: scala.Array[Byte] = Signer.statement(bytes, record)
 

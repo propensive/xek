@@ -25,6 +25,7 @@ Within it:
 | `fail` | both | Written when startup fails — by the daemon, with the reason, so the launcher can report it instead of timing out; and by the launcher, when its attempt to start a daemon fails. A `fail` file less than two seconds old, with no `pid`, stops the next invocation with a message naming it, so a failing daemon is not started in a loop; an older one is removed |
 | `progress` | daemon | Dependency-download progress, tailed and rendered by the launcher (see `burdock.progress`) |
 | `lock` | launcher | Held while starting a daemon, so concurrent invocations start exactly one |
+| `java-options` | launcher | The options the daemon's JVM was started with, beyond the launcher's own properties, each ended by a NUL; compared with those an invocation would start a daemon with (`launcher.md`, *Java options*). Absent for a daemon started by a launcher which predates it, which counts as none |
 | `daemon.log` | daemon | Diagnostics |
 
 ### Permissions
@@ -107,7 +108,7 @@ left in place, as the previous version, until the next upgrade replaces it.
 ## Launcher diagnostics
 
 `$TMPDIR/ethereal-launcher.log` — the trace of an *internal* invocation (`{completions}`,
-`{admin}`), whose stderr belongs to the shell, written **only when `ETHEREAL_DEBUG` is set**
+`{admin}`), whose stderr belongs to the shell, written **only when `XEK_DEBUG_LOG` is set**
 (see `launcher.md`); every other invocation traces to stderr. It is kept outside the
 per-application state directory because it must be writable before any application directory
 is known.
@@ -225,7 +226,7 @@ a successor bound to a fresh socket path is not disturbed by a predecessor drain
 one.
 
 **A daemon that accepts and then hangs.** The launcher bounds every wait for a *reply*: a
-`signal-ack` by `ETHEREAL_SIGNAL_TIMEOUT_MS` (default 250 ms), and a `verdict` by 10 seconds,
+`signal-ack` by `XEK_SIGNAL_TIMEOUT_MS` (default 250 ms), and a `verdict` by 10 seconds,
 after which it proceeds as if fresh. It does *not* bound the session itself: it stays open for
 as long as the application runs, which may be forever by design, and the `exit-status` that
 ends it comes when the invocation does. A daemon that accepted `init` and then wedges is
