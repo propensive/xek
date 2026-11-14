@@ -98,3 +98,25 @@ to get an unreleased build of it: release the tool instead.
 
 The whole flow, and the scripts, are documented in the README of
 [propensive/.github](https://github.com/propensive/.github).
+
+## Every error carries a bolt code
+
+Each error XEK reports is named by a [bolt code](https://github.com/propensive/bolt), such as
+`↯/x.1.8` or `↯/x.2.1.1.37`, shown in brackets before its message. The record of what each
+means is `x.tel` in the `bolt` repository.
+
+- `↯/x.1.N` is the launcher's (`src/client`): each message it prints to stderr begins with its
+  code, written into the string.
+- `↯/x.2.1.F.S` is `Assembler.Error`: `F` is the fault (which is also the exit status) and `S`
+  the site, the second argument of `Assembler.Error` and of the `usage`, `malformed` and
+  `refuse` helpers. `xek` prints the code where it prints the error.
+- `↯/x.3.1.S` is `Packager.Error`, and `↯/x.3.2` followed by a core error's code, as in
+  `↯/x.3.2/x.2.1.1.37`, is one it passes on.
+
+### Rules
+
+- A new error takes the **next free number** for its fault (or, in the launcher, the next
+  error number), wherever in the source it is; add it to `x.tel` in the same change.
+- **Never reuse or renumber.** When an error is removed its number is retired in `x.tel`, and
+  an error whose message is reworded, or which moves to another file, keeps its number.
+- The numbers in the source are not in order, and need not be.

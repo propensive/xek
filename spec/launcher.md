@@ -190,13 +190,13 @@ Three outcomes:
 - **A servable alternative**: the invocation proceeds under the chosen composition.
 - **No servable alternative**: the daemon speaks another base, or requires a layer this
   launcher lacks. The launcher prints, to stderr, that the daemon speaks another launcher
-  protocol, giving both base hashes, and exits with status 2 without connecting — a daemon
+  protocol (`↯/x.1.7`), giving both base hashes, and exits with status 2 without connecting — a daemon
   would only close the connection, which is less to go on.
 
 A daemon that publishes nothing and speaks another base cannot be told apart before
 connecting: it closes the connection on reading `init`. The launcher recognises that too — a
 session that ends before the daemon has written a single document — and reports, likewise,
-that the daemon speaks another launcher protocol, exiting with status 2.
+that the daemon speaks another launcher protocol (`↯/x.1.4`), exiting with status 2.
 
 ## The session
 
@@ -455,5 +455,7 @@ attempt — after reporting why. One that found a daemon and could not **reach**
 which daemon (with its pid, when known), which socket, how long the launcher had been running,
 and the error the connection failed with, then the tail of `daemon.log`; so does one
 whose session ends without an `exit-status` (*Losing the other side*), one whose daemon speaks
-another protocol, and one whose state directory cannot be used. One that was terminated by a
+another protocol, and one whose state directory cannot be used. Each of these reports begins with its
+[bolt code](https://github.com/propensive/bolt) in brackets, `[↯/x.1.2]` for a state directory
+which cannot be used, say; `x.tel` in the `bolt` repository records them. One that was terminated by a
 signal dies of that signal, as above, whatever status the daemon then reports.

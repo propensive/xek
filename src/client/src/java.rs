@@ -68,7 +68,7 @@ fn find_downloaded(java_home: &Path, minimum: u16, bundle: &str) -> Option<PathB
 }
 
 pub fn java_not_found_message(minimum: u16, invocation: &str) {
-    eprintln!("\nJava {} or later is required, but no suitable version of Java was found.", minimum);
+    eprintln!("\n[↯/x.1.8] Java {} or later is required, but no suitable version of Java was found.", minimum);
     let mut commands = Vec::new();
     if which("pacman").is_some() { commands.push("pacman -S jre-openjdk".to_string()); }
     if which("emerge").is_some() { commands.push(format!("emerge dev-java/openjdk-{}", minimum)); }
@@ -182,7 +182,7 @@ pub fn download(preferred: u16, bundle: &str) -> Option<PathBuf> {
     let have_wget = which("wget").is_some();
     if !have_curl && !have_wget {
         let _ = std::fs::remove_dir(&temp_dir);
-        eprintln!("Could not download Java: neither curl nor wget is on the PATH.");
+        eprintln!("[↯/x.1.9] Could not download Java: neither curl nor wget is on the PATH.");
         return None;
     }
 
@@ -202,7 +202,7 @@ pub fn download(preferred: u16, bundle: &str) -> Option<PathBuf> {
     });
     if !matches!(&download_status, Ok(s) if s.success()) {
         crate::xek::clear();
-        eprintln!("The download of Java {preferred} failed.");
+        eprintln!("[↯/x.1.10] The download of Java {preferred} failed.");
         let _ = std::fs::remove_dir_all(&temp_dir);
         return None;
     }
@@ -214,7 +214,7 @@ pub fn download(preferred: u16, bundle: &str) -> Option<PathBuf> {
     let _ = std::fs::remove_file(&archive);
     if !matches!(&tar_status, Ok(s) if s.success()) {
         crate::xek::clear();
-        eprintln!("Unpacking Java {preferred} failed.");
+        eprintln!("[↯/x.1.11] Unpacking Java {preferred} failed.");
         let _ = std::fs::remove_dir_all(&temp_dir);
         return None;
     }
@@ -227,17 +227,17 @@ pub fn download(preferred: u16, bundle: &str) -> Option<PathBuf> {
     };
 
     let Some(release_file) = find_release(&temp_dir) else {
-        return fail(format!("The download of Java {preferred} contains no `release` file."));
+        return fail(format!("[↯/x.1.12] The download of Java {preferred} contains no `release` file."));
     };
     let Some(full_version) = read_java_version(&release_file) else {
-        return fail(format!("Could not read the version of Java from {}.", release_file.display()));
+        return fail(format!("[↯/x.1.13] Could not read the version of Java from {}.", release_file.display()));
     };
     let release_dir = release_file.parent().unwrap_or(&temp_dir).to_path_buf();
     let target_dir = java_home.join(format!("{}-{}", full_version, bundle));
     let _ = std::fs::remove_dir_all(&target_dir);
     let _ = std::fs::create_dir_all(&java_home);
     if let Err(error) = rename(&release_dir, &target_dir) {
-        return fail(format!("Could not move Java {full_version} into {}: {error}", java_home.display()));
+        return fail(format!("[↯/x.1.14] Could not move Java {full_version} into {}: {error}", java_home.display()));
     }
     let _ = std::fs::remove_dir_all(&temp_dir);
     let symlink = java_home.join(format!("{}-{}", preferred, bundle));

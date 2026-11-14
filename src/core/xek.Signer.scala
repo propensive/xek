@@ -68,11 +68,11 @@ object Signer:
 
   private val statementPrefix: scala.Array[Byte] = "XEKSIGN\u0004".getBytes("US-ASCII").nn
 
-  private def usage(message: Message)(using Diagnostics): Assembler.Error =
-    Assembler.Error(Assembler.Fault.Usage, message)
+  private def usage(site: Int, message: Message)(using Diagnostics): Assembler.Error =
+    Assembler.Error(Assembler.Fault.Usage, site, message)
 
-  private def malformed(message: Message)(using Diagnostics): Assembler.Error =
-    Assembler.Error(Assembler.Fault.Format, message)
+  private def malformed(site: Int, message: Message)(using Diagnostics): Assembler.Error =
+    Assembler.Error(Assembler.Fault.Format, site, message)
 
   // Whether this JVM provides ML-DSA at all.
   def available: Boolean =
@@ -84,7 +84,7 @@ object Signer:
   private def ensureAvailable(): Unit raises Assembler.Error =
     if !available then
       val version: Text = java.lang.System.getProperty("java.version").nn.tt
-      abort(usage(m"signing needs Java 24 or later, which provides ML-DSA, but xek is running on Java $version"))
+      abort(usage(27, m"signing needs Java 24 or later, which provides ML-DSA, but xek is running on Java $version"))
 
   // A fresh seed, from the platform's source of randomness.
   def seed(): scala.Array[Byte] =
@@ -110,7 +110,7 @@ object Signer:
     val pair = generator.generateKeyPair().nn
 
     if draws != 1 || !exact
-    then abort(usage(m"this JDK does not derive ML-DSA keys from a single 32-byte seed, so it cannot sign"))
+    then abort(usage(28, m"this JDK does not derive ML-DSA keys from a single 32-byte seed, so it cannot sign"))
 
     pair
 
@@ -120,7 +120,7 @@ object Signer:
 
     if encoded.length != publicHeader.length + Record.keySize
        || !java.util.Arrays.equals(encoded, 0, publicHeader.length, publicHeader, 0, publicHeader.length)
-    then abort(usage(m"this JDK encodes ML-DSA public keys in an unexpected form"))
+    then abort(usage(29, m"this JDK encodes ML-DSA public keys in an unexpected form"))
 
     java.util.Arrays.copyOfRange(encoded, publicHeader.length, encoded.length).nn
 
@@ -206,7 +206,7 @@ object Signer:
 
   private def executable(path: Path on Local): Executable raises Assembler.Error =
     val bytes: scala.Array[Byte] = Files.read(path)
-    val offset: Int = record(bytes).lest(malformed(m"${path.encode} has no ETHRCFG v4 record"))
+    val offset: Int = record(bytes).lest(malformed(12, m"${path.encode} has no ETHRCFG v4 record"))
     Executable(bytes, offset)
 
   // Runs one of the subcommands which sign a release, as `Command` parsed it. `path` resolves a
@@ -221,10 +221,10 @@ object Signer:
 
     if !parsed.operands.nil then
       val extra: Text = parsed.operands.join(t" ")
-      abort(usage(m"xek ${action.name} takes no operands, but was given $extra"))
+      abort(usage(30, m"xek ${action.name} takes no operands, but was given $extra"))
 
     def required(spec: Command.Spec): Path on Local =
-      path(parsed.value(spec).lest(usage(m"xek ${action.name} needs --${spec.name}")))
+      path(parsed.value(spec).lest(usage(31, m"xek ${action.name} needs --${spec.name}")))
 
     def downgrade: Boolean = parsed.has(Command.AllowDowngrade)
 
@@ -236,7 +236,7 @@ object Signer:
         val seedFile: Path on Local = Files.sibling(prefix, t"${prefix.name}.seed")
         val publicFile: Path on Local = Files.sibling(prefix, t"${prefix.name}.pub")
 
-        if Files.exists(publicFile) then abort(usage(m"${publicFile.encode} already exists; xek will not overwrite it"))
+        if Files.exists(publicFile) then abort(usage(32, m"${publicFile.encode} already exists; xek will not overwrite it"))
 
         create(seedFile, seed, secret = true)
         create(publicFile, public, secret = false)
@@ -257,9 +257,10 @@ object Signer:
         binary.role(publicKey(seed)).let { role => err(t"Signing with the record's $role key") }.or:
           if !parsed.has(Command.ForeignKey) then
             abort:
-              usage:
-                m"""the key is neither the record's release key nor its recovery key; give
-                    --foreign-key if that is intended, as for the release which follows a rotation"""
+              usage
+                ( 66,
+                  m"""the key is neither the record's release key nor its recovery key; give
+                      --foreign-key if that is intended, as for the release which follows a rotation""" )
 
           err(t"Signing with a key the record does not carry (--foreign-key)")
 
@@ -280,7 +281,7 @@ object Signer:
 
         if signature.length != Record.signatureSize then
           val size: Int = signature.length
-          abort(malformed(m"${signatureFile.encode} is $size bytes, not a ${Record.signatureSize}-byte ML-DSA-44 signature"))
+          abort(malformed(13, m"${signatureFile.encode} is $size bytes, not a ${Record.signatureSize}-byte ML-DSA-44 signature"))
 
         binary.permitDowngrade(downgrade)
         val statement: scala.Array[Byte] = binary.statement
@@ -303,21 +304,21 @@ object Signer:
         val key: scala.Array[Byte] = Files.read(keyFile)
 
         if key.length != Record.keySize
-        then abort(malformed(m"${keyFile.encode} is not a ${Record.keySize}-byte public key"))
+        then abort(malformed(14, m"${keyFile.encode} is not a ${Record.keySize}-byte public key"))
 
         val binary: Executable = executable(required(Command.In))
 
         parsed.value(Command.VerifyApp).let: id =>
           if !java.util.Arrays.equals(binary.appId, Record.hash(id))
-          then abort(Assembler.Error(Assembler.Fault.Verification, m"the executable is not for the application $id"))
+          then abort(Assembler.Error(Assembler.Fault.Verification, 1, m"the executable is not for the application $id"))
 
         if !verifies(binary.statement, binary.signature, key)
-        then abort(Assembler.Error(Assembler.Fault.Verification, m"the signature does not verify under that key"))
+        then abort(Assembler.Error(Assembler.Fault.Verification, 2, m"the signature does not verify under that key"))
 
         out(binary.buildId.toString.tt)
 
       case Command.Action.Build =>
-        abort(usage(m"xek build does not sign"))
+        abort(usage(33, m"xek build does not sign"))
 
   // The seed, from `--key <file>`, or from `--key-env <variable>` as 64 hexadecimal digits, so that
   // a secret need never be written to disk. It is never accepted as an argument.
@@ -327,15 +328,15 @@ object Signer:
     val file: Optional[Text] = parsed.value(Command.Key)
     val name: Optional[Text] = parsed.value(Command.KeyEnv)
 
-    if file.present == name.present then abort(usage(m"give exactly one of --key or --key-env"))
+    if file.present == name.present then abort(usage(34, m"give exactly one of --key or --key-env"))
 
     val seed: scala.Array[Byte] = file.let { file => Files.read(path(file)) }.or:
-      val text: Text = variable(name.or(t"")).lest(usage(m"the environment variable ${name.or(t"")} is not set"))
-      unhex(text.trim).lest(usage(m"${name.or(t"")} must hold the seed as 64 hexadecimal digits"))
+      val text: Text = variable(name.or(t"")).lest(usage(35, m"the environment variable ${name.or(t"")} is not set"))
+      unhex(text.trim).lest(usage(36, m"${name.or(t"")} must hold the seed as 64 hexadecimal digits"))
 
     if seed.length != seedSize then
       val size: Int = seed.length
-      abort(malformed(m"a seed is $seedSize bytes, but this one is $size"))
+      abort(malformed(15, m"a seed is $seedSize bytes, but this one is $size"))
 
     seed
 
@@ -359,10 +360,10 @@ object Signer:
 
     catch
       case error: jnf.FileAlreadyExistsException =>
-        abort(usage(m"${path.encode} already exists; xek will not overwrite it"))
+        abort(usage(37, m"${path.encode} already exists; xek will not overwrite it"))
 
       case error: ji.IOException =>
-        abort(usage(m"could not write ${path.encode}"))
+        abort(usage(38, m"could not write ${path.encode}"))
 
   def hex(bytes: scala.Array[Byte]): Text =
     val builder = StringBuilder()

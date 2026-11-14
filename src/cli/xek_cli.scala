@@ -377,7 +377,7 @@ object Driver:
         case Attempt.Success(exit) => exit
 
         case Attempt.Failure(error) =>
-          err(t"xek: ${error.message}")
+          err(t"xek: [${error.code}] ${error.message}")
 
           if error.fault == Assembler.Fault.Usage then
             val command: Text = action.let { action => t"xek ${action.name} --help" }.or(t"xek --help")
@@ -417,7 +417,7 @@ object Driver:
         Inspector.render(lines).each(out(_))
 
       case _ =>
-        abort(Assembler.Error(Assembler.Fault.Usage, m"xek inspect needs exactly one executable"))
+        abort(Assembler.Error(Assembler.Fault.Usage, 65, m"xek inspect needs exactly one executable"))
 
   private def property(name: String): Text = java.lang.System.getProperty(name).nn.tt
 
