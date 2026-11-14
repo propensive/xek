@@ -92,11 +92,11 @@ object Stubs:
           val stub: Path on Local = Files.child(directory, target.stub)
 
           if !Files.exists(stub)
-          then abort(Assembler.Error(Assembler.Fault.Usage, m"there is no stub ${target.stub} in ${directory.encode}"))
+          then abort(Assembler.Error(Assembler.Fault.Usage, 12, m"there is no stub ${target.stub} in ${directory.encode}"))
 
         case Source.Remote(_, hashes) =>
           if hashes(target.label).absent
-          then abort(Assembler.Error(Assembler.Fault.Format, m"no client hash is known for ${target.label}"))
+          then abort(Assembler.Error(Assembler.Fault.Format, 4, m"no client hash is known for ${target.label}"))
 
   // A local path to the stub for `target`: from a local directory directly; otherwise from the
   // cache when a copy with the right hash is there, or else downloaded, verified and cached. The
@@ -111,7 +111,7 @@ object Stubs:
 
       case Source.Remote(baseUrl, hashes) =>
         val expected: Text =
-          hashes(target.label).lest(Assembler.Error(Assembler.Fault.Format, m"no client hash is known for ${target.label}"))
+          hashes(target.label).lest(Assembler.Error(Assembler.Fault.Format, 5, m"no client hash is known for ${target.label}"))
 
         val cached: Path on Local = Files.child(Files.child(Files.child(cache, t"client"), expected), target.stub)
 
@@ -122,7 +122,7 @@ object Stubs:
           val actual: Text = Files.sha256(bytes)
 
           if actual != expected then
-            abort(Assembler.Error(Assembler.Fault.Format, m"SHA-256 mismatch for $location: expected $expected, but got $actual"))
+            abort(Assembler.Error(Assembler.Fault.Format, 6, m"SHA-256 mismatch for $location: expected $expected, but got $actual"))
 
           Files.write(cached, executable = !target.windows)(_.write(bytes))
           cached
@@ -137,7 +137,7 @@ object Stubs:
       try stream.readAllBytes().nn finally stream.close()
     catch
       case error: ji.IOException =>
-        abort(Assembler.Error(Assembler.Fault.Download, m"could not download $url"))
+        abort(Assembler.Error(Assembler.Fault.Download, 1, m"could not download $url"))
 
       case error: IllegalArgumentException =>
-        abort(Assembler.Error(Assembler.Fault.Usage, m"$url is not a valid URL"))
+        abort(Assembler.Error(Assembler.Fault.Usage, 13, m"$url is not a valid URL"))

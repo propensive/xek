@@ -186,8 +186,8 @@ object Command:
     // Java option may contain.
     def every(spec: Spec): List[Text] = options.filter(_(0) == spec).map(_(1))
 
-  private def usage(message: Message)(using Diagnostics): Assembler.Error =
-    Assembler.Error(Assembler.Fault.Usage, message)
+  private def usage(site: Int, message: Message)(using Diagnostics): Assembler.Error =
+    Assembler.Error(Assembler.Fault.Usage, site, message)
 
   def spec(name: Text, specs: List[Spec] = specs): Optional[Spec] =
     specs.filter { spec => spec.name == name || spec.aliases.has(name) }.head
@@ -210,10 +210,10 @@ object Command:
 
       if words.exists(_.ends(t".jar")) then
         val line: Text = words.join(t" ")
-        abort(usage(m"xek needs a subcommand first; to build an executable, use: xek build $line"))
+        abort(usage(39, m"xek needs a subcommand first; to build an executable, use: xek build $line"))
       else if words.nil || first.starts(t"-")
-      then abort(usage(m"xek needs a subcommand first: one of $names"))
-      else abort(usage(m"there is no subcommand $first; choose from $names"))
+      then abort(usage(40, m"xek needs a subcommand first: one of $names"))
+      else abort(usage(41, m"there is no subcommand $first; choose from $names"))
 
   def parse(action: Action, words: List[Text]): Parsed raises Assembler.Error =
     parse(action, words, action.specs :+ Help)
@@ -222,8 +222,8 @@ object Command:
   :   Parsed raises Assembler.Error =
 
     def unknown(written: Text)(using Diagnostics): Assembler.Error =
-      action.let { action => usage(m"xek ${action.name} has no option $written") }.or:
-        usage(m"there is no option $written")
+      action.let { action => usage(42, m"xek ${action.name} has no option $written") }.or:
+        usage(43, m"there is no option $written")
 
     def recur(words: List[Text], options: List[(Spec, Text)], operands: List[Text]): Parsed =
       words.absolve match
@@ -259,12 +259,12 @@ object Command:
     :   Parsed =
 
       if found.operand.absent then
-        if joined.present then abort(usage(m"$written takes no value"))
+        if joined.present then abort(usage(44, m"$written takes no value"))
         recur(rest, (found, t"") :: options, operands)
       else if joined.present then recur(rest, (found, joined.or(t"")) :: options, operands)
       else rest.absolve match
         case value :: rest => recur(rest, (found, value) :: options, operands)
-        case Nil           => abort(usage(m"$written needs a value"))
+        case Nil           => abort(usage(45, m"$written needs a value"))
 
     recur(words, Nil, Nil)
 
@@ -282,7 +282,7 @@ object Command:
 
     if parsed.operands.size > limit then
       val extra: Text = parsed.operands.skip(limit).join(t" ")
-      abort(usage(m"there are more arguments than expected: $extra"))
+      abort(usage(46, m"there are more arguments than expected: $extra"))
 
     val jar: Optional[Path on Local] =
       if dispatch.present then Unset else parsed.operands.head.let(path)
@@ -295,10 +295,10 @@ object Command:
       parsed.value(spec).let(path).let { key => Array.unsafeFrozen(Files.read(key)) }
 
     if parsed.has(PublicKey) && !parsed.has(AppId)
-    then abort(usage(m"--public-key needs --app-id, or the executable could never upgrade"))
+    then abort(usage(47, m"--public-key needs --app-id, or the executable could never upgrade"))
 
     if parsed.has(RecoveryKey) && !parsed.has(PublicKey)
-    then abort(usage(m"--recovery-key needs --public-key"))
+    then abort(usage(48, m"--recovery-key needs --public-key"))
 
     val record: Record =
       Record
@@ -326,15 +326,15 @@ object Command:
   // The options of `xek installer`: the digests come from the executables given as operands,
   // each named `<name>-<platform>[.exe]` as `xek build -p` writes them, or from a manifest.
   def installer(parsed: Parsed, path: Text => Path on Local): Installer.Options raises Assembler.Error =
-    val url: Text = parsed.value(Url).lest(usage(m"--url is needed: where the executables are downloaded from"))
+    val url: Text = parsed.value(Url).lest(usage(49, m"--url is needed: where the executables are downloaded from"))
     val manifest: Optional[Text] = parsed.value(Manifest)
     val out: Path on Local = parsed.value(OutDir).let(path).or(path(t"."))
 
     if manifest.present && !parsed.operands.nil
-    then abort(usage(m"--manifest replaces the executables; give one or the other"))
+    then abort(usage(50, m"--manifest replaces the executables; give one or the other"))
 
     if manifest.absent && parsed.operands.nil
-    then abort(usage(m"give the executables to embed the digests of, or a --manifest"))
+    then abort(usage(51, m"give the executables to embed the digests of, or a --manifest"))
 
     // Each operand's name, split into the command's name and its platform: `tool-linux-x64`
     // or `tool-windows-x64.exe`, as `xek build -p` writes them.
@@ -345,20 +345,20 @@ object Command:
 
         val target: Target =
           Target.all.filter { target => name.ends(t"-${target.label}") }.head.lest:
-            usage(m"$operand is not named <name>-<platform>[.exe], for a platform of $platforms")
+            usage(52, m"$operand is not named <name>-<platform>[.exe], for a platform of $platforms")
 
         (name.keep(name.length - target.label.length - 1), target, file)
 
     val names: List[Text] = executables.map(_(0)).distinct
 
     if names.size > 1
-    then abort(usage(m"the executables are named for different commands: ${names.join(t", ")}"))
+    then abort(usage(53, m"the executables are named for different commands: ${names.join(t", ")}"))
 
     val name: Text =
-      parsed.value(Name).or(names.head.lest(usage(m"--name is needed with --manifest")))
+      parsed.value(Name).or(names.head.lest(usage(54, m"--name is needed with --manifest")))
 
     if name == t"" || name.contains(t"/") || name.contains(t" ")
-    then abort(usage(m"$name is not a command name"))
+    then abort(usage(55, m"$name is not a command name"))
 
     val digests: Map[Target, Text] =
       if manifest.present then
@@ -370,10 +370,10 @@ object Command:
           val digest: Text = lines(label).or(t"")
 
           val target: Target = Target.parse(label).lest:
-            usage(m"the manifest names $label, which is not a platform; choose from $platforms")
+            usage(56, m"the manifest names $label, which is not a platform; choose from $platforms")
 
           if digest.length != 64 || !digest.s.matches("[0-9a-fA-F]+")
-          then abort(usage(m"the manifest's digest for $label is not a SHA-256"))
+          then abort(usage(57, m"the manifest's digest for $label is not a SHA-256"))
 
           (target, digest.lower)
         . to[Map]
@@ -381,11 +381,11 @@ object Command:
         val targets: List[Target] = executables.map(_(1))
 
         targets.filter { target => targets.count(_ == target) > 1 }.head.let: target =>
-          abort(usage(m"more than one executable is for ${target.label}"))
+          abort(usage(58, m"more than one executable is for ${target.label}"))
 
         executables.map { (_, target, file) => (target, Files.sha256(Files.read(file))) }.to[Map]
 
-    if digests.keys.to[List].nil then abort(usage(m"the manifest names no platform"))
+    if digests.keys.to[List].nil then abort(usage(59, m"the manifest names no platform"))
 
     val base: Text = url.s.stripSuffix("/").tt
     val release: Text = parsed.value(Release).or(base.s.substring(base.s.lastIndexOf('/') + 1).nn.tt)
@@ -403,7 +403,7 @@ object Command:
 
     if directory.present then
       if url.present || manifest.present
-      then abort(usage(m"--client cannot be combined with --client-url or --client-manifest"))
+      then abort(usage(60, m"--client cannot be combined with --client-url or --client-manifest"))
 
       Stubs.Source.Directory(path(directory.or(t"")))
 
@@ -417,16 +417,16 @@ object Command:
     else xek.Client.standard
 
   private def target(label: Text): Target raises Assembler.Error =
-    Target.parse(label).lest(usage(m"$label is not a platform; choose from $platforms"))
+    Target.parse(label).lest(usage(61, m"$label is not a platform; choose from $platforms"))
 
   private def shell(name: Text): Shell raises Assembler.Error =
-    Shell.parse(name).lest(usage(m"$name is not a shell; choose from sh, pwsh or bat"))
+    Shell.parse(name).lest(usage(62, m"$name is not a shell; choose from sh, pwsh or bat"))
 
   private def version(spec: Spec, text: Text): Int raises Assembler.Error =
     val value: Long = number(spec, text)
-    if value < 8 || value > 0xffff then abort(usage(m"--${spec.name} must be a Java version, like 25"))
+    if value < 8 || value > 0xffff then abort(usage(63, m"--${spec.name} must be a Java version, like 25"))
     value.toInt
 
   private def number(spec: Spec, text: Text): Long raises Assembler.Error =
     try java.lang.Long.parseLong(text.s) catch case error: NumberFormatException =>
-      abort(usage(m"--${spec.name} must be a whole number, not $text"))
+      abort(usage(64, m"--${spec.name} must be a whole number, not $text"))

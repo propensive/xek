@@ -49,8 +49,8 @@ import vacuous.*
 object Inspector:
   case class Line(label: Text, value: Text)
 
-  private def malformed(message: Message)(using Diagnostics): Assembler.Error =
-    Assembler.Error(Assembler.Fault.Format, message)
+  private def malformed(site: Int, message: Message)(using Diagnostics): Assembler.Error =
+    Assembler.Error(Assembler.Fault.Format, site, message)
 
   def render(lines: List[Line]): List[Text] =
     var width: Int = 0
@@ -68,7 +68,7 @@ object Inspector:
     if offset.present then native(bytes, offset.or(0), appId) else
       val text: String = String(bytes, "ISO-8859-1")
       if text.contains("\nindex:") || text.contains("\nassets:") then polyglot(text, appId)
-      else abort(malformed(m"$name is neither an XEK executable nor a polyglot file"))
+      else abort(malformed(9, m"$name is neither an XEK executable nor a polyglot file"))
 
   private def slice(bytes: scala.Array[Byte], from: Int, length: Int): scala.Array[Byte] =
     ju.Arrays.copyOfRange(bytes, from, from + length).nn
@@ -258,7 +258,7 @@ object Inspector:
           line += 1
 
         try ju.Base64.getDecoder.nn.decode(body.toString).nn
-        catch case _: IllegalArgumentException => abort(malformed(m"the $label payload is not valid base64"))
+        catch case _: IllegalArgumentException => abort(malformed(10, m"the $label payload is not valid base64"))
 
     val assets: List[Text] =
       if assetsLine.isEmpty then Nil
@@ -277,7 +277,7 @@ object Inspector:
       else t"polyglot file, which downloads a complete executable"
 
     val record: List[Line] = payload("record").lay(Nil): record =>
-      if record.length < Record.size then abort(malformed(m"the record in this polyglot file is truncated"))
+      if record.length < Record.size then abort(malformed(11, m"the record in this polyglot file is truncated"))
       val signed: Boolean = !zero(slice(record, Record.signatureOffset, Record.signatureSize))
       val signature: Text = if signed then t"present; checked in the executable this unpacks to" else t"none"
       fields(record, appId) + List(Line(t"Signature", signature))

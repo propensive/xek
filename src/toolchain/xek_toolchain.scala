@@ -150,7 +150,7 @@ object executableEdges:
             buildId      = settings.buildId )
 
       mitigate:
-        case error: Packager.Error => Link.Error(Link.Error.Reason.Packaging(error.message.text))
+        case error: Packager.Error => Link.Error(Link.Error.Reason.Packaging(t"[${error.code}] ${error.message.text}"))
 
       . protect:
           Deliverable.Product(Packager.pack(packaging))

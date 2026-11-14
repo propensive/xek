@@ -77,8 +77,8 @@ object Build:
       case OnlineLauncher(_, _, output, _, _, _)     => List(output)
       case Dispatcher(_, output, _)                  => List(output)
 
-  private def usage(message: Message)(using Diagnostics): Assembler.Error =
-    Assembler.Error(Assembler.Fault.Usage, message)
+  private def usage(site: Int, message: Message)(using Diagnostics): Assembler.Error =
+    Assembler.Error(Assembler.Fault.Usage, site, message)
 
   // The executable's name when none is given: the JAR's, without its `.jar`.
   def defaultName(jar: Path on Local): Text =
@@ -109,31 +109,31 @@ object Build:
     if record.javaMinimum > record.javaPreferred then
       val minimum = record.javaMinimum
       val preferred = record.javaPreferred
-      abort(usage(m"the minimum Java version, $minimum, is above the preferred version, $preferred"))
+      abort(usage(14, m"the minimum Java version, $minimum, is above the preferred version, $preferred"))
 
     if !options.exclude.nil && !polyglot && options.dispatch.absent
-    then abort(usage(m"--exclude applies only to a polyglot file (--polyglot, --download or --dispatch)"))
+    then abort(usage(15, m"--exclude applies only to a polyglot file (--polyglot, --download or --dispatch)"))
 
-    if shells.nil then abort(usage(m"every shell is excluded, so the file could not run anywhere"))
+    if shells.nil then abort(usage(16, m"every shell is excluded, so the file could not run anywhere"))
 
     if options.dispatch.present then
-      if polyglot then abort(usage(m"--dispatch cannot be combined with --polyglot or --download"))
-      if !options.targets.nil then abort(usage(m"--dispatch takes its platforms from its manifest"))
+      if polyglot then abort(usage(17, m"--dispatch cannot be combined with --polyglot or --download"))
+      if !options.targets.nil then abort(usage(18, m"--dispatch takes its platforms from its manifest"))
 
       val manifest: Path on Local = options.dispatch.or(Files.child(directory, t""))
-      val output: Path on Local = options.output.lest(usage(m"--dispatch needs the name of the file to write"))
-      if Files.directory(output) then abort(usage(m"${output.encode} is a directory"))
+      val output: Path on Local = options.output.lest(usage(19, m"--dispatch needs the name of the file to write"))
+      if Files.directory(output) then abort(usage(20, m"${output.encode} is a directory"))
       Plan.Dispatcher(manifest, output, shells)
 
     else
-      val jar: Path on Local = options.jar.lest(usage(m"no JAR file was given"))
+      val jar: Path on Local = options.jar.lest(usage(21, m"no JAR file was given"))
       val name: Text = defaultName(jar)
 
       // An output which is a directory is where the default name goes, as `cp` would have it.
       val named: Path on Local = options.output.or(directory)
       val output: Path on Local = if Files.directory(named) then Files.child(named, name) else named
 
-      if output.encode == jar.encode then abort(usage(m"the output would overwrite the JAR itself"))
+      if output.encode == jar.encode then abort(usage(22, m"the output would overwrite the JAR itself"))
 
       if polyglot then polyglotPlan(options, jar, output, shells)
       else nativePlan(options, jar, output, host)
@@ -148,14 +148,14 @@ object Build:
 
     targets.each: target =>
       if !servable(target, shells)
-      then abort(usage(m"no included shell can unpack a stub for ${target.label}"))
+      then abort(usage(23, m"no included shell can unpack a stub for ${target.label}"))
 
-    if targets.nil then abort(usage(m"there are no stubs to include"))
+    if targets.nil then abort(usage(24, m"there are no stubs to include"))
 
     if options.download then
       options.source match
         case Stubs.Source.Directory(_) =>
-          abort(usage(m"--download needs stubs published at a URL, not a local --client directory"))
+          abort(usage(25, m"--download needs stubs published at a URL, not a local --client directory"))
 
         case _ =>
           Plan.OnlineLauncher(jar, targets, output, options.record, options.source, shells)
@@ -168,7 +168,7 @@ object Build:
 
     val targets: List[Target] =
       if !options.targets.nil then options.targets
-      else List(host.lest(usage(m"this platform has no client stub; name one with --platform")))
+      else List(host.lest(usage(26, m"this platform has no client stub; name one with --platform")))
 
     def exe(path: Path on Local, target: Target): Path on Local =
       if target.windows && !path.name.lower.ends(t".exe") then Files.sibling(path, t"${path.name}.exe")
@@ -251,9 +251,9 @@ object Build:
     line.cut(t"\t").map(_.trim) match
       case List(label, url, hash) =>
         val target: Target =
-          Target.parse(label).lest(Assembler.Error(Assembler.Fault.Format, m"$label is not a known platform"))
+          Target.parse(label).lest(Assembler.Error(Assembler.Fault.Format, 7, m"$label is not a known platform"))
 
         Polyglot.Asset(target, url, hash.lower)
 
       case _ =>
-        abort(Assembler.Error(Assembler.Fault.Format, m"a dispatch manifest line must be label, URL and SHA-256, separated by tabs"))
+        abort(Assembler.Error(Assembler.Fault.Format, 8, m"a dispatch manifest line must be label, URL and SHA-256, separated by tabs"))

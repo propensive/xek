@@ -39,6 +39,7 @@ import contingency.*
 import distillate.*
 import fulminate.*
 import galilei.*
+import gossamer.*
 import prepositional.*
 import serpentine.*
 import vacuous.*
@@ -56,8 +57,14 @@ object Assembler:
     case Download extends Fault(3)
     case Verification extends Fault(4)
 
-  case class Error(fault: Fault, detail: Message)(using Diagnostics)
-  extends fulminate.Error(detail)
+  // Every error of this module is one of four faults, raised from many places. Its bolt code names
+  // both: `↯/x.2.1`, the fault (which is also the exit status), and the `site` it was raised from,
+  // as in ↯/x.2.1.1.37. The sites of each fault are numbered from 1 in the order they were added,
+  // and the `bolt` registry's `x.tel` records them; a number is never reused, so a new site takes
+  // the next one, wherever in the source it is.
+  case class Error(fault: Fault, site: Int, detail: Message)(using Diagnostics)
+  extends fulminate.Error(detail):
+    def code: Text = t"↯/x.2.1.${fault.status}.$site"
 
   // `stub ‖ record ‖ jar`, with the JAR's ZIP64 locator rebased by the bytes now in front of it,
   // marked executable unless it is a Windows executable (whose name marks it instead), and moved
@@ -83,7 +90,7 @@ object Assembler:
   def checkJar(jar: Path on Local): Unit raises Error =
     val file = ji.File(jar.encode.s)
 
-    if !file.isFile then abort(Error(Fault.Usage, m"${jar.encode} is not a file"))
+    if !file.isFile then abort(Error(Fault.Usage, 1, m"${jar.encode} is not a file"))
 
     val mainClass: Optional[Text] =
       try
@@ -97,10 +104,10 @@ object Assembler:
         finally archive.close()
 
       catch case error: ji.IOException =>
-        abort(Error(Fault.Format, m"${jar.encode} could not be read as a JAR file"))
+        abort(Error(Fault.Format, 1, m"${jar.encode} could not be read as a JAR file"))
 
     if mainClass.absent
-    then abort(Error(Fault.Format, m"${jar.encode} has no Main-Class in its manifest"))
+    then abort(Error(Fault.Format, 2, m"${jar.encode} has no Main-Class in its manifest"))
 
 // The one physical offset in a ZIP. A JAR with a ZIP64 end-of-central-directory locator — the
 // 20-byte block starting `PK\x06\x07` immediately before the end-of-central-directory record —
@@ -138,7 +145,7 @@ private[xek] object Files:
   def read(path: Path on Local): scala.Array[Byte] raises Assembler.Error =
     try jnf.Files.readAllBytes(javaPath(path)).nn
     catch case error: ji.IOException =>
-      abort(Assembler.Error(Assembler.Fault.Usage, m"could not read ${path.encode}"))
+      abort(Assembler.Error(Assembler.Fault.Usage, 2, m"could not read ${path.encode}"))
 
   def exists(path: Path on Local): Boolean = jnf.Files.exists(javaPath(path))
 
@@ -176,7 +183,7 @@ private[xek] object Files:
         (temporary, target, jnf.StandardCopyOption.REPLACE_EXISTING, jnf.StandardCopyOption.ATOMIC_MOVE)
 
     catch case error: ji.IOException =>
-      abort(Assembler.Error(Assembler.Fault.Usage, m"could not write ${path.encode}"))
+      abort(Assembler.Error(Assembler.Fault.Usage, 3, m"could not write ${path.encode}"))
 
   def sha256(bytes: scala.Array[Byte]): Text =
     val digest = java.security.MessageDigest.getInstance("SHA-256").nn.digest(bytes).nn

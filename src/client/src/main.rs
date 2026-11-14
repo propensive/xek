@@ -99,7 +99,7 @@ fn main() {
     // landed on a directory or a missing file must stop here, legibly, rather than surface
     // downstream as `Invalid or corrupt jarfile` — or as a rename of whatever it hit.
     if !script.is_file() {
-        eprintln!("{name}: could not locate its own executable — {} is not a file", script.display());
+        eprintln!("{name}: [↯/x.1.1] could not locate its own executable — {} is not a file", script.display());
         std::process::exit(1);
     }
     // The configuration record follows the stub in this very file (spec/ethrcfg.md); read it
@@ -115,7 +115,7 @@ fn main() {
     let base_dir = state::base_dir(&name);
     if let Err(reason) = state::prepare_base_dir(&base_dir) {
         xek::clear();
-        eprintln!("\nThe {name} state directory {} cannot be used: {reason}.", base_dir.display());
+        eprintln!("\n[↯/x.1.2] The {name} state directory {} cannot be used: {reason}.", base_dir.display());
         std::process::exit(STARTUP_FAILURE_EXIT_CODE);
     }
     let build_file  = base_dir.join("build");
@@ -192,7 +192,7 @@ fn main() {
     // asked for none, where the running daemon has some.
     if !internal && java_options::recorded(&options_file) != java_options {
         xek::clear();
-        eprintln!("Java options take effect only when the {name} daemon is not already running; it is running now with different ones, which it will keep until it has been shut down.");
+        eprintln!("[↯/x.1.3] Java options take effect only when the {name} daemon is not already running; it is running now with different ones, which it will keep until it has been shut down.");
     }
     let composition = negotiate(&acceptance_file, &name);
 
@@ -289,11 +289,11 @@ fn conclude(outcome: session::Outcome, name: &str) -> i32 {
         session::Outcome::Exited(code) => code,
         session::Outcome::Refused => {
             xek::clear();
-            eprintln!("\nThe {name} daemon speaks another launcher protocol: it ended the session without answering.");
+            eprintln!("\n[↯/x.1.4] The {name} daemon speaks another launcher protocol: it ended the session without answering.");
             STARTUP_FAILURE_EXIT_CODE
         }
         session::Outcome::Dropped => {
-            eprintln!("\nThe {name} daemon ended the session without reporting the exit status.");
+            eprintln!("\n[↯/x.1.5] The {name} daemon ended the session without reporting the exit status.");
             STARTUP_FAILURE_EXIT_CODE
         }
     }
@@ -317,7 +317,7 @@ fn parse_arguments(raw: Vec<OsString>) -> (PathBuf, Vec<OsString>) {
 fn require_private_socket(socket_file: &Path, name: &str) {
     if let Err(reason) = state::socket_private(socket_file) {
         xek::clear();
-        eprintln!("\nThe {name} daemon socket {} is not trusted: {reason}.", socket_file.display());
+        eprintln!("\n[↯/x.1.6] The {name} daemon socket {} is not trusted: {reason}.", socket_file.display());
         std::process::exit(STARTUP_FAILURE_EXIT_CODE);
     }
 }
@@ -376,7 +376,7 @@ fn negotiate(acceptance_file: &Path, name: &str) -> bintel::Composition {
         Err(mismatch) => {
             xek::clear();
             eprintln!(
-                "\nThe {name} daemon speaks another launcher protocol: its schema is {}, this launcher's is {}.",
+                "\n[↯/x.1.7] The {name} daemon speaks another launcher protocol: its schema is {}, this launcher's is {}.",
                 acceptance::hex(&mismatch.daemon_base), acceptance::hex(&bintel::BASE),
             );
             std::process::exit(STARTUP_FAILURE_EXIT_CODE);

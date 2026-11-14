@@ -189,7 +189,7 @@ them, or has not yet implemented them — writes no file, and a file the launche
 is treated as absent: the launcher writes the base alone, which is what such a daemon reads if
 it shares the base. When no alternative is servable — every one names another base, or
 requires a layer this launcher lacks — the launcher reports, before it connects, that the
-daemon speaks another protocol, naming both bases, and exits with status 2. A daemon that
+daemon speaks another protocol (`↯/x.1.7`), naming both bases, and exits with status 2. A daemon that
 published nothing and holds another base can only close the connection on reading `init`; the
 launcher takes a session that ends before the daemon has written anything as the same
 mismatch, and reports it the same way.

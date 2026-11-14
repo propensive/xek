@@ -63,13 +63,13 @@ case class Record
 
   def data: Data raises Assembler.Error =
     if javaMinimum < 0 || javaMinimum > 0xffff || javaPreferred < 0 || javaPreferred > 0xffff
-    then abort(Assembler.Error(Assembler.Fault.Usage, m"a Java version must be between 0 and 65535"))
+    then abort(Assembler.Error(Assembler.Fault.Usage, 4, m"a Java version must be between 0 and 65535"))
 
     if releaseKey.present && appId.absent
-    then abort(Assembler.Error(Assembler.Fault.Usage, m"a release key needs an application id"))
+    then abort(Assembler.Error(Assembler.Fault.Usage, 5, m"a release key needs an application id"))
 
     if recoveryKey.present && releaseKey.absent
-    then abort(Assembler.Error(Assembler.Fault.Usage, m"a recovery key needs a release key"))
+    then abort(Assembler.Error(Assembler.Fault.Usage, 6, m"a recovery key needs a release key"))
 
     javaOptions.each(Record.check(_))
 
@@ -85,7 +85,7 @@ case class Record
 
         if body.length > Record.javaOptionsLimit then
           val limit: Int = Record.javaOptionsLimit
-          abort(Assembler.Error(Assembler.Fault.Usage, m"the Java options must fit in $limit bytes"))
+          abort(Assembler.Error(Assembler.Fault.Usage, 7, m"the Java options must fit in $limit bytes"))
 
         val length = java.nio.ByteBuffer.allocate(4).nn.order(java.nio.ByteOrder.LITTLE_ENDIAN).nn
         length.putInt(body.length)
@@ -113,7 +113,7 @@ case class Record
 
       if bytes.length != Record.keySize then
         val size: Int = bytes.length
-        abort(Assembler.Error(Assembler.Fault.Format, m"a $name key must be ${Record.keySize} bytes, but is $size"))
+        abort(Assembler.Error(Assembler.Fault.Format, 3, m"a $name key must be ${Record.keySize} bytes, but is $size"))
 
       buffer.position(offset)
       buffer.put(bytes)
@@ -149,14 +149,15 @@ object Record:
     List(t"-agentlib:jdwp", t"-Xrunjdwp", t"-Xdebug", t"-javaagent:", t"-agentpath:")
 
   def check(option: Text): Unit raises Assembler.Error =
-    def refuse(reason: Message): Nothing = abort(Assembler.Error(Assembler.Fault.Usage, reason))
+    def refuse(site: Int, reason: Message): Nothing =
+      abort(Assembler.Error(Assembler.Fault.Usage, site, reason))
 
-    if !option.starts(t"-") then refuse(m"the Java option $option does not start with -")
-    if option.s.indexOf('\u0000') >= 0 then refuse(m"a Java option cannot contain a NUL")
-    if option == t"-jar" then refuse(m"the Java option -jar is the launcher's own")
+    if !option.starts(t"-") then refuse(8, m"the Java option $option does not start with -")
+    if option.s.indexOf('\u0000') >= 0 then refuse(9, m"a Java option cannot contain a NUL")
+    if option == t"-jar" then refuse(10, m"the Java option -jar is the launcher's own")
 
     if refused.exists(option.starts(_))
-    then refuse(m"the Java option $option cannot be built into an executable, since every user would run it")
+    then refuse(11, m"the Java option $option cannot be built into an executable, since every user would run it")
 
   // `ETHRCFG` and the format version, 4. No stub contains these bytes (`spec/ethrcfg.md`).
   def magic: scala.Array[Byte] =
