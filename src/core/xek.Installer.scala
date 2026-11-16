@@ -63,14 +63,14 @@ object Installer:
     val arms: List[Text] =
       published(options).map: (target, digest) => t"  ${target.label}) expected=$digest ;;"
 
-    substitute(cp"/xek/xek-install.sh".read[Text], options, arms)
+    substitute(unsafely(cp"/xek/xek-install.sh".read[Text]), options, arms)
 
   // The PowerShell script's digest table: one hashtable entry per platform.
   def pwsh(options: Options): Text =
     val entries: List[Text] =
       published(options).map: (target, digest) => t"  '${target.label}' = '$digest'"
 
-    substitute(cp"/xek/xek-install.ps1".read[Text], options, entries)
+    substitute(unsafely(cp"/xek/xek-install.ps1".read[Text]), options, entries)
 
   // The platforms a digest is known for, in `Target.all`'s order.
   private def published(options: Options): List[(Target, Text)] =

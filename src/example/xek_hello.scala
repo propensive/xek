@@ -143,7 +143,6 @@ def hello(): Unit = cli:
     // the launcher protocol can make reachable from the daemon's process.
     case Argument("read") :: Argument(path) :: Nil =>
       execute:
-        import filesystemBackends.javaBaseFilesystem
         safely(path.as[Path on Linux].read[Text]) match
           case text: Text => Out.print(text) yet Exit.Ok
           case _          => Err.println(t"cannot read $path") yet Exit.Fail(1)

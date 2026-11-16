@@ -17,7 +17,7 @@ object settings:
   // below like the libraries and resolved from its GitHub release by crux, which also forces every
   // `org.scala-lang` artifact to it, since the pinned libraries name the release each was built
   // with. The fork stays TASTy-compatible across its patch releases, which is what that assumes.
-  val scalaVersion = "3.10.0-pro-1.0.5"
+  val scalaVersion = "3.10.0-pro-1.1.4"
 
   // The Soundness release XEK's Scala modules are compiled against is pinned in etc/refs and
   // read by `deps`, below. Soundness publishes one GitHub release per version whose assets are
@@ -59,13 +59,10 @@ object settings:
     "-Ycheck-all-patmat",
     "-language:experimental.modularity",
     "-language:experimental.dependent",
-    "-language:experimental.relaxedLambdaSyntax",
     "-language:experimental.genericNumberLiterals",
-    "-language:experimental.into",
     "-language:experimental.erasedDefinitions",
     "-language:implicitConversions",
     "-language:experimental.saferExceptions",
-    "-language:experimental.strictEqualityPatternMatching",
     "-language:experimental.subCases",
     "-language:experimental.multiSpreads")
 

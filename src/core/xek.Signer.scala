@@ -317,8 +317,9 @@ object Signer:
 
         out(binary.buildId.toString.tt)
 
-      case Command.Action.Build =>
-        abort(usage(33, m"xek build does not sign"))
+      case Command.Action.Build | Command.Action.Installer | Command.Action.Install |
+        Command.Action.Inspect =>
+        abort(usage(33, m"xek ${action.name} does not sign"))
 
   // The seed, from `--key <file>`, or from `--key-env <variable>` as 64 hexadecimal digits, so that
   // a secret need never be written to disk. It is never accepted as an argument.

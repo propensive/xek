@@ -30,6 +30,7 @@
 package xek
 
 import anticipation.*
+import contingency.*
 import gossamer.*
 import hellenism.*
 import hieroglyph.*
@@ -56,15 +57,15 @@ object Client:
   private given classloader: Classloader = Classloader[Client.type]
 
   // The published release these hashes came from.
-  lazy val version: Text = cp"/xek/client.version".read[Text].trim
+  lazy val version: Text = unsafely(cp"/xek/client.version".read[Text]).trim
 
   // Where that release's assets are downloaded from, without a trailing slash. Held as data
   // rather than derived from `version`, so that a set of stubs can be republished — or
   // mirrored — without changing this code.
-  lazy val baseUrl: Text = cp"/xek/client.url".read[Text].trim
+  lazy val baseUrl: Text = unsafely(cp"/xek/client.url".read[Text]).trim
 
   // Lowercase SHA-256 hex of each published stub, by platform label.
-  lazy val hashes: Map[Text, Text] = Stubs.manifest(cp"/xek/client.tsv".read[Text])
+  lazy val hashes: Map[Text, Text] = Stubs.manifest(unsafely(cp"/xek/client.tsv".read[Text]))
 
   // The published stubs, as a source to build from.
   def standard: Stubs.Source = Stubs.Source.Remote(baseUrl, hashes)

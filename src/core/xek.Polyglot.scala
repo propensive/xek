@@ -115,7 +115,7 @@ object Polyglot:
     def section(shell: Shell, text: Text): Text =
       if shells.has(shell) then text.s.stripSuffix("\n").tt else refusal(shell, shells)
 
-    val template: Text = cp"/xek/xek.tmpl".read[Text]
+    val template: Text = unsafely(cp"/xek/xek.tmpl".read[Text])
 
     // Substituted line by line, as a whole line, exactly as the markers are written.
     template.cut(t"\n").map: line =>
@@ -142,19 +142,19 @@ object Polyglot:
 
   private def sections(delivery: Delivery): (Text, Text, Text) = delivery match
     case Delivery.Installer =>
-      ( cp"/xek/xek-installer.bat".read[Text],
-        cp"/xek/xek-installer.ps1".read[Text],
-        cp"/xek/xek-installer.sh".read[Text] )
+      ( unsafely(cp"/xek/xek-installer.bat".read[Text]),
+        unsafely(cp"/xek/xek-installer.ps1".read[Text]),
+        unsafely(cp"/xek/xek-installer.sh".read[Text]) )
 
     case Delivery.OnlineLauncher =>
-      ( cp"/xek/xek-onlinelauncher.bat".read[Text],
-        cp"/xek/xek-onlinelauncher.ps1".read[Text],
-        cp"/xek/xek-onlinelauncher.sh".read[Text] )
+      ( unsafely(cp"/xek/xek-onlinelauncher.bat".read[Text]),
+        unsafely(cp"/xek/xek-onlinelauncher.ps1".read[Text]),
+        unsafely(cp"/xek/xek-onlinelauncher.sh".read[Text]) )
 
     case Delivery.Dispatcher =>
-      ( cp"/xek/xek-dispatcher.bat".read[Text],
-        cp"/xek/xek-dispatcher.ps1".read[Text],
-        cp"/xek/xek-dispatcher.sh".read[Text] )
+      ( unsafely(cp"/xek/xek-dispatcher.bat".read[Text]),
+        unsafely(cp"/xek/xek-dispatcher.ps1".read[Text]),
+        unsafely(cp"/xek/xek-dispatcher.sh".read[Text]) )
 
   // The `index:` line and the framed payloads it indexes. Every payload occupies at least one
   // line, even an empty one, so that its offset and the next payload's always differ.
