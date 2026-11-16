@@ -106,7 +106,7 @@ object executableEdges:
   private def edge(delivery: Packaging.Delivery): Edge =
     Edge(Artifact.Jar, Executable(delivery), ExecutableTool(delivery))
 
-  private case class ExecutableTool(delivery: Packaging.Delivery) extends Tool:
+  private case class ExecutableTool(delivery: Packaging.Delivery) extends Toolchain.Tool:
     type Settings = ExecutableConfiguration
 
     def name: Text = Executable(delivery).id
