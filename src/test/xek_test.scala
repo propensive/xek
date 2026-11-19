@@ -74,16 +74,18 @@ import filesystemBackends.javaBaseFilesystem
 // polyglot files under `sh`, and under PowerShell where it is installed. Suites that need Docker
 // step aside when it is absent.
 object Tests extends Suite(m"XEK tests"):
+  // Every directory a test asks for is made beneath one scratch directory, which is deleted with
+  // everything in it when the suite ends, however it ends.
   def run(): Unit =
-    val tempDirs = scala.collection.mutable.ListBuffer.empty[Path on Linux]
+    temporaryDirectory[Path on Linux].open[Scratch](Read & Write): scratch ?=>
+      val root: Path on Linux = scratch.stem
 
-    def tempDir(): Path on Linux =
-      val dir: Path on Linux = temporaryDirectory[Path on Linux]/Uuid().show
-      dir.create[Directory]()
-      tempDirs += dir
-      dir
+      def tempDir(): Path on Linux =
+        val dir: Path on Linux = root/Uuid().show
+        dir.create[Directory]()
+        dir
 
-    try body(tempDir) finally tempDirs.each { dir => safely(dir.delete()) }
+      body(tempDir)
 
   private def body(tempDir: () => Path on Linux): Unit =
     val hostLabel: Text = sh"uname -s".exec[Text]().trim match

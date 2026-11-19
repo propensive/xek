@@ -33,14 +33,23 @@ import java.nio.file as jnf
 import java.util as ju
 import java.util.jar as juj
 
+import ambience.*
 import anticipation.*
+import aperture.*
 import contingency.*
 import denominative.*
 import fulminate.*
+import galilei.*
 import gossamer.*
+import prepositional.*
 import rudiments.*
+import serpentine.*
 import symbolism.*
 import vacuous.*
+
+import filesystemBackends.javaBaseFilesystem
+import systems.javaBaseSystem
+import temporaryDirectories.systemTemporaryDirectory
 
 // `xek inspect`: what an XEK executable carries, read without running it. A native executable is
 // read where it lies — the stub's header for its platform, the record after it, the JAR after
@@ -204,22 +213,26 @@ object Inspector:
   // the JVM finds it, since it need not be a JAR's first entry; so the bytes are read as a file.
   private def jar(bytes: scala.Array[Byte]): List[Line] =
     val main: Text =
-      try
-        val file: jnf.Path = jnf.Files.createTempFile("xek-inspect", ".jar").nn
-
-        try
-          jnf.Files.write(file, bytes)
-          val archive = juj.JarFile(file.toFile)
+      safely:
+        temporaryDirectory[Path on Linux].open[Scratch](Read & Write): scratch ?=>
+          val file: jnf.Path = jnf.Path.of(scratch.stem.encode.s).nn.resolve("inspect.jar").nn
 
           try
-            val manifest: juj.Manifest | Null = archive.getManifest()
-            val value: String | Null = if manifest == null then null else manifest.getMainAttributes().nn.getValue("Main-Class")
-            if value == null then t"none" else value.tt
-          finally archive.close()
+            jnf.Files.write(file, bytes)
+            val archive = juj.JarFile(file.toFile)
 
-        finally jnf.Files.deleteIfExists(file)
+            try
+              val manifest: juj.Manifest | Null = archive.getManifest()
+              val value: String | Null =
+                if manifest == null then null
+                else manifest.getMainAttributes().nn.getValue("Main-Class")
 
-      catch case _: java.io.IOException => t"unreadable"
+              if value == null then t"none" else value.tt
+            finally archive.close()
+
+          catch case _: java.io.IOException => t"unreadable"
+
+      . or(t"unreadable")
 
     List(Line(t"JAR", t"${bytes.length} bytes"), Line(t"Main class", main))
 
