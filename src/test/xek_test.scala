@@ -140,6 +140,45 @@ object Tests extends Suite(m"XEK tests"):
 
       jar
 
+    // A JAR of real classes, compiled here from Java: `app.Main`, which the manifest names and
+    // which calls `app.Used`, and `app.Unused`, which nothing calls. The manifest has an
+    // attribute of its own, and a section for an entry, as a signed JAR's would.
+    def compiledJar(dir: Path on Linux): Path on Linux =
+      val root: jnf.Path = jnf.Path.of(dir.encode.s).nn
+      val sources: jnf.Path = jnf.Files.createDirectories(root.resolve("src/app")).nn
+      val classes: jnf.Path = jnf.Files.createDirectories(root.resolve("classes")).nn
+
+      val code: List[(String, String)] =
+        List
+          ( "Main"   -> "public class Main { public static void main(String[] args) { System.out.println(Used.value()); } }",
+            "Used"   -> "public class Used { public static String value() { return \"used\"; } }",
+            "Unused" -> "public class Unused { public static String value() { return \"unused\"; } }" )
+
+      val files: List[String] = code.map: (name, body) =>
+        jnf.Files.writeString(sources.resolve(s"$name.java"), s"package app;\n$body\n").nn.toString
+
+      val arguments: List[String] = List("-d", classes.toString) + files
+      javax.tools.ToolProvider.getSystemJavaCompiler.nn.run(null, null, null, arguments*)
+
+      val jar = dir/t"app.jar"
+      val manifest = juj.Manifest()
+      manifest.getMainAttributes.nn.put(juj.Attributes.Name.MANIFEST_VERSION, "1.0")
+      manifest.getMainAttributes.nn.put(juj.Attributes.Name.MAIN_CLASS, "app.Main")
+      manifest.getMainAttributes.nn.put(juj.Attributes.Name.IMPLEMENTATION_TITLE, "app")
+      val section = juj.Attributes()
+      section.putValue("SHA-256-Digest", "AAAA")
+      manifest.getEntries.nn.put("app/Main.class", section)
+      val stream = juj.JarOutputStream(jnf.Files.newOutputStream(jnf.Path.of(jar.encode.s)).nn, manifest)
+
+      try
+        code.each: (name, _) =>
+          stream.putNextEntry(juz.ZipEntry(s"app/$name.class"))
+          stream.write(jnf.Files.readAllBytes(classes.resolve(s"app/$name.class")))
+          stream.closeEntry()
+      finally stream.close()
+
+      jar
+
     def cat(dir: Path on Linux, parts: Path on Linux*): Path on Linux =
       val out = dir/t"cat"
       val names: Text = parts.map { part => t"'${part.encode}'" }.to(List).join(t" ")
@@ -465,6 +504,52 @@ object Tests extends Suite(m"XEK tests"):
           Options(jar = local(jar), targets = List(Target.LinuxX64, Target.WindowsX64), source = Stubs.Source.Directory(local(client)))
         build(options, dir).map(_.name)
       .assert(_ == List(t"app-linux-x64", t"app-windows-x64.exe"))
+
+    suite(m"shrink"):
+      // What the JAR inside an executable says of itself: its main class, an attribute of the
+      // original manifest, the entries its manifest has sections for, and whether `app.Main` is
+      // in it.
+      def carried(out: Path on Linux): (Text, Text, Int, Boolean) =
+        val archive = juj.JarFile(out.encode.s)
+
+        try
+          val manifest = archive.getManifest().nn
+          val attributes = manifest.getMainAttributes().nn
+
+          ( attributes.getValue("Main-Class").nn.tt, attributes.getValue("Implementation-Title").nn.tt,
+            manifest.getEntries.nn.size, archive.getEntry("app/Main.class") != null )
+
+        finally archive.close()
+
+      test(m"builds from the shrunk JAR, under the original's manifest less its digests"):
+        val dir = tempDir(); val client = fakeClient(); val jar = compiledJar(dir); val out = dir/t"tool"
+        val source = Stubs.Source.Directory(local(client))
+        build(Options(jar = local(jar), output = local(out), source = source, shrink = true), dir)
+        carried(out)
+      .assert(_ == (t"app.Main", t"app", 0, true))
+
+      test(m"shrinks to the same bytes each time"):
+        val dir = tempDir(); val client = fakeClient(); val jar = compiledJar(dir)
+        val source = Stubs.Source.Directory(local(client))
+
+        def built(name: Text): Text =
+          build(Options(jar = local(jar), output = local(dir/name), source = source, shrink = true), dir)
+          sha(dir/name)
+
+        built(t"one") == built(t"two")
+      .assert(_ == true)
+
+      test(m"leaves the JAR it was given as it was"):
+        val dir = tempDir(); val client = fakeClient(); val jar = compiledJar(dir)
+        val before = sha(jar)
+        build(Options(jar = local(jar), source = Stubs.Source.Directory(local(client)), shrink = true), dir)
+        sha(jar) == before
+      .assert(_ == true)
+
+      test(m"refuses a JAR whose main class is not in it"):
+        val dir = tempDir(); val client = fakeClient(); val jar = fakeJar(dir)
+        fault(build(Options(jar = local(jar), source = Stubs.Source.Directory(local(client)), shrink = true), dir))
+      .assert(_ == Assembler.Fault.Format)
 
     suite(m"polyglot"):
       test(m"unpacks to the native executable for the host, record and all"):
@@ -794,13 +879,38 @@ object Tests extends Suite(m"XEK tests"):
         fault(plan(parse(t"app.jar", t"-x", t"bat")))
       .assert(_ == Assembler.Fault.Usage)
 
+      test(m"reads --shrink, and each --keep pattern"):
+        val options = parse(t"app.jar", t"--shrink", t"--keep", t"app.plugins.**", t"--keep=app.Tool$$")
+        (options.shrink, options.keep, parse(t"app.jar").shrink)
+      .assert(_ == (true, List(t"app.plugins.**", t"app.Tool$$"), false))
+
+      test(m"plans to shrink the JAR, keeping the classes named"):
+        plan(parse(t"app.jar", t"--shrink", t"--keep", t"app.**")) match
+          case Build.Plan.Natives(_, _, _, _, shrink) => shrink
+          case _                                      => Unset
+      .assert(_ == List(t"app.**"))
+
+      test(m"plans not to shrink the JAR unless asked"):
+        plan(parse(t"app.jar")) match
+          case Build.Plan.Natives(_, _, _, _, shrink) => shrink.present
+          case _                                      => true
+      .assert(!_)
+
+      test(m"refuses --keep without --shrink"):
+        fault(plan(parse(t"app.jar", t"--keep", t"app.**")))
+      .assert(_ == Assembler.Fault.Usage)
+
+      test(m"refuses --shrink with --dispatch"):
+        fault(plan(parse(t"--dispatch", t"manifest.tsv", t"--shrink", t"out")))
+      .assert(_ == Assembler.Fault.Usage)
+
       test(m"refuses to exclude every shell"):
         fault(plan(parse(t"app.jar", t"--polyglot", t"-x", t"sh,pwsh,bat")))
       .assert(_ == Assembler.Fault.Usage)
 
       test(m"excluding cmd.exe and PowerShell leaves out the Windows stub"):
         plan(parse(t"app.jar", t"--polyglot", t"-x", t"bat,pwsh")).absolve match
-          case Build.Plan.Installer(_, targets, _, _, _, _) => targets
+          case Build.Plan.Installer(_, targets, _, _, _, _, _) => targets
       .assert(_ == unix)
 
       test(m"refuses a platform no included shell can unpack"):

@@ -72,6 +72,8 @@ object Command:
   val JavaMin = Spec(t"java-min", Unset, t"version", t"the oldest Java version the application runs on")
   val Jdk = Spec(t"jdk", Unset, Unset, t"download a full JDK rather than a JRE")
   val JavaOption = Spec(t"java-option", Unset, t"option", t"start the JVM with this option; repeatable")
+  val Shrink = Spec(t"shrink", Unset, Unset, t"leave out of the JAR the classes and members its main class never reaches")
+  val Keep = Spec(t"keep", Unset, t"pattern", t"with --shrink, keep classes reached only by reflection, like com.example.**; repeatable")
   val BuildId = Spec(t"build-id", Unset, t"number", t"the build number self-upgrades are ordered by")
   val PublicKey = Spec(t"public-key", Unset, t"file", t"the release key self-upgrades are verified against")
   val RecoveryKey = Spec(t"recovery-key", Unset, t"file", t"a second key, kept offline, which may sign any self-upgrade")
@@ -108,7 +110,7 @@ object Command:
         t"build an executable from an application's JAR",
         List
           ( Platform, Polyglot, Download, Exclude, Dispatch, Java, JavaMin, Jdk, JavaOption, BuildId,
-            PublicKey, RecoveryKey, AppId, AllowDowngrade, Client, ClientUrl, ClientManifest ) )
+            PublicKey, RecoveryKey, AppId, AllowDowngrade, Client, ClientUrl, ClientManifest, Shrink, Keep ) )
 
     case Installer
     extends Action
@@ -321,7 +323,9 @@ object Command:
         exclude  = exclude,
         dispatch = dispatch,
         record   = record,
-        source   = source(parsed, path) )
+        source   = source(parsed, path),
+        shrink   = parsed.has(Shrink),
+        keep     = parsed.values(Keep) )
 
   // The options of `xek installer`: the digests come from the executables given as operands,
   // each named `<name>-<platform>[.exe]` as `xek build -p` writes them, or from a manifest.

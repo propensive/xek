@@ -97,7 +97,9 @@ object settings:
       mvn"dev.propensive:gossamer-core:$v",      // text
       mvn"dev.propensive:hieroglyph-core:$v",    // UTF-8 for resources
       mvn"dev.propensive:hellenism-core:$v",     // classpath resources (templates, `Client`)
-      mvn"dev.propensive:turbulence-core:$v")    // reading resources
+      mvn"dev.propensive:turbulence-core:$v",    // reading resources
+      mvn"dev.propensive:abscission-core:$v",    // `--shrink`: a JAR's closed world
+      mvn"dev.propensive:digression-core:$v")    // the class name its entry point is given as
 
     // `xek.cli`: the `xek` command itself, an XEK executable daemonized through `ethereal`, with
     // its arguments and tab-completions from `exoskeleton`.
@@ -207,6 +209,12 @@ object xek extends Module:
   object core extends Component():
     def mvnDeps = Task(settings.Soundness(deps.soundness()).core)
 
+    // `--shrink` recompiles classes from their TASTy, through Soundness's `abscission`, whose
+    // engine drives the compiler but only *compiles* against it. So whatever runs the builder
+    // needs the compiler beside it, and it must be this one: a unit is recompiled only if the
+    // compiler which wrote its TASTy is the one reading it.
+    override def runMvnDeps = Task(Seq(mvn"org.scala-lang:scala3-compiler_3:${settings.scalaVersion}"))
+
   // Turning a `Packaging` into a distributable, through `core`.
   object packager extends Component(core):
     def mvnDeps = Task(Seq.empty[Dep])
@@ -236,15 +244,12 @@ object xek extends Module:
 
     override def resources = Task(super.resources() ++ Seq(version()))
 
-    // Soundness's `stenography` depends on the Scala compiler for its macros, so the compiler
-    // and its dependencies reach the runtime classpath, as do the TASTy files a compiler reads.
-    // `xek` runs no macros and reads no TASTy, and they would be most of the bytes of every copy
-    // of it, so they are left out of the executable's JAR.
+    // The Scala compiler is on the runtime classpath, and stays in the executable's JAR, though
+    // it is most of its bytes: `xek build --shrink` recompiles an application's classes with it
+    // (see `core`). What the compiler brings but a recompilation never touches is left out: the
+    // REPL's terminal, the resolver and the TASTy of xek's own classpath, which the shrinker
+    // reads from the application's JAR, never from this one.
     override def assemblyRules = super.assemblyRules ++ Seq(
-      mill.javalib.Assembly.Rule.ExcludePattern("dotty/.*"),
-      mill.javalib.Assembly.Rule.ExcludePattern("scala/tools/.*"),
-      mill.javalib.Assembly.Rule.ExcludePattern("scala/quoted/runtime/impl/.*"),
-      mill.javalib.Assembly.Rule.ExcludePattern("xsbti/.*"),
       mill.javalib.Assembly.Rule.ExcludePattern("org/jline/.*"),
       mill.javalib.Assembly.Rule.ExcludePattern("coursierapi/.*"),
       mill.javalib.Assembly.Rule.ExcludePattern(".*\\.tasty"))

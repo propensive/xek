@@ -53,28 +53,34 @@ case class Options
     exclude:  List[Shell]             = Nil,
     dispatch: Optional[Path on Local] = Unset,
     record:   Record                  = Record(),
-    source:   Stubs.Source            = Client.standard )
+    source:   Stubs.Source            = Client.standard,
+    shrink:   Boolean                 = false,
+    keep:     List[Text]              = Nil )
 
 // Deciding what to build, and building it. `plan` applies the defaults and checks the request as
 // a whole, before anything is downloaded or written; `execute` does the work.
 object Build:
+  // `shrink`, where a plan has a JAR, is set if the JAR is to be shrunk first (`--shrink`), to
+  // the patterns of the classes to keep whatever reaches them (`--keep`).
   enum Plan:
-    case Natives(jar: Path on Local, outputs: List[(Target, Path on Local)], record: Record, source: Stubs.Source)
+    case Natives
+      ( jar: Path on Local, outputs: List[(Target, Path on Local)], record: Record, source: Stubs.Source,
+        shrink: Optional[List[Text]] = Unset )
 
     case Installer
       ( jar: Path on Local, targets: List[Target], output: Path on Local, record: Record,
-        source: Stubs.Source, shells: List[Shell] )
+        source: Stubs.Source, shells: List[Shell], shrink: Optional[List[Text]] = Unset )
 
     case OnlineLauncher
       ( jar: Path on Local, targets: List[Target], output: Path on Local, record: Record,
-        source: Stubs.Source, shells: List[Shell] )
+        source: Stubs.Source, shells: List[Shell], shrink: Optional[List[Text]] = Unset )
 
     case Dispatcher(manifest: Path on Local, output: Path on Local, shells: List[Shell])
 
     def files: List[Path on Local] = this match
-      case Natives(_, outputs, _, _)                 => outputs.map(_(1))
-      case Installer(_, _, output, _, _, _)          => List(output)
-      case OnlineLauncher(_, _, output, _, _, _)     => List(output)
+      case Natives(_, outputs, _, _, _)              => outputs.map(_(1))
+      case Installer(_, _, output, _, _, _, _)       => List(output)
+      case OnlineLauncher(_, _, output, _, _, _, _)  => List(output)
       case Dispatcher(_, output, _)                  => List(output)
 
   private def usage(site: Int, message: Message)(using Diagnostics): Assembler.Error =
@@ -116,7 +122,11 @@ object Build:
 
     if shells.nil then abort(usage(16, m"every shell is excluded, so the file could not run anywhere"))
 
+    if !options.keep.nil && !options.shrink
+    then abort(usage(68, m"--keep applies only when the JAR is shrunk (--shrink)"))
+
     if options.dispatch.present then
+      if options.shrink then abort(usage(67, m"--shrink cannot be combined with --dispatch, which has no JAR"))
       if polyglot then abort(usage(17, m"--dispatch cannot be combined with --polyglot or --download"))
       if !options.targets.nil then abort(usage(18, m"--dispatch takes its platforms from its manifest"))
 
@@ -158,9 +168,9 @@ object Build:
           abort(usage(25, m"--download needs stubs published at a URL, not a local --client directory"))
 
         case _ =>
-          Plan.OnlineLauncher(jar, targets, output, options.record, options.source, shells)
+          Plan.OnlineLauncher(jar, targets, output, options.record, options.source, shells, shrink(options))
 
-    else Plan.Installer(jar, targets, output, options.record, options.source, shells)
+    else Plan.Installer(jar, targets, output, options.record, options.source, shells, shrink(options))
 
   private def nativePlan
     ( options: Options, jar: Path on Local, output: Path on Local, host: Optional[Target] )
@@ -187,35 +197,42 @@ object Build:
           val label: Text = target.label
           (target, exe(Files.sibling(output, t"$stem-$label"), target))
 
-    Plan.Natives(jar, outputs, options.record, options.source)
+    Plan.Natives(jar, outputs, options.record, options.source, shrink(options))
+
+  private def shrink(options: Options): Optional[List[Text]] = if options.shrink then options.keep else Unset
 
   // Carries out a plan, reporting progress as it goes, and returns the files written.
   def execute(plan: Plan, cache: Path on Local)(progress: Text => Unit)
   :   List[Path on Local] raises Assembler.Error =
 
     plan match
-      case Plan.Natives(jar, outputs, record, source) =>
-        Assembler.checkJar(jar)
+      case Plan.Natives(original, outputs, record, source, shrink) =>
+        val main: Text = Assembler.checkJar(original)
         Stubs.check(source, outputs.map(_(0)))
 
-        outputs.map: (target, output) =>
-          nativeOutput(jar, target, output, record, source, cache)(progress)
+        // Once, whatever the number of targets: the JAR is the same in each.
+        Shrinker.shrinking(original, main, shrink)(progress): jar =>
+          outputs.map: (target, output) =>
+            nativeOutput(jar, target, output, record, source, cache)(progress)
 
-      case Plan.Installer(jar, targets, output, record, source, shells) =>
-        Assembler.checkJar(jar)
+      case Plan.Installer(original, targets, output, record, source, shells, shrink) =>
+        val main: Text = Assembler.checkJar(original)
         Stubs.check(source, targets)
         val stubs = targets.map { target => (target, Stubs.resolve(source, target, cache)(progress)) }
-        progress(t"Writing ${output.encode}")
-        List(Polyglot.write(Polyglot.installer(stubs, record, jar, shells), output))
 
-      case Plan.OnlineLauncher(jar, targets, output, record, source, shells) =>
-        Assembler.checkJar(jar)
+        Shrinker.shrinking(original, main, shrink)(progress): jar =>
+          progress(t"Writing ${output.encode}")
+          List(Polyglot.write(Polyglot.installer(stubs, record, jar, shells), output))
+
+      case Plan.OnlineLauncher(original, targets, output, record, source, shells, shrink) =>
+        val main: Text = Assembler.checkJar(original)
         Stubs.check(source, targets)
 
         val assets: List[Polyglot.Asset] = targets.map(asset(source, _))
 
-        progress(t"Writing ${output.encode}")
-        List(Polyglot.write(Polyglot.onlineLauncher(assets, record, jar, shells), output))
+        Shrinker.shrinking(original, main, shrink)(progress): jar =>
+          progress(t"Writing ${output.encode}")
+          List(Polyglot.write(Polyglot.onlineLauncher(assets, record, jar, shells), output))
 
       case Plan.Dispatcher(manifest, output, shells) =>
         val text: Text = String(Files.read(manifest), "UTF-8").tt

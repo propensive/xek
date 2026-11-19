@@ -49,6 +49,8 @@ xek build --download app.jar                   # a polyglot file which fetches i
 xek build --dispatch executables.tsv app       # a polyglot file which fetches a whole executable
 xek build --java 25 --java-min 21 --jdk app.jar
 xek build --java-option -Xmx2g --java-option -XX:+UseZGC app.jar  # the JVM always starts with these
+xek build --shrink app.jar                     # …from only the classes app.jar's main class reaches
+xek build --shrink --keep 'app.plugins.**' app.jar  # …and those which only reflection does
 xek installer --url https://example.com/app/1.0 app-*  # install.sh and install.ps1 for a release
 xek inspect app                                # what ./app was built with, and whether it is signed
 ```
@@ -62,7 +64,16 @@ scripts of a release — `install.sh` for `curl -fsSL <url> | sh` and `install.p
 `irm <url> | iex` — from the executables `xek build -p` wrote, embedding the SHA-256 of each
 and the URL they are published at; it is how this repository's own installers are made. The `--java` options
 record which runtime an executable wants: the client uses a suitable installed Java, and
-otherwise downloads the preferred version from Adoptium on first run. `xek install` installs
+otherwise downloads the preferred version from Adoptium on first run. `--shrink` makes a smaller
+executable, by building it from the JAR's *closed world* — what its `Main-Class`, and the
+implementations its `META-INF/services` files name, reach — as worked out by Soundness's
+[Abscission](https://github.com/propensive/soundness). Classes compiled by the version of Scala
+`xek` itself is built with, whose TASTy is in the JAR, are recompiled without the members nothing
+reaches; any others, Java's among them, are kept or left out whole. A class which only reflection
+reaches is not seen, so name it with `--keep`, a pattern over class names in which `*` stands for
+part of a name and `**` for any number of packages; a build which would leave something kept
+referring to something removed is refused. The shrunk JAR keeps the original's manifest, but not
+its signature, nor its TASTy. Shrinking a large JAR takes a minute or so. `xek install` installs
 tab-completions for `xek` into each shell present, and its manpage (`--force` overwrites one
 already installed).
 

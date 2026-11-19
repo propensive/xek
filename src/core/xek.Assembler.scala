@@ -86,8 +86,8 @@ object Assembler:
 
   // Checks that a file is a JAR a client can launch with `java -jar`: a ZIP whose manifest names
   // a `Main-Class`. The client never names a class itself, so without one the daemon cannot
-  // start, and this is the last point at which that can be said clearly.
-  def checkJar(jar: Path on Local): Unit raises Error =
+  // start, and this is the last point at which that can be said clearly. The class is returned.
+  def checkJar(jar: Path on Local): Text raises Error =
     val file = ji.File(jar.encode.s)
 
     if !file.isFile then abort(Error(Fault.Usage, 1, m"${jar.encode} is not a file"))
@@ -106,8 +106,7 @@ object Assembler:
       catch case error: ji.IOException =>
         abort(Error(Fault.Format, 1, m"${jar.encode} could not be read as a JAR file"))
 
-    if mainClass.absent
-    then abort(Error(Fault.Format, 2, m"${jar.encode} has no Main-Class in its manifest"))
+    mainClass.lest(Error(Fault.Format, 2, m"${jar.encode} has no Main-Class in its manifest"))
 
 // The one physical offset in a ZIP. A JAR with a ZIP64 end-of-central-directory locator — the
 // 20-byte block starting `PK\x06\x07` immediately before the end-of-central-directory record —

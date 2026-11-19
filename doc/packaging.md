@@ -107,12 +107,20 @@ xek build --download app.jar                   # a polyglot file which fetches i
 xek build --dispatch executables.tsv app       # a polyglot file which fetches a complete executable
 xek build --java 25 --java-min 21 --jdk app.jar
 xek build --java-option -Xmx2g app.jar         # the JVM always starts with -Xmx2g
+xek build --shrink --keep 'app.plugins.**' app.jar  # from only what app.jar's main class reaches
 xek build --build-id 42 --app-id propensive/mytool --public-key release.pub --recovery-key recovery.pub app.jar
 xek sign --key release.seed --in mytool --out mytool.signed
 xek inspect mytool.signed                      # its platform, record, Java options and signature
 ```
 
 `xek --help` lists the subcommands, `xek build --help` the options of one, and `xek '{admin}' install` installs its tab-completions.
+
+`--shrink` builds from the JAR's closed world rather than the whole of it: the classes its
+`Main-Class` and its `META-INF/services` implementations reach, with those compiled by the
+version of Scala `xek` is built with (and whose TASTy is still in the JAR) recompiled without the
+members nothing reaches. Classes reached only by reflection must be named with `--keep`, which
+may be repeated. It is an option of the command alone: a toolchain shrinks with Soundness's
+`shrinkEdges` instead.
 
 ### Java options at run time
 
