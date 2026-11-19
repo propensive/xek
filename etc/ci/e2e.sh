@@ -280,6 +280,21 @@ else
 fi
 wait "$BG" 2>/dev/null || true
 
+# `--shrink`: the same application, built from only what its main class reaches, is smaller and
+# still a daemon which answers. It runs under its own name, so as to have its own daemon.
+echo "e2e: checking a shrunk executable"
+
+SHRUNK="$TMP/helloshrunk"
+package "$SHRUNK" --shrink
+expect "a shrunk executable prints the greeting" "Hello world" "$(limit 120 "$SHRUNK")"
+expect "a shrunk executable is passed its arguments" "one" "$(limit 20 "$SHRUNK" args one)"
+pkill -f 'ethereal.name=helloshrunk' >/dev/null 2>&1 || true
+rm -rf "${XDG_STATE_HOME:-$HOME/.local/state}/helloshrunk" "${XDG_RUNTIME_DIR:-/nonexistent}/helloshrunk"
+
+if [[ "$(wc -c < "$SHRUNK")" -lt "$(wc -c < "$OUT")" ]]; then pass "a shrunk executable is smaller"
+else fail "a shrunk executable is no smaller: $(wc -c < "$SHRUNK") bytes, against $(wc -c < "$OUT")"
+fi
+
 if [[ "$failures" -ne 0 ]]; then
   echo "e2e: $failures failure(s)" >&2
   exit 1

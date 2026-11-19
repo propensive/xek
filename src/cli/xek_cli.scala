@@ -97,6 +97,8 @@ object ui:
   val Java = Flag[Text](t"java", false, Nil, Command.Java.description)
   val JavaMin = Flag[Text](t"java-min", false, Nil, Command.JavaMin.description)
   val Jdk = Flag[Unit](t"jdk", false, Nil, Command.Jdk.description)
+  val Shrink = Flag[Unit](t"shrink", false, Nil, Command.Shrink.description)
+  val Keep = Flag[Text](t"keep", true, Nil, Command.Keep.description)
   val JavaOption = Flag[Text](t"java-option", true, Nil, Command.JavaOption.description)
   val BuildId = Flag[Text](t"build-id", false, Nil, Command.BuildId.description)
   val PublicKey = Flag[Text](t"public-key", false, Nil, Command.PublicKey.description)
@@ -285,6 +287,8 @@ private def completeBuild(arguments: List[Argument])(using Cli, Interpreter, Wor
   ui.Download.present
   ui.Jdk.present
   ui.AllowDowngrade.present
+  ui.Shrink.present
+  ui.Keep.present
 
   // The first operand is the JAR, unless `--dispatch` takes its place, so only directories and
   // JARs are offered for it.
@@ -474,6 +478,10 @@ object Driver:
             t"  --download         like --polyglot, but downloads its stub on first run",
             t"  --dispatch <file>  downloads a complete executable, from the rows of a manifest:",
             t"                     platform, URL and SHA-256, separated by tabs",
+            t"",
+            t"With --shrink, the JAR is first reduced to the classes its main class reaches, and",
+            t"those compiled by this version of Scala, with their TASTy in the JAR, to the members",
+            t"it reaches. Name what only reflection reaches with --keep, as in --keep 'app.plugins.**'.",
             t"",
             t"Platforms: $platforms" )
 
