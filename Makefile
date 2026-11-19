@@ -6,7 +6,7 @@
 
 MILL = ./mill
 
-.PHONY: check build test cargo-test client-build client-fetch client-release xek publishLocal sync-deps tools e2e clean
+.PHONY: check check-scratch build test cargo-test client-build client-fetch client-release xek publishLocal sync-deps tools e2e clean
 
 # Everything published from this repository. `example` is deliberately excluded: it is the
 # end-to-end fixture, and the only module that depends on a daemon implementation.
@@ -15,6 +15,13 @@ build:
 
 # Suites carry no `main`; a host client discovers them from the `META-INF/services/probably.Suite`
 # index and drives them over the test-event protocol. `$(TESTS)` are fume selection terms.
+# Temporary files and directories are galilei's `Scratch` loans, which delete what they made when
+# their scope ends, however it ends: never the JDK's `createTempFile`/`createTempDirectory`, whose
+# leftovers a long-lived JVM (a test run inside fume's daemon) keeps until it exits, and never
+# `deleteOnExit`, which waits for that exit too.
+check-scratch:
+	! grep -rnE --include='*.scala' 'createTemp(File|Directory)|deleteOnExit' src
+
 test:
 	$(MILL) xek.test.assembly
 	fume run -c out/xek/test/assembly.dest/out.jar $(TESTS)
@@ -56,7 +63,7 @@ sync-deps:
 # release pinned in etc/tools; `make tools` installs it), as configured in
 # .pyrocosm/flare/config.tel. Findings are warnings and the count is not yet zero, so CI does
 # not run this; PATHS restricts the check to files beneath them.
-check:
+check: check-scratch
 	flare check $(PATHS)
 
 # Install the commands pinned in etc/tools (fume) through their releases' installers.
