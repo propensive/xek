@@ -209,7 +209,14 @@ fn main() {
     debug!("main: stdin_tty={} foreground={} attached={}", stdin_tty, foreground, attached);
 
     let saved_tty = if attached { tty::save_tty_state() } else { tty::TtyState::detached() };
-    if attached { tty::set_raw_mode(); }
+    // Raw mode, but guarded: Ctrl-C is still a signal, and until the session's own handlers
+    // are installed it ends the launcher, with the terminal restored. So a daemon that never
+    // takes the connection, or never reads `init`, can be interrupted from the keyboard.
+    if attached {
+        tty::own(saved_tty);
+        signals::install_guard();
+        tty::set_raw_mode();
+    }
 
     // Query the terminal's background colour while we still own stdin/stdout
     // directly. Anything the user happens to type during the handshake is
@@ -238,8 +245,8 @@ fn main() {
     // (a pipe, a file). A terminal we may not read — a background job — is presented to the
     // daemon as already at end-of-file. The session's `mode` documents — a command asking for
     // a cooked (canonical) terminal, ordinary echo and line editing, instead of the raw mode
-    // set above, and for raw mode back afterwards — apply only to a terminal we are entitled
-    // to reconfigure.
+    // set above, for raw mode back afterwards, or for the keys that generate signals — apply
+    // only to a terminal we are entitled to reconfigure.
     let stdin: session::Stdin =
         if attached { session::Stdin::Terminal { leftover } }
         else if !stdin_tty { session::Stdin::Reader(Box::new(std::io::stdin())) }

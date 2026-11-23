@@ -302,9 +302,12 @@ When stdin is a terminal and the launcher is in the terminal's **foreground proc
 the launcher:
 
 1. saves the terminal's attributes, to restore them at exit;
-2. puts the terminal into raw mode — no canonical line editing, no echo, and no signal
-   generation from keys (`ISIG` off, `VINTR` undefined), with output post-processing kept on —
-   so that every keystroke reaches the application as bytes;
+2. puts the terminal into **guarded** raw mode — no canonical line editing and no echo, with
+   output post-processing kept on, so that keystrokes reach the application as bytes as they
+   are typed, but with signal generation left on (`ISIG` on, the interrupt character as the
+   user had it): Ctrl-C, Ctrl-\ and Ctrl-Z are still SIGINT, SIGQUIT and SIGTSTP. It is in
+   this mode that the launcher connects and sends `init`, and it leaves it only as *Who has
+   the interrupt key* (below) says;
 3. asks the terminal for its background colour (OSC 11), when stdout is the terminal too,
    waiting briefly for the reply, and delivers it as `TERMINAL_BG`; any other bytes the user
    typed meanwhile are pushed back ahead of stdin, not lost. On Windows the query is made only
@@ -318,7 +321,38 @@ the launcher:
    without echo is how a password is read. Canonical mode restores the terminal's own settings
    wholesale, so while it holds the terminal generates signals again: Ctrl-C is SIGINT, which
    arrives as a `signal` document rather than a byte (below), and Ctrl-Z stops the launcher. A
-   `mode` without either flag is raw mode again.
+   `mode` without either flag is raw mode again, with every key a byte; under the
+   `interrupts` layer a `mode` carrying `interrupts`, and not `canonical`, is guarded raw mode.
+
+**Who has the interrupt key.** A terminal in raw mode with signal generation off gives the
+user no way to stop an invocation but the application's own: Ctrl-C is a byte, and a byte
+nobody reads does nothing. That is right for an application reading its keyboard — an editor
+may treat Ctrl-C as input — and wrong for everything before and beside it: a daemon that has
+not taken the connection, one that has not read `init`, an application busy with a download
+and reading nothing. So the keys that generate signals stay the terminal's until the
+application takes them:
+
+- Until `init` has been sent, the mode is guarded whatever the daemon. The launcher's
+  forwarding handlers are not yet installed, so SIGINT, SIGQUIT, SIGTERM and SIGHUP end it at
+  once, with the terminal's attributes restored first.
+- Under a composition with the **`interrupts` layer**, it stays guarded after `init`, and the
+  daemon sends `mode`, with no flag, when the application first reads its keyboard. Until
+  then Ctrl-C is a `signal` document naming `INT`, with everything that follows from one
+  (*Signals*): an application that traps it handles it, and if the invocation rejects it or
+  the daemon does not answer within `SIGNAL_TIMEOUT_MS`, the launcher dies of SIGINT. No
+  invocation that is not reading its keyboard can hold the terminal against Ctrl-C for
+  longer than that. The daemon may hand the keys back with `mode` carrying `interrupts`.
+- Under the base alone — a daemon that predates the layer, and expects every key from the
+  start — the launcher takes the keys itself as soon as `init` is sent: raw mode with signal
+  generation off (`ISIG` off, `VINTR` undefined), as it was before the layer existed.
+
+Typing ahead is unaffected: in either raw mode the bytes typed before the application reads
+are delivered when it does. Only the keys that generate signals differ, and one of those
+pressed before the application has asked for it is a signal, not a byte it will later read.
+
+A launcher that dies of a signal — one it re-raises on itself, in any of the cases under
+*Signals* — restores the terminal's saved attributes first, when it owns the terminal's mode
+and is in the foreground.
 
 When stdin is a terminal but the launcher is **not in the foreground** — a background job under
 job control, `mytool > log &` — none of the above happens, since any of it would stop the job
@@ -416,9 +450,11 @@ terminal's saved attributes so the shell finds it as it left it, and then stops,
 signal's default action. On `CONT` it re-applies raw mode — only if it owned the terminal's
 mode before, and only if it is once more in the foreground, since from the background that
 would stop it again — and forwards `CONT` with the terminal's size, since the window may have
-been resized while the job was stopped, so an application can redraw. A terminal in raw mode
-does not generate `TSTP` from Ctrl-Z (that byte, 0x1A, goes to the application); the path is
-exercised by `kill -TSTP`, and by Ctrl-Z when stdin is a pipe.
+been resized while the job was stopped, so an application can redraw. The raw mode it
+re-applies is the one that held before: guarded, or with the keys taken. A terminal in raw
+mode whose keys the application has taken does not generate `TSTP` from Ctrl-Z (that byte,
+0x1A, goes to the application); the path is exercised by `kill -TSTP`, by Ctrl-Z when stdin is
+a pipe, and by Ctrl-Z in guarded raw mode.
 
 **Inherited dispositions.** A signal the launcher inherits as *ignored* stays ignored: no
 handler is installed, nothing is forwarded, and the launcher can never die of it. That is how
@@ -431,12 +467,14 @@ is never interleaved with another's.
 **Ctrl-C reaches the daemon by one of two routes**, and a daemon implementation must handle
 both:
 
-- *Stdin is a terminal in the foreground, in raw mode.* Raw mode has turned signal generation
+- *Stdin is a terminal in the foreground, in raw mode, and the application has the keys*
+  (*Who has the interrupt key*, above). Raw mode has turned signal generation
   off, so the terminal does not send SIGINT at all. Ctrl-C arrives as the **byte 0x03** in the ordinary
   stdin stream, and it is the daemon's — ultimately the application's — job to notice it. An
   unnoticed 0x03 does nothing. This is deliberate: a full-screen application may treat Ctrl-C
-  as input.
-- *Stdin is a pipe, a file, a background terminal, or a terminal in canonical mode.* The
+  as input. It is also why the keys are not the application's until it reads its keyboard.
+- *Stdin is a pipe, a file, a background terminal, a terminal in canonical mode, or a
+  terminal in guarded raw mode.* The
   terminal still sends SIGINT to the foreground process group, the launcher's handler catches it, and it arrives as a **`signal`
   document naming `INT`**. If the invocation rejects it, or does not answer, the launcher
   dies of SIGINT as described above.

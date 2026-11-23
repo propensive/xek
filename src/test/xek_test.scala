@@ -444,10 +444,17 @@ object Tests extends Suite(m"XEK tests"):
 
       def derived: Text = hex(SchemaSignature.fromDocument(schemaText.read[Tel], Tels.Axiom.tels))
 
-      // The hex bytes of the `BASE` constant, in order.
-      def pinned: Text =
+      // The hashes of the schema's components: its base, and each layer in order.
+      def base: Text =
+        hex(SchemaSignature.componentHashes(schemaText.read[Tel], Tels.Axiom.tels)(0))
+
+      def layers: List[Text] =
+        SchemaSignature.componentHashes(schemaText.read[Tel], Tels.Axiom.tels)(1).map(hex)
+
+      // The hex bytes of the 32-byte constant `name` in the client's source, in order.
+      def constant(name: String): Text =
         val source: String = rust.s
-        val start = source.indexOf("pub const BASE")
+        val start = source.indexOf(s"pub const $name")
         val end = source.indexOf("];", start)
         val builder = StringBuilder()
         var i = source.indexOf("0x", start)
@@ -456,21 +463,54 @@ object Tests extends Suite(m"XEK tests"):
           i = source.indexOf("0x", i + 4)
         builder.toString.tt
 
-      // The client writes the base's signature as the pinned hash followed by a trailer that
-      // makes every byte XOR to the cadence 0x79 (BinTEL §8.2); the same arithmetic, here,
-      // must reproduce what Stratiform derives, or the two sides' framing differs.
-      def clientSignature: Text =
-        val hash = pinned.s.grouped(2).map(Integer.parseInt(_, 16)).toList
-        val trailer = hash.foldLeft(0x79)(_ ^ _) & 0xff
-        (hash :+ trailer).map { byte => String.format("%02x", Integer.valueOf(byte)) }.mkString.tt
+      def pinned: Text = constant("BASE")
+
+      // The layers' constants, in the schema's order: one name here per `layer` there.
+      def pinnedLayers: List[Text] = List(constant("INTERRUPTS"))
+
+      // The client writes a signature as a palimpsest of the pinned hashes (BinTEL §8.2): each
+      // XORed into the body, the base at offset 0 and the layers at 4, 6, 8, …, and then a
+      // trailer that makes every byte XOR to the cadence 0x79. The same arithmetic, here, over
+      // the hashes' hex run together, must reproduce what Stratiform derives, or the two
+      // sides' framing differs.
+      def clientSignature(hashes: Text): Text =
+        val source: String = hashes.s
+        val count = source.length/64
+        val body = new scala.Array[Int](if count <= 1 then 32 else 36 + 2*(count - 2))
+        var index = 0
+        while index < count do
+          val offset = if index == 0 then 0 else 4 + 2*(index - 1)
+          var position = 0
+          while position < 32 do
+            val at = index*64 + position*2
+            body(offset + position) ^= Integer.parseInt(source.substring(at, at + 2), 16)
+            position += 1
+          index += 1
+        val builder = StringBuilder()
+        var trailer = 0x79
+        var i = 0
+        while i < body.length do
+          trailer ^= body(i)
+          builder.append(String.format("%02x", Integer.valueOf(body(i))))
+          i += 1
+        builder.append(String.format("%02x", Integer.valueOf(trailer & 0xff)))
+        builder.toString.tt
 
       test(m"the client pins the hash of the base schema in spec/"):
-        derived.s.take(64).tt
+        base
       .check(_ == pinned)
 
+      test(m"the client pins the hash of each layer of the schema in spec/"):
+        layers
+      .check(_ == pinnedLayers)
+
       test(m"the client's palimpsest arithmetic reproduces the base signature"):
+        hex(SchemaSignature.encode(List(SchemaSignature.componentHashes(schemaText.read[Tel], Tels.Axiom.tels)(0))))
+      .check(_ == clientSignature(pinned))
+
+      test(m"the client's palimpsest arithmetic reproduces the whole schema's signature"):
         derived
-      .check(_ == clientSignature)
+      .check(_ == clientSignature((pinned.s + constant("INTERRUPTS").s).tt))
 
     suite(m"native"):
       test(m"output equals stub ‖ record ‖ jar, byte for byte"):

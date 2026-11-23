@@ -422,6 +422,16 @@ pub fn open(socket: UnixStream, info: &ClientInfo, composition: Composition, opt
         socket: socket.try_clone().expect("clone the session socket"),
     });
 
+    // The terminal has been in guarded raw mode since before the connection was made, so that
+    // a daemon which did not take it, or did not read `init`, could be interrupted. A daemon
+    // that knows of the guard now says when its application wants the keys; one that does not
+    // expects them from the start, as it always had them. Settled here, before anything the
+    // daemon sends is read, so that it cannot undo a `mode` of the daemon's.
+    if session.tty.is_some() && !session.composition.guards_interrupts() {
+        crate::tty::take_keys(true);
+        crate::tty::set_raw_mode();
+    }
+
     let writer_socket = socket.try_clone().expect("clone the session socket");
     let writer_outbox = outbox.clone();
     std::thread::spawn(move || writer_outbox.run(writer_socket));
@@ -545,8 +555,14 @@ impl Session {
                 Some(Message::Credit { stream, bytes }) => self.credits.grant(&stream, bytes),
                 Some(Message::Open { stream }) => self.open_descriptor(&stream),
                 Some(Message::Closed { stream }) => self.credits.revoke(&stream),
-                Some(Message::Mode { canonical, echo }) => if let Some(saved) = self.tty {
-                    if canonical { crate::tty::set_cooked_mode(&saved) } else { crate::tty::set_raw_mode() }
+                // Canonical mode is the terminal's own, signals and all. Raw mode is guarded when
+                // the document says `interrupts`, and otherwise has every key a byte: which is
+                // remembered, for when raw mode is next put back after a stop or a command.
+                Some(Message::Mode { canonical, echo, interrupts }) => if let Some(saved) = self.tty {
+                    if canonical { crate::tty::set_cooked_mode(&saved) } else {
+                        crate::tty::take_keys(!interrupts);
+                        crate::tty::set_raw_mode();
+                    }
                     crate::tty::set_echo(echo);
                 },
                 Some(Message::Run { command, arguments, pwd }) => {
