@@ -1,0 +1,364 @@
+tel 1.0 propensive.dev/bolt
+
+# Bolt codes of XEK: `subdivision 1` / `error 8` is ↯/x.1.8. Subdivision 1 is the
+# launcher which begins every XEK executable, so its codes are reported by the
+# applications built with XEK; the others are reported by the `xek` command and
+# the libraries behind it.
+#
+# This is the record of the letter `x` which the index of bolt codes, `projects.tel` in
+# propensive/bolt, names; its schema is `bolt.tel` there. A code, once assigned, is permanent:
+# a number is never reused, and one which is withdrawn stays, marked `retired`.
+
+project x xek
+
+  subdivision 1 launcher
+    summary  the native launcher at the start of an XEK executable (src/client)
+    error 1 executable-not-located
+      summary  the launcher could not locate its own executable
+      source src/client/src/main.rs
+    error 2 state-directory-unusable
+      summary  the application's state directory cannot be used
+      source src/client/src/main.rs
+    error 3 java-options-ignored
+      summary  Java options were given, but the daemon is already running with different ones (a warning)
+      source src/client/src/main.rs
+    error 4 session-refused
+      summary  the daemon ended the session without answering: it speaks another launcher protocol
+      source src/client/src/main.rs
+    error 5 session-dropped
+      summary  the daemon ended the session without reporting the exit status
+      source src/client/src/main.rs
+    error 6 socket-untrusted
+      summary  the daemon's socket is owned by, or open to, another user
+      source src/client/src/main.rs
+    error 7 schema-mismatch
+      summary  the daemon speaks another launcher protocol: its schema is not this launcher's
+      source src/client/src/main.rs
+    error 8 java-not-found
+      summary  no suitable version of Java was found
+      source src/client/src/java.rs
+    error 9 no-downloader
+      summary  Java could not be downloaded: neither curl nor wget is on the PATH
+      source src/client/src/java.rs
+    error 10 java-download-failed
+      summary  the download of Java failed
+      source src/client/src/java.rs
+    error 11 java-unpack-failed
+      summary  unpacking the download of Java failed
+      source src/client/src/java.rs
+    error 12 java-release-missing
+      summary  the download of Java contains no `release` file
+      source src/client/src/java.rs
+    error 13 java-version-unreadable
+      summary  the version of Java could not be read from its `release` file
+      source src/client/src/java.rs
+    error 14 java-not-moved
+      summary  the downloaded Java could not be moved into place
+      source src/client/src/java.rs
+    error 15 daemon-not-started
+      summary  the daemon failed to start
+      source src/client/src/state.rs
+    error 16 daemon-unreachable
+      summary  the daemon could not be reached at its socket
+      source src/client/src/state.rs
+    error 17 daemon-process-failed
+      summary  the daemon process failed to start, and left its failure marker
+      source src/client/src/state.rs
+
+  subdivision 2 core
+    summary  building, inspecting and signing executables
+    error 1 assembler
+      symbol Assembler.Error
+      summary  the one error of this module: its variant is the fault, which is also the exit status, and its site the place it is raised from
+      variant 1 usage
+        summary  the command was not invoked correctly
+        site 1
+          summary  {} is not a file
+          source src/core/xek.Assembler.scala
+        site 2
+          summary  could not read {}
+          source src/core/xek.Assembler.scala
+        site 3
+          summary  could not write {}
+          source src/core/xek.Assembler.scala
+        site 4
+          summary  a Java version must be between 0 and 65535
+          source src/core/xek.Record.scala
+        site 5
+          summary  a release key needs an application id
+          source src/core/xek.Record.scala
+        site 6
+          summary  a recovery key needs a release key
+          source src/core/xek.Record.scala
+        site 7
+          summary  the Java options must fit in {} bytes
+          source src/core/xek.Record.scala
+        site 8
+          summary  the Java option {} does not start with -
+          source src/core/xek.Record.scala
+        site 9
+          summary  a Java option cannot contain a NUL
+          source src/core/xek.Record.scala
+        site 10
+          summary  the Java option -jar is the launcher's own
+          source src/core/xek.Record.scala
+        site 11
+          summary  the Java option {} cannot be built into an executable, since every user would run it
+          source src/core/xek.Record.scala
+        site 12
+          summary  there is no stub {} in {}
+          source src/core/xek.Stubs.scala
+        site 13
+          summary  {} is not a valid URL
+          source src/core/xek.Stubs.scala
+        site 14
+          summary  the minimum Java version, {}, is above the preferred version, {}
+          source src/core/xek.Build.scala
+        site 15
+          summary  --exclude applies only to a polyglot file (--polyglot, --download or --dispatch)
+          source src/core/xek.Build.scala
+        site 16
+          summary  every shell is excluded, so the file could not run anywhere
+          source src/core/xek.Build.scala
+        site 17
+          summary  --dispatch cannot be combined with --polyglot or --download
+          source src/core/xek.Build.scala
+        site 18
+          summary  --dispatch takes its platforms from its manifest
+          source src/core/xek.Build.scala
+        site 19
+          summary  --dispatch needs the name of the file to write
+          source src/core/xek.Build.scala
+        site 20
+          summary  {} is a directory
+          source src/core/xek.Build.scala
+        site 21
+          summary  no JAR file was given
+          source src/core/xek.Build.scala
+        site 22
+          summary  the output would overwrite the JAR itself
+          source src/core/xek.Build.scala
+        site 23
+          summary  no included shell can unpack a stub for {}
+          source src/core/xek.Build.scala
+        site 24
+          summary  there are no stubs to include
+          source src/core/xek.Build.scala
+        site 25
+          summary  --download needs stubs published at a URL, not a local --client directory
+          source src/core/xek.Build.scala
+        site 26
+          summary  this platform has no client stub; name one with --platform
+          source src/core/xek.Build.scala
+        site 27
+          summary  signing needs Java 24 or later, which provides ML-DSA, but xek is running on Java {}
+          source src/core/xek.Signer.scala
+        site 28
+          summary  this JDK does not derive ML-DSA keys from a single 32-byte seed, so it cannot sign
+          source src/core/xek.Signer.scala
+        site 29
+          summary  this JDK encodes ML-DSA public keys in an unexpected form
+          source src/core/xek.Signer.scala
+        site 30
+          summary  xek {} takes no operands, but was given {}
+          source src/core/xek.Signer.scala
+        site 31
+          summary  xek {} needs --{}
+          source src/core/xek.Signer.scala
+        site 32
+          summary  {} already exists; xek will not overwrite it
+          source src/core/xek.Signer.scala
+        site 33
+          summary  xek build does not sign
+          source src/core/xek.Signer.scala
+        site 34
+          summary  give exactly one of --key or --key-env
+          source src/core/xek.Signer.scala
+        site 35
+          summary  the environment variable ${name.or(t
+          source src/core/xek.Signer.scala
+        site 36
+          summary ${name.or(t
+          source src/core/xek.Signer.scala
+        site 37
+          summary  {} already exists; xek will not overwrite it
+          source src/core/xek.Signer.scala
+        site 38
+          summary  could not write {}
+          source src/core/xek.Signer.scala
+        site 39
+          summary  xek needs a subcommand first; to build an executable, use: xek build {}
+          source src/core/xek.Command.scala
+        site 40
+          summary  xek needs a subcommand first: one of {}
+          source src/core/xek.Command.scala
+        site 41
+          summary  there is no subcommand {}; choose from {}
+          source src/core/xek.Command.scala
+        site 42
+          summary  xek {} has no option {}
+          source src/core/xek.Command.scala
+        site 43
+          summary  there is no option {}
+          source src/core/xek.Command.scala
+        site 44
+          summary  {} takes no value
+          source src/core/xek.Command.scala
+        site 45
+          summary  {} needs a value
+          source src/core/xek.Command.scala
+        site 46
+          summary  there are more arguments than expected: {}
+          source src/core/xek.Command.scala
+        site 47
+          summary  --public-key needs --app-id, or the executable could never upgrade
+          source src/core/xek.Command.scala
+        site 48
+          summary  --recovery-key needs --public-key
+          source src/core/xek.Command.scala
+        site 49
+          summary  --url is needed: where the executables are downloaded from
+          source src/core/xek.Command.scala
+        site 50
+          summary  --manifest replaces the executables; give one or the other
+          source src/core/xek.Command.scala
+        site 51
+          summary  give the executables to embed the digests of, or a --manifest
+          source src/core/xek.Command.scala
+        site 52
+          summary  {} is not named <name>-<platform>[.exe], for a platform of {}
+          source src/core/xek.Command.scala
+        site 53
+          summary  the executables are named for different commands: ${names.join(t
+          source src/core/xek.Command.scala
+        site 54
+          summary  --name is needed with --manifest
+          source src/core/xek.Command.scala
+        site 55
+          summary  {} is not a command name
+          source src/core/xek.Command.scala
+        site 56
+          summary  the manifest names {}, which is not a platform; choose from {}
+          source src/core/xek.Command.scala
+        site 57
+          summary  the manifest's digest for {} is not a SHA-256
+          source src/core/xek.Command.scala
+        site 58
+          summary  more than one executable is for {}
+          source src/core/xek.Command.scala
+        site 59
+          summary  the manifest names no platform
+          source src/core/xek.Command.scala
+        site 60
+          summary  --client cannot be combined with --client-url or --client-manifest
+          source src/core/xek.Command.scala
+        site 61
+          summary  {} is not a platform; choose from {}
+          source src/core/xek.Command.scala
+        site 62
+          summary  {} is not a shell; choose from sh, pwsh or bat
+          source src/core/xek.Command.scala
+        site 63
+          summary  --{} must be a Java version, like 25
+          source src/core/xek.Command.scala
+        site 64
+          summary  --{} must be a whole number, not {}
+          source src/core/xek.Command.scala
+        site 65
+          summary  xek inspect needs exactly one executable
+          source src/cli/xek_cli.scala
+        site 66
+          summary  the key is neither the record's release key nor its recovery key; give --foreign-key if that is intended, as for the release which follows a rotation
+          source src/core/xek.Signer.scala
+        site 67
+          summary  --shrink cannot be combined with --dispatch, which has no JAR
+          source src/core/xek.Build.scala
+        site 68
+          summary  --keep applies only when the JAR is shrunk (--shrink)
+          source src/core/xek.Build.scala
+        site 69
+          summary  there is no temporary directory to shrink {} in
+          source src/core/xek.Shrinker.scala
+      variant 2 format
+        summary  a file is not in the form expected
+        site 1
+          summary  {} could not be read as a JAR file
+          source src/core/xek.Assembler.scala
+        site 2
+          summary  {} has no Main-Class in its manifest
+          source src/core/xek.Assembler.scala
+        site 3
+          summary  a {} key must be {} bytes, but is {}
+          source src/core/xek.Record.scala
+        site 4
+          summary  no client hash is known for {}
+          source src/core/xek.Stubs.scala
+        site 5
+          summary  no client hash is known for {}
+          source src/core/xek.Stubs.scala
+        site 6
+          summary  SHA-256 mismatch for {}: expected {}, but got {}
+          source src/core/xek.Stubs.scala
+        site 7
+          summary  {} is not a known platform
+          source src/core/xek.Build.scala
+        site 8
+          summary  a dispatch manifest line must be label, URL and SHA-256, separated by tabs
+          source src/core/xek.Build.scala
+        site 9
+          summary  {} is neither an XEK executable nor a polyglot file
+          source src/core/xek.Inspector.scala
+        site 10
+          summary  the {} payload is not valid base64
+          source src/core/xek.Inspector.scala
+        site 11
+          summary  the record in this polyglot file is truncated
+          source src/core/xek.Inspector.scala
+        site 12
+          summary  {} has no ETHRCFG v4 record
+          source src/core/xek.Signer.scala
+        site 13
+          summary  {} is {} bytes, not a {}-byte ML-DSA-44 signature
+          source src/core/xek.Signer.scala
+        site 14
+          summary  {} is not a {}-byte public key
+          source src/core/xek.Signer.scala
+        site 15
+          summary  a seed is {} bytes, but this one is {}
+          source src/core/xek.Signer.scala
+        site 16
+          summary  {} could not be shrunk: {}
+          source src/core/xek.Shrinker.scala
+        site 17
+          summary  the Main-Class of {}, {}, is not the name of a class
+          source src/core/xek.Shrinker.scala
+      variant 3 download
+        summary  a download failed
+        site 1
+          summary  could not download {}
+          source src/core/xek.Stubs.scala
+      variant 4 verification
+        summary  a signature or an identity does not verify
+        site 1
+          summary  the executable is not for the application {}
+          source src/core/xek.Signer.scala
+        site 2
+          summary  the signature does not verify under that key
+          source src/core/xek.Signer.scala
+
+  subdivision 3 packager
+    summary  packaging through a build tool
+    error 1 packager
+      symbol Packager.Error
+      summary  a packaging which cannot be done
+      site 1
+        summary  Burdock remote dependencies are not yet supported (Stage C)
+        source src/packager/xek.Packager.scala
+      site 2
+        summary  Native delivery requires exactly one target, but {} were given
+        source src/packager/xek.Packager.scala
+      site 3
+        summary  {} is not a known platform
+        source src/packager/xek.Packager.scala
+    error 2 assembly
+      summary  an error of the core's, whose code follows: ↯/x.3.2/x.2.1.1.37

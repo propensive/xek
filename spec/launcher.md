@@ -515,5 +515,5 @@ and the error the connection failed with, then the tail of `daemon.log`; so does
 whose session ends without an `exit-status` (*Losing the other side*), one whose daemon speaks
 another protocol, and one whose state directory cannot be used. Each of these reports begins with its
 [bolt code](https://github.com/propensive/bolt) in brackets, `[↯/x.1.2]` for a state directory
-which cannot be used, say; `x.tel` in the `bolt` repository records them. One that was terminated by a
+which cannot be used, say; `bolt.tel` in XEK's repository records them. One that was terminated by a
 signal dies of that signal, as above, whatever status the daemon then reports.

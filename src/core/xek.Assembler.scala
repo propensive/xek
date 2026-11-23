@@ -60,7 +60,7 @@ object Assembler:
   // Every error of this module is one of four faults, raised from many places. Its bolt code names
   // both: `↯/x.2.1`, the fault (which is also the exit status), and the `site` it was raised from,
   // as in ↯/x.2.1.1.37. The sites of each fault are numbered from 1 in the order they were added,
-  // and the `bolt` registry's `x.tel` records them; a number is never reused, so a new site takes
+  // and `bolt.tel`, at the root, records them; a number is never reused, so a new site takes
   // the next one, wherever in the source it is.
   case class Error(fault: Fault, site: Int, detail: Message)(using Diagnostics)
   extends fulminate.Error(detail):
