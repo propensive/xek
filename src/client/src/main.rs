@@ -10,6 +10,7 @@ mod acceptance;
 mod bintel;
 mod config;
 mod daemon;
+mod deadline;
 mod descriptors;
 mod session;
 mod settings;
@@ -65,6 +66,9 @@ pub const WRAP_VARIABLE: &str = "XEK_WRAP_JAVA";
 // launcher only recognises them so as not to touch the terminal for an invocation that runs
 // behind the user's shell. See `spec/launcher.md`.
 const INTERNAL_SENTINELS: [&str; 2] = ["{completions}", "{admin}"];
+// The one of them a shell runs while the user waits at the prompt, and which is therefore given
+// a deadline (`deadline.rs`).
+const COMPLETIONS_SENTINEL: &str = "{completions}";
 
 fn main() {
     // When this invocation began, so that a daemon it could not reach is reported with how long
@@ -111,6 +115,9 @@ fn main() {
 
     update::check_updates(&script, argv0.as_deref(), &args, &name);
     debug!("main: post-update-check");
+    // From here a completion request is on the clock. Not before: a pending update is applied
+    // by replacing this file, which must not be abandoned halfway.
+    if args.first().is_some_and(|arg| arg == COMPLETIONS_SENTINEL) { deadline::arm(); }
 
     let base_dir = state::base_dir(&name);
     if let Err(reason) = state::prepare_base_dir(&base_dir) {
@@ -156,25 +163,17 @@ fn main() {
                 debug!("main: launch::launch returned");
             }
             None => {
-                // Wait by the same rule as the launcher doing the spawning: a cold
-                // Burdock cache being fetched by that daemon is progress here too.
                 debug!("main: another launcher holds the lock; awaiting socket");
-                let debugger = java_options::suspended(&java_options::recorded(&options_file));
-                let outcome = launch::await_startup(&socket_file, &fail_file, &progress_file, None, debugger.as_deref());
-                xek::clear();
-                if !matches!(outcome, launch::Outcome::Bound) {
-                    debug!("main: socket did not appear");
-                    state::abort(&fail_file);
-                    let reason = match outcome {
-                        launch::Outcome::Idle(Some(_)) => launch::idle_reason(&outcome),
-                        _ => "another launcher held the startup lock but bound no socket".to_string(),
-                    };
-                    state::report_failure(&base_dir, &name, &reason);
-                    state::backout(&fail_file, &pid_file, &name);
-                    std::process::exit(1);
-                }
+                await_daemon(&base_dir, &name, &pid_file, &socket_file, &fail_file, &progress_file, &options_file,
+                    "another launcher held the startup lock but bound no socket");
             }
         }
+    } else if !state::socket_ready(&socket_file) {
+        // A daemon is recorded and alive, with no socket yet: one whose launcher did not stay
+        // to see it start.
+        debug!("main: a daemon is starting unattended; awaiting socket");
+        await_daemon(&base_dir, &name, &pid_file, &socket_file, &fail_file, &progress_file, &options_file,
+            "it was started by an earlier invocation but bound no socket");
     }
     state::backout(&fail_file, &pid_file, &name);
 
@@ -210,7 +209,14 @@ fn main() {
     debug!("main: stdin_tty={} foreground={} attached={}", stdin_tty, foreground, attached);
 
     let saved_tty = if attached { tty::save_tty_state() } else { tty::TtyState::detached() };
-    if attached { tty::set_raw_mode(); }
+    // Raw mode, but guarded: Ctrl-C is still a signal, and until the session's own handlers
+    // are installed it ends the launcher, with the terminal restored. So a daemon that never
+    // takes the connection, or never reads `init`, can be interrupted from the keyboard.
+    if attached {
+        tty::own(saved_tty);
+        signals::install_guard();
+        tty::set_raw_mode();
+    }
 
     // Query the terminal's background colour while we still own stdin/stdout
     // directly. Anything the user happens to type during the handshake is
@@ -239,8 +245,8 @@ fn main() {
     // (a pipe, a file). A terminal we may not read — a background job — is presented to the
     // daemon as already at end-of-file. The session's `mode` documents — a command asking for
     // a cooked (canonical) terminal, ordinary echo and line editing, instead of the raw mode
-    // set above, and for raw mode back afterwards — apply only to a terminal we are entitled
-    // to reconfigure.
+    // set above, for raw mode back afterwards, or for the keys that generate signals — apply
+    // only to a terminal we are entitled to reconfigure.
     let stdin: session::Stdin =
         if attached { session::Stdin::Terminal { leftover } }
         else if !stdin_tty { session::Stdin::Reader(Box::new(std::io::stdin())) }
@@ -279,6 +285,30 @@ fn main() {
         signals::die(signal);
     }
     std::process::exit(conclude(outcome, &name));
+}
+
+// Waits for a daemon this launcher did not start to bind its socket, by the same rule as the
+// launcher doing the spawning: a cold Burdock cache being fetched by that daemon is progress
+// here too. Exits, with `unbound` as the reason when there is no better one, if it never does.
+#[allow(clippy::too_many_arguments)]
+fn await_daemon(
+    base_dir: &Path, name: &str, pid_file: &Path, socket_file: &Path, fail_file: &Path,
+    progress_file: &Path, options_file: &Path, unbound: &str,
+) {
+    let debugger = java_options::suspended(&java_options::recorded(options_file));
+    let outcome = launch::await_startup(socket_file, fail_file, progress_file, None, debugger.as_deref());
+    xek::clear();
+    if !matches!(outcome, launch::Outcome::Bound) {
+        debug!("main: socket did not appear");
+        state::abort(fail_file);
+        let reason = match outcome {
+            launch::Outcome::Idle(Some(_)) => launch::idle_reason(&outcome),
+            _ => unbound.to_string(),
+        };
+        state::report_failure(base_dir, name, &reason);
+        state::backout(fail_file, pid_file, name);
+        std::process::exit(1);
+    }
 }
 
 // The launcher's exit status from the session's end. A daemon that closed the connection

@@ -80,8 +80,9 @@ fn raw(text: &OsStr) -> Vec<u8> { text.to_string_lossy().into_owned().into_bytes
 // daemon can read it once as it starts: never on disk, and never in an argument vector, where
 // `ps` would show it. On a thread of its own, since a pipe holds only so much and the write
 // completes only as the daemon reads; a daemon too old to read it leaves the thread blocked
-// until the launcher exits, and is otherwise unaffected.
-pub fn send_environment(stdin: std::process::ChildStdin) {
+// until the launcher exits, and is otherwise unaffected. `hold` keeps a completion request's
+// deadline from ending the launcher while the write is under way.
+pub fn send_environment(stdin: std::process::ChildStdin, hold: crate::deadline::Hold) {
     let bytes = encode(std::env::vars_os());
     std::thread::spawn(move || {
         use std::io::Write;
@@ -89,6 +90,8 @@ pub fn send_environment(stdin: std::process::ChildStdin) {
         if let Err(error) = stdin.write_all(&bytes) {
             crate::debug!("daemon: environment not sent: {}", error);
         }
+        drop(stdin);
+        drop(hold);
     });
 }
 

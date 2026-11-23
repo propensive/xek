@@ -18,6 +18,8 @@ pub const DEBUG_PORT: &str = "DEBUG_PORT";
 pub const DEBUG_LOG: &str = "DEBUG_LOG";
 // How long to wait for the daemon to acknowledge a forwarded signal, in milliseconds.
 pub const SIGNAL_TIMEOUT_MS: &str = "SIGNAL_TIMEOUT_MS";
+// How long a completion request may take before the launcher gives up on it, in milliseconds.
+pub const COMPLETION_TIMEOUT_MS: &str = "COMPLETION_TIMEOUT_MS";
 
 static TOOL: OnceLock<String> = OnceLock::new();
 

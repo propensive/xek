@@ -157,9 +157,11 @@ fn courier(request_read: libc::c_int, answer_write: libc::c_int) {
 // Restores the OS default action for `signal` and raises it on this process. For a
 // terminating signal that is the end: the parent sees a genuine signal death, and a shell
 // reports the conventional 128+signum status. Falls through only if the signal is blocked
-// or otherwise does not terminate, in which case the caller decides what to do.
+// or otherwise does not terminate, in which case the caller decides what to do. A terminal
+// whose mode the launcher owns is put back first: nothing runs after the signal to do it.
 #[cfg(unix)]
 pub(crate) fn raise_default(signal: libc::c_int) {
+    crate::tty::restore_owned();
     unsafe {
         libc::signal(signal, libc::SIG_DFL);
         libc::raise(signal);
@@ -202,6 +204,19 @@ pub(crate) fn install_handler(signal: libc::c_int, handler: extern "C" fn(libc::
         libc::sigaction(signal, &action, std::ptr::null_mut());
     }
 }
+
+// From the moment the terminal is reconfigured until `install` replaces these handlers with
+// the forwarding ones, a terminating signal — Ctrl-C included, the terminal's raw mode being
+// guarded — ends the launcher as it would have, but with the terminal restored.
+#[cfg(unix)]
+pub fn install_guard() {
+    for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT] {
+        install_handler(signal, guard);
+    }
+}
+
+#[cfg(unix)]
+extern "C" fn guard(signal: libc::c_int) { raise_default(signal); }
 
 #[cfg(unix)]
 fn pipe() -> Option<(libc::c_int, libc::c_int)> {
@@ -296,10 +311,26 @@ pub const CONTROL_EXIT_STATUS: i32 = 0xC000_013Au32 as i32;
 fn fallback(name: &str) {
     match name {
         "CTRL_C" | "CTRL_BREAK" | "CTRL_CLOSE" | "CTRL_LOGOFF" | "CTRL_SHUTDOWN" => {
+            crate::tty::restore_owned();
             std::process::exit(CONTROL_EXIT_STATUS);
         }
         _ => {}
     }
+}
+
+// As on Unix: until `install`, a control event ends the launcher as it would have, but with
+// the console's mode restored first. Returning 0 passes the event on to the default handler,
+// which exits; `install`'s handler is registered later, so is asked first, and answers.
+#[cfg(windows)]
+pub fn install_guard() {
+    use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
+    unsafe { SetConsoleCtrlHandler(Some(guard), 1); }
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn guard(_ctrl_type: u32) -> windows_sys::Win32::Foundation::BOOL {
+    crate::tty::restore_owned();
+    0
 }
 
 // The console handler runs on a thread of its own, with no async-signal-safety rule, so it
