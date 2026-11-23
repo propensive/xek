@@ -199,6 +199,19 @@ mod tests {
         assert_eq!(choose(&parsed, &chain), Some(1));
     }
 
+    // The schema's own layers, against the daemons there are: one that names the `interrupts`
+    // layer is written to under it, and one that publishes the base alone — every daemon
+    // before the layer — under the base, exactly as before.
+    #[test]
+    fn the_interrupts_layer_is_used_only_with_a_daemon_that_names_it() {
+        let chain = crate::bintel::chain();
+        assert_eq!(chain.len(), 2);
+        let named = acceptance(&[alternative(&chain, 1, &[&crate::bintel::INTERRUPTS[..4]])]);
+        assert_eq!(choose(&parse(&named).unwrap(), &chain), Some(2));
+        let base_only = acceptance(&[alternative(&chain, 1, &[])]);
+        assert_eq!(choose(&parse(&base_only).unwrap(), &chain), Some(1));
+    }
+
     #[test]
     fn layers_are_taken_in_chain_order_when_named() {
         let chain = fixtures::chain();

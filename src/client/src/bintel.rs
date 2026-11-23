@@ -53,7 +53,18 @@ pub struct Layer {
 /// The layers of the schema, in the order the schema file declares them. The client's
 /// library is exactly the chain of prefixes of this list: the base, the base with the first
 /// layer, and so on.
-pub static LAYERS: &[Layer] = &[];
+pub static LAYERS: &[Layer] = &[
+    // `interrupts`: `Mode` gains the flag of that name, and with it the launcher's raw mode
+    // is guarded until the daemon asks for the keys (`spec/launcher.md`, *The terminal*).
+    Layer { hash: INTERRUPTS, fields: &[(variant::MODE, Kind::Flag)] },
+];
+
+/// The value hash of the `interrupts` layer, pinned as `BASE` is.
+pub const INTERRUPTS: [u8; 32] = [
+    0xa3, 0x3f, 0xb4, 0x35, 0x63, 0x70, 0xde, 0x71, 0xe1, 0xc7, 0x44, 0x1c, 0x29, 0x83, 0x69,
+    0xf7, 0xa3, 0x4e, 0xda, 0x3c, 0xa5, 0x3f, 0x4b, 0xab, 0x1c, 0x84, 0xb4, 0x6e, 0xd1, 0x8b,
+    0xc9, 0x48,
+];
 
 /// The hashes of the base and every layer, in composition order.
 pub fn chain() -> Vec<[u8; 32]> {
@@ -90,6 +101,10 @@ pub struct Composition {
 }
 
 impl Composition {
+    /// Whether the composition includes the `interrupts` layer, the first: the daemon then
+    /// knows that the launcher's raw mode is guarded until it says otherwise, and says so.
+    pub fn guards_interrupts(&self) -> bool { self.depth > 1 }
+
     /// The base alone: what a daemon that publishes no acceptance is sent.
     pub fn base() -> Composition { Composition::of(&chain(), 1) }
 
@@ -225,7 +240,7 @@ pub enum Message {
     Credit { stream: String, bytes: u64 },
     Open { stream: String },
     SignalAck { accept: bool },
-    Mode { canonical: bool, echo: bool },
+    Mode { canonical: bool, echo: bool, interrupts: bool },
     Closed { stream: String },
     Run { command: String, arguments: Vec<String>, pwd: Option<String> },
     ExitStatus { code: i32 },
@@ -377,7 +392,7 @@ fn parse_with(layers: &[Layer], document: &[u8], composition: &Composition) -> O
         variant::CREDIT => Some(Message::Credit { stream: text(0)?, bytes: text(1)?.trim().parse().ok()? }),
         variant::OPEN => Some(Message::Open { stream: text(0)? }),
         variant::SIGNAL_ACK => Some(Message::SignalAck { accept: flag(0) }),
-        variant::MODE => Some(Message::Mode { canonical: flag(0), echo: flag(1) }),
+        variant::MODE => Some(Message::Mode { canonical: flag(0), echo: flag(1), interrupts: flag(2) }),
         variant::RUN => Some(Message::Run { command: text(0)?, arguments: texts(1)?, pwd: text(2) }),
         variant::CLOSED => Some(Message::Closed { stream: text(0)? }),
         variant::EXIT_STATUS => Some(Message::ExitStatus { code: text(0)?.trim().parse().ok()? }),
@@ -556,7 +571,7 @@ mod tests {
         record.flag(0);
         record.flag(2);
         let doc = document(variant::MODE, record, &two);
-        assert_eq!(parse_with(fixtures::LAYERS, &doc, &two), Some(Message::Mode { canonical: true, echo: false }));
+        assert_eq!(parse_with(fixtures::LAYERS, &doc, &two), Some(Message::Mode { canonical: true, echo: false, interrupts: true }));
         // The same bytes are not a base document: wrong signature.
         assert_eq!(parse_with(fixtures::LAYERS, &doc, &Composition::base()), None);
         // Nor a depth-3 one, whose signature is longer still.
@@ -570,7 +585,31 @@ mod tests {
         let mut record = Record::new();
         record.flag(3);
         let doc = document(variant::MODE, record, &three);
-        assert_eq!(parse_with(fixtures::LAYERS, &doc, &three), Some(Message::Mode { canonical: false, echo: false }));
+        assert_eq!(parse_with(fixtures::LAYERS, &doc, &three), Some(Message::Mode { canonical: false, echo: false, interrupts: false }));
+    }
+
+    // The schema's own first layer, `interrupts`: under it a `mode` may ask for guarded raw
+    // mode, and a `mode` with no flag still asks for raw mode with every key a byte. Under the
+    // base alone the flag does not exist, so a daemon cannot ask a launcher for a mode that
+    // launcher was not told the daemon knew of.
+    #[test]
+    fn the_interrupts_layer_adds_a_flag_to_mode() {
+        let layered = Composition::of(&chain(), 2);
+        assert!(layered.guards_interrupts());
+        assert!(!Composition::base().guards_interrupts());
+        assert_eq!(layered.signature.len(), 37);
+
+        let mut record = Record::new();
+        record.flag(2);
+        let doc = document(variant::MODE, record, &layered);
+        assert_eq!(parse(&doc, &layered), Some(Message::Mode { canonical: false, echo: false, interrupts: true }));
+        let doc = document(variant::MODE, Record::new(), &layered);
+        assert_eq!(parse(&doc, &layered), Some(Message::Mode { canonical: false, echo: false, interrupts: false }));
+
+        let mut record = Record::new();
+        record.flag(2);
+        let doc = document(variant::MODE, record, &Composition::base());
+        assert_eq!(parse(&doc, &Composition::base()), None);
     }
 
     #[test]
@@ -584,12 +623,12 @@ mod tests {
         let mut record = Record::new();
         record.flag(0);
         let doc = document(variant::MODE, record, &base);
-        assert_eq!(parse(&doc, &base), Some(Message::Mode { canonical: true, echo: false }));
+        assert_eq!(parse(&doc, &base), Some(Message::Mode { canonical: true, echo: false, interrupts: false }));
         let mut record = Record::new();
         record.flag(0);
         record.flag(1);
         let doc = document(variant::MODE, record, &base);
-        assert_eq!(parse(&doc, &base), Some(Message::Mode { canonical: true, echo: true }));
+        assert_eq!(parse(&doc, &base), Some(Message::Mode { canonical: true, echo: true, interrupts: false }));
 
         // run: a command, two arguments, a directory; then one with neither.
         let mut record = Record::new();

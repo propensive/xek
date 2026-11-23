@@ -295,6 +295,70 @@ if [[ "$(wc -c < "$SHRUNK")" -lt "$(wc -c < "$OUT")" ]]; then pass "a shrunk exe
 else fail "a shrunk executable is no smaller: $(wc -c < "$SHRUNK") bytes, against $(wc -c < "$OUT")"
 fi
 
+# On a terminal the launcher owns, an interrupted invocation leaves the terminal as it found it
+# (spec/launcher.md, *Who has the interrupt key*): the launcher dies of the signal, and nothing
+# runs afterwards to put the attributes back, so it does so first. `script` gives the launcher
+# a terminal of its own to be in the foreground of; the shell inside records the terminal's
+# attributes on either side of the invocation. As in `started`, perl puts back the default
+# dispositions a background command is started without.
+echo "e2e: checking an interrupt on a terminal"
+
+cat > "$TMP/on-terminal" <<SCRIPT
+stty -g > "$TMP/tty-before"
+perl -e '\$SIG{INT} = "DEFAULT"; \$SIG{QUIT} = "DEFAULT"; exec @ARGV or exit 127' "$PWD/$OUT" sleep 30
+echo \$? > "$TMP/tty-status"
+stty -g > "$TMP/tty-after"
+SCRIPT
+rm -f "$TMP/tty-before" "$TMP/tty-status" "$TMP/tty-after"
+case "$(uname -s)" in
+  Darwin) sleep 60 | limit 60 script -q /dev/null bash "$TMP/on-terminal" > /dev/null 2>&1 & ;;
+  *)      sleep 60 | limit 60 script -qec "bash $TMP/on-terminal" /dev/null > /dev/null 2>&1 & ;;
+esac
+BG=$!
+launcher=
+for _ in $(seq 1 40); do
+  launcher=$(pgrep -n -f "$PWD/$OUT sleep 30") || true
+  [[ -n "$launcher" ]] && break
+  sleep 0.25
+done
+if [[ -z "$launcher" ]]; then
+  fail "the launcher did not start on a terminal"
+else
+  sleep 1
+  kill -INT "$launcher"
+  for _ in $(seq 1 40); do [[ -s "$TMP/tty-after" ]] && break; sleep 0.25; done
+  expect_status "a rejected INT on a terminal reports 128+2" 130 "$(cat "$TMP/tty-status" 2>/dev/null)"
+  if [[ -s "$TMP/tty-before" && "$(cat "$TMP/tty-before")" == "$(cat "$TMP/tty-after" 2>/dev/null)" ]]; then
+    pass "an interrupted launcher leaves the terminal as it found it"
+  else
+    fail "an interrupted launcher left the terminal changed: $(cat "$TMP/tty-after" 2>/dev/null)"
+  fi
+fi
+kill "$BG" 2>/dev/null || true
+wait "$BG" 2>/dev/null || true
+
+# A completion request is on a deadline (spec/launcher.md, *Completion requests*): the shell,
+# and the user with it, waits for the command to return. Given a deadline no JVM can start
+# within, a request to a cold daemon returns nothing, promptly and silently; the daemon it
+# started carries on, and the invocation which follows waits for that daemon and is served by
+# it. Under its own name, so as to have a daemon that is not yet running.
+echo "e2e: checking the deadline on a completion request"
+
+TAB="$TMP/hellotab"
+cp "$OUT" "$TAB"
+status=0
+XEK_COMPLETION_TIMEOUT_MS=50 limit 20 "$TAB" '{completions}' bash 1 0 none -- hellotab '' \
+  > "$TMP/out" 2> "$TMP/err" || status=$?
+expect_status "a completion request past its deadline exits 124" 124 "$status"
+expect "a completion request past its deadline offers nothing" "" "$(cat "$TMP/out")"
+expect "a completion request past its deadline says nothing" "" "$(cat "$TMP/err")"
+expect "the daemon it started serves the next invocation" "Hello world" "$(limit 60 "$TAB")"
+status=0
+limit 20 "$TAB" '{completions}' bash 1 0 none -- hellotab '' > /dev/null 2>&1 || status=$?
+expect_status "a completion request within its deadline succeeds" 0 "$status"
+pkill -f 'ethereal.name=hellotab' >/dev/null 2>&1 || true
+rm -rf "${XDG_STATE_HOME:-$HOME/.local/state}/hellotab" "${XDG_RUNTIME_DIR:-/nonexistent}/hellotab"
+
 if [[ "$failures" -ne 0 ]]; then
   echo "e2e: $failures failure(s)" >&2
   exit 1

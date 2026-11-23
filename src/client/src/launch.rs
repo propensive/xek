@@ -39,8 +39,16 @@ pub fn launch(
     download: bool,
 ) {
     crate::debug!("launch: start name={} script={}", name, script.display());
-    let java = match crate::java::find_java(config.java_min, config.java_pref, config.bundle, download) {
+    // A completion request under a deadline does not download a JVM: the download would be
+    // abandoned at the deadline, and begun again by the next request. It leaves that to an
+    // ordinary invocation, and meanwhile has no candidates to offer.
+    let completing = crate::deadline::armed();
+    let java = match crate::java::find_java(config.java_min, config.java_pref, config.bundle, download && !completing) {
         Some(path) => { crate::debug!("launch: java found at {}", path.display()); path },
+        None if completing && download => {
+            crate::debug!("launch: java not found, and not downloaded for a completion request");
+            std::process::exit(crate::deadline::EXIT_STATUS);
+        }
         None => {
             crate::debug!("launch: java not found");
             crate::java::java_not_found_message(config.java_min, &script.to_string_lossy());
@@ -102,6 +110,9 @@ pub fn launch(
     crate::java_options::record(options_file, java_options);
     crate::debug!("launch: spawning daemon: {} (wrapper)", executable.display());
 
+    // A completion request's deadline waits for the daemon to be given its environment and
+    // for its pid to be recorded.
+    let hold = crate::deadline::hold();
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(e) => {
@@ -112,9 +123,10 @@ pub fn launch(
         }
     };
     crate::debug!("launch: spawned, child pid={}", child.id());
-    if let Some(stdin) = child.stdin.take() { crate::daemon::send_environment(stdin); }
+    if let Some(stdin) = child.stdin.take() { crate::daemon::send_environment(stdin, crate::deadline::hold()); }
 
     let _ = std::fs::write(pid_file, format!("{}\n", child.id()));
+    drop(hold);
 
     let debugger = crate::java_options::suspended(java_options);
     let outcome = await_startup(socket_file, fail_file, &progress_file, Some(&mut child), debugger.as_deref());
