@@ -112,6 +112,10 @@ means is [`bolt.tel`](bolt.tel), which the index in the `bolt` repository names.
   `refuse` helpers. `xek` prints the code where it prints the error.
 - `↯/x.3.1.S` is `Packager.Error`, and `↯/x.3.2` followed by a core error's code, as in
   `↯/x.3.2/x.2.1.1.37`, is one it passes on.
+- `↯/x.4.N` is `xek upgrade`'s (`SelfUpgrade`, in `src/cli`): `N` is the argument of its `failed`
+  helper. These are not `Assembler.Error`s, because their exit status is the one every tool's
+  `upgrade` has — 10, or 9 when there is simply nothing newer, which is not an error and has
+  no code.
 
 ### Rules
 

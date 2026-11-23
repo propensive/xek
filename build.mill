@@ -108,7 +108,11 @@ object settings:
       mvn"dev.propensive:exoskeleton-completions:$v",
       mvn"dev.propensive:exoskeleton-manpage:$v", // `xek install` writes the manpage
       mvn"dev.propensive:revolution-semver:$v",   // the version in the manpage's header
-      mvn"dev.propensive:ambience-core:$v")      // the invocation's environment
+      mvn"dev.propensive:ambience-core:$v",      // the invocation's environment
+      mvn"dev.propensive:telekinesis-core:$v",   // `xek upgrade`: fetching the manifest and the executable
+      mvn"dev.propensive:telekinesis-jvm:$v",    // httpBackends.javaNetHttp
+      mvn"dev.propensive:gastronomy-core:$v",    // the digest the download is checked against
+      mvn"dev.propensive:aviation-core:$v")      // the daily check for a newer release
 
     // `xek.toolchain`: the `Jar` → executable edge of an Anthology toolchain.
     val toolchain = Seq(
@@ -292,7 +296,7 @@ object xek extends Module:
   // `META-INF/services/probably.Suite` index the beneficence plugin writes, and drives them
   // over the BinTEL test-event protocol. `make test` assembles this module and runs
   // `fume run -c …` over the assembly, exactly as Soundness runs its own suites.
-  object test extends Component(core, packager, toolchain):
+  object test extends Component(core, packager, toolchain, cli):
     def mvnDeps = Task(settings.Soundness(deps.soundness()).test)
     override def artifactName = Task("xek-test")
 

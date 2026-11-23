@@ -845,6 +845,48 @@ object Tests extends Suite(m"XEK tests"):
         fault(Inspector.inspect("just text\n".getBytes("UTF-8").nn, t"notes", Unset))
       .assert(_ == Assembler.Fault.Format)
 
+    suite(m"self-upgrade"):
+      val manifest: Text =
+        List
+          ( t"version\t1.8.0",
+            t"build\t1008000",
+            t"signed-by\tabc123",
+            t"# the executables",
+            t"",
+            t"macos-arm64\thttps://example.com/xek-macos-arm64\tDEADBEEF",
+            t"linux-x64\thttps://example.com/xek-linux-x64\t0123" )
+        . join(t"\n")
+
+      test(m"reads a manifest's version and build"):
+        xek.UpgradeManifest.parse(manifest).let: release =>
+          (release.version, release.build)
+      .assert(_ == (t"1.8.0", 1008000L))
+
+      test(m"reads a manifest's executable for a platform, and none for one it does not name"):
+        val release = xek.UpgradeManifest.parse(manifest)
+        (release.let(_.executable(t"macos-arm64")).let(_.sha256),
+         release.let(_.executable(t"linux-x64")).let(_.url),
+         release.let(_.executable(t"windows-x64")).absent)
+      .assert(_ == (t"DEADBEEF", t"https://example.com/xek-linux-x64", true))
+
+      test(m"reads the key a release was signed with, and none from an empty signed-by"):
+        val unsigned = xek.UpgradeManifest.parse(t"version\t1.8.0\nbuild\t1008000\nsigned-by\t\n")
+        (xek.UpgradeManifest.parse(manifest).let(_.signedBy), unsigned.let(_.signedBy).absent)
+      .assert(_ == (t"abc123", true))
+
+      test(m"takes a manifest without a numeric build for no release"):
+        (xek.UpgradeManifest.parse(t"version\t1.8.0\n").absent,
+         xek.UpgradeManifest.parse(t"version\t1.8.0\nbuild\teight\n").absent)
+      .assert(_ == (true, true))
+
+      test(m"gives the version a build id stands for"):
+        List(3000L, 1008000L, 1002003L).map(xek.SelfUpgrade.version(_))
+      .assert(_ == List(t"0.3.0", t"1.8.0", t"1.2.3"))
+
+      test(m"numbers its errors beneath x.4"):
+        xek.SelfUpgrade.code(3)
+      .assert(_ == t"↯/x.4.3")
+
     suite(m"command line"):
       test(m"needs a subcommand, and suggests one for a JAR"):
         (fault(xek.Command.parse(Nil)), fault(xek.Command.parse(List(t"app.jar"))),
@@ -868,6 +910,12 @@ object Tests extends Suite(m"XEK tests"):
         (short.has(xek.Command.Force), long.has(xek.Command.Force), bare.has(xek.Command.Force),
          fault(xek.Command.parse(List(t"install", t"--out", t"x"))))
       .assert(_ == (true, true, false, Assembler.Fault.Usage))
+
+      test(m"reads upgrade, which takes no options of its own"):
+        val bare = xek.Command.parse(List(t"upgrade"))
+        (bare.action, xek.Command.parse(List(t"upgrade", t"--help")).has(xek.Command.Help),
+         fault(xek.Command.parse(List(t"upgrade", t"--force"))))
+      .assert(_ == (xek.Command.Action.Upgrade, true, Assembler.Fault.Usage))
 
       test(m"names the output for the JAR by default"):
         plan(parse(t"app.jar")).files.map(_.name)

@@ -65,6 +65,8 @@ object Malformed extends Status(2, t"a file was malformed, or a download did not
 object Unreachable extends Status(3, t"a download failed")
 object Unverified extends Status(4, t"a signature did not verify, or was for another application")
 object InstallFailed extends Status(5, t"the tab-completions or manpage could not be installed")
+object NoUpgrade extends Status(9, t"no newer release is known, so nothing was upgraded")
+object UpgradeFailed extends Status(10, t"a newer release could not be staged")
 
 // The subcommands and flags of `xek`, declared to Exoskeleton so that they complete and appear in
 // its help. They are not how the command line is read — `Command.parse` does that, since `xek`
@@ -80,6 +82,14 @@ object ui:
     val Build = of(Command.Action.Build)
     val Installer = of(Command.Action.Installer)
     val Install = of(Command.Action.Install)
+
+    // `upgrade` is always accepted, but suggested only while a newer release is known: the
+    // hidden twin is what the completion matches against otherwise (see `SelfUpgrade`).
+    val Upgrade = of(Command.Action.Upgrade)
+
+    val HiddenUpgrade =
+      Subcommand(Command.Action.Upgrade.name, Command.Action.Upgrade.description, hidden = true)
+
     val Keygen = of(Command.Action.Keygen)
     val PublicKey = of(Command.Action.PublicKeyOf)
     val Sign = of(Command.Action.Sign)
@@ -132,20 +142,36 @@ def command(): Unit = cli:
   val interface: Cli = summon[Cli]
   given WorkingDirectory = interface.workingDirectory
 
+  given Environment = interface.environment
+
   complete(arguments)
+
+  // What the launcher did with an upgrade staged earlier, and the daily check for a newer
+  // release: for a real invocation only, never for a tab-completion.
+  interface match
+    case _: Invocation =>
+      SelfUpgrade.report()
+      SelfUpgrade.check()
+
+    case _ =>
+      ()
 
   execute:
     val words: List[Text] = arguments.map(_())
     val variable: Text => Optional[Text] = interface.environment.variable(_)
     val here: Path on Local = workingDirectory
 
-    Driver.run(words, here, variable, install(_))(Out.println(_), Err.println(_)) match
-      case Exit.Ok => Exit.Ok
-      case Exit.Fail(1) => Unusable
-      case Exit.Fail(2) => Malformed
-      case Exit.Fail(3) => Unreachable
-      case Exit.Fail(4) => Unverified
-      case Exit.Fail(_) => InstallFailed
+    def upgrade(): Exit = SelfUpgrade.upgrade()
+
+    Driver.run(words, here, variable, install(_), upgrade)(Out.println(_), Err.println(_)) match
+      case Exit.Ok       => Exit.Ok
+      case Exit.Fail(1)  => Unusable
+      case Exit.Fail(2)  => Malformed
+      case Exit.Fail(3)  => Unreachable
+      case Exit.Fail(4)  => Unverified
+      case Exit.Fail(9)  => NoUpgrade
+      case Exit.Fail(10) => UpgradeFailed
+      case Exit.Fail(_)  => InstallFailed
 
 // Installs the shell tab-completions and the manpage, as every Pyrocosm tool's `install` does.
 // `Completions.ensure` needs an `Entrypoint`, which the ambient `Resident` is; so this
@@ -188,15 +214,23 @@ private def install(force: Boolean)
       Exit.Ok
 
 // Offers the subcommands for the first word, and then the flags of the one chosen.
-private def complete(arguments: List[Argument])(using Cli, Interpreter, WorkingDirectory): Unit =
+private def complete(arguments: List[Argument])(using Cli, Interpreter, WorkingDirectory, Resident)
+:   Unit =
+
   // Flags whose values are paths, registered with path completion.
   def paths(block: (Text is Discoverable) ?=> Unit): Unit =
     given (Text is Discoverable) = (operand, tab) => Pathname.complete(operand, tab)
     block
 
+  val upgrade: Subcommand =
+    if SelfUpgrade.available.present then ui.subcommand.Upgrade else ui.subcommand.HiddenUpgrade
+
   arguments match
     case ui.subcommand.Build() :: rest =>
       completeBuild(rest)
+
+    case upgrade() :: _ =>
+      ()
 
     case ui.subcommand.Installer() :: rest =>
       paths { ui.Manifest.present; ui.OutDir.present }
@@ -329,13 +363,14 @@ private def operands(arguments: List[Argument]): List[Argument] =
 // Running `xek`, from its words to its exit status: shared by the daemon and by `bootstrap`,
 // which differ only in where their working directory, environment and output come from.
 object Driver:
-  // `install` is what `xek install` does, given `--force`: it needs the daemon, so `bootstrap`
-  // passes one which refuses.
+  // `install` is what `xek install` does, given `--force`, and `upgrade` what `xek upgrade`
+  // does: each needs the daemon, so `bootstrap` passes ones which refuse.
   def run
     ( words:    List[Text],
       here:     Path on Local,
       variable: Text => Optional[Text],
-      install:  Boolean => Exit )
+      install:  Boolean => Exit,
+      upgrade:  () => Exit )
     ( out: Text => Unit, err: Text => Unit )
   :   Exit =
 
@@ -363,6 +398,8 @@ object Driver:
             Exit.Ok
           else if action == Command.Action.Install then
             install(parsed.has(Command.Force))
+          else if action == Command.Action.Upgrade then
+            upgrade()
           else
             if action == Command.Action.Build then build(parsed, path, here, variable)(err)
             else if action == Command.Action.Installer then installer(parsed, path)(err)
@@ -503,6 +540,18 @@ object Driver:
             t"$$XDG_DATA_HOME/man/man1), which `man` searches by default. An installed manpage is",
             t"left alone unless --force is given." )
 
+      case Command.Action.Upgrade =>
+        List
+          ( t"",
+            t"Fetches the manifest of the newest release of xek and, if it is newer than this one,",
+            t"downloads its executable for this platform, checks its digest, and stages it. The",
+            t"launcher verifies the staged executable's signature against the keys in this one,",
+            t"and replaces this one with it, when xek next runs; that run says what was done. An",
+            t"xek built without keys cannot be upgraded in place, and is reinstalled instead.",
+            t"",
+            t"Exits with 0 if an upgrade is staged, 9 if there is nothing newer, and 10 if a newer",
+            t"release could not be staged." )
+
       case Command.Action.Inspect =>
         List
           ( t"",
@@ -535,8 +584,13 @@ def bootstrap(arguments: String*): Unit =
     err(t"xek: install needs the xek command, which is not what this is: build it with `make xek`")
     Exit.Fail(1)
 
-  val exit: Exit =
-    Driver.run(words, here, variable, install(_))(text => java.lang.System.out.nn.println(text.s), err(_))
+  def upgrade(): Exit =
+    err(t"xek: upgrade needs the xek command, which is not what this is: build it with `make xek`")
+    Exit.Fail(1)
+
+  def out(text: Text): Unit = java.lang.System.out.nn.println(text.s)
+
+  val exit: Exit = Driver.run(words, here, variable, install(_), upgrade)(out(_), err(_))
 
   exit match
     case Exit.Ok         => ()
