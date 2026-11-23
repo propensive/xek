@@ -349,6 +349,11 @@ pub fn check_state(
         return;
     }
 
+    // A daemon that has not yet bound its socket is still starting, and its launcher may be
+    // gone: a completion request that ran out of time, or one the user interrupted. The caller
+    // waits for it as it would for a daemon another launcher is starting.
+    if !socket_ready(socket_file) { return; }
+
     if !file_has_content(build_file) {
         // Daemon may be mid-startup; give it a moment to finish writing the build file.
         await_file(build_file, 40);

@@ -23,6 +23,7 @@ for every other tool. A *switch* is on when it is set to anything but the empty 
 | `DEBUG_PORT` | Start the JVM with a JDWP agent, `-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=<address>`, for a debugger to attach to. A bare port listens on `localhost`; `host:port`, such as `*:5005`, is given to the agent as it is. The agent does not suspend the JVM: to debug startup, give an agent with `suspend=y` in `JAVA_OPTIONS` instead. `0` is none |
 | `DEBUG_LOG` | A switch: the launcher traces its progress to stderr. An internal invocation (`{completions}`, `{admin}`), whose stderr belongs to the shell, traces instead to `$TMPDIR/ethereal-launcher.log`, which is otherwise never written |
 | `SIGNAL_TIMEOUT_MS` | How long the launcher waits for the daemon to acknowledge a forwarded signal before taking the signal's fallback action (below); default 250 |
+| `COMPLETION_TIMEOUT_MS` | How long a completion request (below) may take, from the launcher's start to the daemon's answer, before the launcher gives up on it; default 3000, and `0` is no limit |
 
 One variable has a single name. `XEK_WRAP_JAVA` is internal: it is set by the launcher on the
 process it starts the JVM through, so the daemon appears under the application's name; never
@@ -58,6 +59,25 @@ stderr is still the terminal, and a line drawn there lands on the prompt the she
 rendering. An internal invocation that finds no daemon running still starts one, and still
 waits for it, but silently. An application built on the reference daemon cannot use either as
 its own first argument.
+
+**Completion requests are on a deadline.** A shell that has asked for completions waits for
+the command to return, and the user can do nothing until it does; so an invocation whose first
+argument is `{completions}` is given `COMPLETION_TIMEOUT_MS` and no longer. The clock starts
+once a pending upgrade has been dealt with, which is never abandoned halfway, and covers
+everything after it: starting a daemon, waiting for one to start, connecting, and waiting for
+the answer. When it runs out the launcher exits with status 124, having written nothing: no
+candidates on stdout, and no message on stderr, which is the terminal the prompt is drawn on.
+A daemon the request started is not stopped. It is a session of its own, so it finishes
+starting — fetching its dependencies, if it must — and serves the next request; the launcher
+stays only as long as it takes to hand that daemon its environment and record its pid. A
+request under a deadline never downloads a JVM, whatever `INSTALL_JAVA` says: the download
+would be abandoned at the deadline and begun again by the next request. `{admin}` has no
+deadline.
+
+A launcher which finds a daemon recorded and alive, but with no socket yet — one whose own
+launcher did not stay to see it start, because it was such a request or because the user
+interrupted it — waits for that daemon exactly as it would for one another launcher is
+starting.
 
 Nothing else is intercepted. In particular the launcher never removes an argument from the
 middle of the vector.

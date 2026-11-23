@@ -295,6 +295,28 @@ if [[ "$(wc -c < "$SHRUNK")" -lt "$(wc -c < "$OUT")" ]]; then pass "a shrunk exe
 else fail "a shrunk executable is no smaller: $(wc -c < "$SHRUNK") bytes, against $(wc -c < "$OUT")"
 fi
 
+# A completion request is on a deadline (spec/launcher.md, *Completion requests*): the shell,
+# and the user with it, waits for the command to return. Given a deadline no JVM can start
+# within, a request to a cold daemon returns nothing, promptly and silently; the daemon it
+# started carries on, and the invocation which follows waits for that daemon and is served by
+# it. Under its own name, so as to have a daemon that is not yet running.
+echo "e2e: checking the deadline on a completion request"
+
+TAB="$TMP/hellotab"
+cp "$OUT" "$TAB"
+status=0
+XEK_COMPLETION_TIMEOUT_MS=50 limit 20 "$TAB" '{completions}' bash 1 0 none -- hellotab '' \
+  > "$TMP/out" 2> "$TMP/err" || status=$?
+expect_status "a completion request past its deadline exits 124" 124 "$status"
+expect "a completion request past its deadline offers nothing" "" "$(cat "$TMP/out")"
+expect "a completion request past its deadline says nothing" "" "$(cat "$TMP/err")"
+expect "the daemon it started serves the next invocation" "Hello world" "$(limit 60 "$TAB")"
+status=0
+limit 20 "$TAB" '{completions}' bash 1 0 none -- hellotab '' > /dev/null 2>&1 || status=$?
+expect_status "a completion request within its deadline succeeds" 0 "$status"
+pkill -f 'ethereal.name=hellotab' >/dev/null 2>&1 || true
+rm -rf "${XDG_STATE_HOME:-$HOME/.local/state}/hellotab" "${XDG_RUNTIME_DIR:-/nonexistent}/hellotab"
+
 if [[ "$failures" -ne 0 ]]; then
   echo "e2e: $failures failure(s)" >&2
   exit 1

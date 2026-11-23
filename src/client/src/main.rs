@@ -10,6 +10,7 @@ mod acceptance;
 mod bintel;
 mod config;
 mod daemon;
+mod deadline;
 mod descriptors;
 mod session;
 mod settings;
@@ -65,6 +66,9 @@ pub const WRAP_VARIABLE: &str = "XEK_WRAP_JAVA";
 // launcher only recognises them so as not to touch the terminal for an invocation that runs
 // behind the user's shell. See `spec/launcher.md`.
 const INTERNAL_SENTINELS: [&str; 2] = ["{completions}", "{admin}"];
+// The one of them a shell runs while the user waits at the prompt, and which is therefore given
+// a deadline (`deadline.rs`).
+const COMPLETIONS_SENTINEL: &str = "{completions}";
 
 fn main() {
     // When this invocation began, so that a daemon it could not reach is reported with how long
@@ -111,6 +115,9 @@ fn main() {
 
     update::check_updates(&script, argv0.as_deref(), &args, &name);
     debug!("main: post-update-check");
+    // From here a completion request is on the clock. Not before: a pending update is applied
+    // by replacing this file, which must not be abandoned halfway.
+    if args.first().is_some_and(|arg| arg == COMPLETIONS_SENTINEL) { deadline::arm(); }
 
     let base_dir = state::base_dir(&name);
     if let Err(reason) = state::prepare_base_dir(&base_dir) {
@@ -156,25 +163,17 @@ fn main() {
                 debug!("main: launch::launch returned");
             }
             None => {
-                // Wait by the same rule as the launcher doing the spawning: a cold
-                // Burdock cache being fetched by that daemon is progress here too.
                 debug!("main: another launcher holds the lock; awaiting socket");
-                let debugger = java_options::suspended(&java_options::recorded(&options_file));
-                let outcome = launch::await_startup(&socket_file, &fail_file, &progress_file, None, debugger.as_deref());
-                xek::clear();
-                if !matches!(outcome, launch::Outcome::Bound) {
-                    debug!("main: socket did not appear");
-                    state::abort(&fail_file);
-                    let reason = match outcome {
-                        launch::Outcome::Idle(Some(_)) => launch::idle_reason(&outcome),
-                        _ => "another launcher held the startup lock but bound no socket".to_string(),
-                    };
-                    state::report_failure(&base_dir, &name, &reason);
-                    state::backout(&fail_file, &pid_file, &name);
-                    std::process::exit(1);
-                }
+                await_daemon(&base_dir, &name, &pid_file, &socket_file, &fail_file, &progress_file, &options_file,
+                    "another launcher held the startup lock but bound no socket");
             }
         }
+    } else if !state::socket_ready(&socket_file) {
+        // A daemon is recorded and alive, with no socket yet: one whose launcher did not stay
+        // to see it start.
+        debug!("main: a daemon is starting unattended; awaiting socket");
+        await_daemon(&base_dir, &name, &pid_file, &socket_file, &fail_file, &progress_file, &options_file,
+            "it was started by an earlier invocation but bound no socket");
     }
     state::backout(&fail_file, &pid_file, &name);
 
@@ -279,6 +278,30 @@ fn main() {
         signals::die(signal);
     }
     std::process::exit(conclude(outcome, &name));
+}
+
+// Waits for a daemon this launcher did not start to bind its socket, by the same rule as the
+// launcher doing the spawning: a cold Burdock cache being fetched by that daemon is progress
+// here too. Exits, with `unbound` as the reason when there is no better one, if it never does.
+#[allow(clippy::too_many_arguments)]
+fn await_daemon(
+    base_dir: &Path, name: &str, pid_file: &Path, socket_file: &Path, fail_file: &Path,
+    progress_file: &Path, options_file: &Path, unbound: &str,
+) {
+    let debugger = java_options::suspended(&java_options::recorded(options_file));
+    let outcome = launch::await_startup(socket_file, fail_file, progress_file, None, debugger.as_deref());
+    xek::clear();
+    if !matches!(outcome, launch::Outcome::Bound) {
+        debug!("main: socket did not appear");
+        state::abort(fail_file);
+        let reason = match outcome {
+            launch::Outcome::Idle(Some(_)) => launch::idle_reason(&outcome),
+            _ => unbound.to_string(),
+        };
+        state::report_failure(base_dir, name, &reason);
+        state::backout(fail_file, pid_file, name);
+        std::process::exit(1);
+    }
 }
 
 // The launcher's exit status from the session's end. A daemon that closed the connection
