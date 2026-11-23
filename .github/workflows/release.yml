@@ -13,6 +13,13 @@ name: Release
 # What differs from the other repositories is only what is built, and so where: the client stubs
 # are cross-compiled for five platforms with the pinned nightly and cargo-zigbuild on macOS, where
 # they have always been built, and where Apple's `codesign` ad-hoc signs the macOS stubs.
+#
+# `xek` upgrades itself as the tools built with it do (`xek upgrade`), so its executables are
+# keyed and signed as theirs are, once etc/keys holds the public keys: the seed of the release key
+# is UPGRADE_SIGNING_SEED, a secret of the `release` environment, which admits only the release
+# tags and waits for a reviewer's approval. It is an environment secret and not a repository
+# secret, which any workflow on any branch could read. The rehearsal runs in no environment, has
+# no seed, and signs nothing.
 
 on:
   push:
@@ -29,6 +36,8 @@ jobs:
   release:
     runs-on: macos-latest
     timeout-minutes: 60
+    # Only a tag's run is a release; a rehearsal needs no secret, and so no approval.
+    environment: ${{ github.event_name == 'push' && 'release' || '' }}
     permissions:
       contents: write        # the release and its assets, the record branch, and on failure the tag
       pull-requests: write   # the record pull request, when there is no PROPAGATE_TOKEN
@@ -45,6 +54,13 @@ jobs:
           brew install bash zig cargo-zigbuild
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
 
+      # As every other repository's release has (scala-release.yml): `xek sign`, which signs the
+      # executables of a keyed release, needs the ML-DSA of Java 24 or later.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+
       # The nightly, `rust-src` and the five targets that rust-toolchain.toml names.
       - name: Install the pinned Rust toolchain
         run: |
@@ -58,6 +74,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PROPAGATE_TOKEN: ${{ secrets.PROPAGATE_TOKEN }}
+          UPGRADE_SIGNING_SEED: ${{ secrets.UPGRADE_SIGNING_SEED }}
         run: ./etc/shared release.sh
 
       - name: Rehearse the release

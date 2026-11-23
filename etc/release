@@ -6,6 +6,12 @@
 # checksums, assembled by etc/ci/client-assemble.sh rather than by Mill's `release.stage`. The
 # shared script gates, uploads, verifies every digest, writes the notes and rolls back exactly as
 # it does for the jars of the other repositories.
+#
+# `xek upgrade` is served by the same release: when etc/keys holds release.pub and recovery.pub,
+# the shared script makes the signing gates and passes the keys, and the seed, to the assemble
+# command, which embeds the keys in every `xek` and signs each native one; and from those
+# executables the shared script writes `upgrade.tsv`, the manifest `xek upgrade` reads, keyed or
+# not.
 
 name       xek
 title      xek
