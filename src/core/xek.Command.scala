@@ -122,6 +122,9 @@ object Command:
     case Install
     extends Action(t"install", t"[--force]", t"install shell tab-completions and the manpage", List(Force))
 
+    case Upgrade
+    extends Action(t"upgrade", t"", t"upgrade xek to its newest release", Nil)
+
     case Keygen
     extends Action(t"keygen", t"--out <prefix>", t"generate a key pair for signing releases", List(Prefix))
 

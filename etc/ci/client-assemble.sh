@@ -20,9 +20,26 @@
 # changes. An application picks up a client fix without being rebuilt; its JAR is appended to a
 # bare stub, and the stub bytes are never re-published per application.
 #
-# Environment (from release.sh): RELEASE_VERSION, RELEASE_TAG, RELEASE_ASSETS, RELEASE_REPO_NAME.
+# `xek upgrade` is the `upgrade` of every tool built with xek, so a release of xek is keyed as
+# theirs are (propensive/.github's README, "Signed executables"): when etc/keys holds the public
+# keys, release.sh names them in RELEASE_KEYS, and the executables here embed them, the
+# application id and the build id; and when it also passes the seed of the release key, each
+# native `xek-<platform>` is signed with it and verified, before any digest of it is taken.
+# release.sh makes the other gates, and writes `upgrade.tsv` from the executables left here.
+#
+# Environment (from release.sh): RELEASE_VERSION, RELEASE_TAG, RELEASE_ASSETS, RELEASE_REPO_NAME;
+# and RELEASE_APP_ID, RELEASE_BUILD_ID, RELEASE_KEYS, RELEASE_SIGNING_KEY, RELEASE_PREVIOUS_KEY
+# and RELEASE_SIGNING_SEED, each of which may be empty or unset.
 
 set -euo pipefail
+
+# The seed is taken out of the environment before anything else runs, as release.sh takes it out
+# of its own, so that nothing run here — cargo, zig, Mill, the compiler — inherits it. From here
+# it lives only in this unexported variable, and reaches `xek sign` and `xek public-key` alone,
+# through the environment of that one command.
+SIGNING_SEED=${RELEASE_SIGNING_SEED:-}
+unset RELEASE_SIGNING_SEED
+
 cd "$(git rev-parse --show-toplevel)"
 
 : "${RELEASE_VERSION:?set by release.sh}" "${RELEASE_TAG:?}" "${RELEASE_ASSETS:?}"
@@ -31,6 +48,43 @@ REPO=${RELEASE_REPO_NAME:-propensive/xek}
 WORK=$(mktemp -d)
 RESOURCES=(res/core/xek/client.tsv res/core/xek/client.version res/core/xek/client.url)
 trap 'git checkout -q -- "${RESOURCES[@]}"; rm -rf "$WORK"' EXIT
+
+fail() { echo "client-assemble: $*" >&2; exit 1; }
+
+# `xek`, from the JAR `$JAR` with no launcher, as `mill xek.cli.bootstrap` runs it, but with
+# nothing of Mill's on its standard output, which `xek verify` answers on.
+xek() { java -cp "$JAR" xek.bootstrap "$@"; }
+
+# The keys, the application id and the build id every executable embeds, when the release is
+# keyed; and whether it is to be signed.
+KEYED=()
+SIGNED=""
+if [[ -n "${RELEASE_KEYS:-}" ]]; then
+  [[ -n "${RELEASE_APP_ID:-}" && -n "${RELEASE_BUILD_ID:-}" && -n "${RELEASE_SIGNING_KEY:-}" ]] ||
+    fail "RELEASE_KEYS is set without RELEASE_APP_ID, RELEASE_BUILD_ID and RELEASE_SIGNING_KEY"
+  KEYED=(--build-id "$RELEASE_BUILD_ID" --public-key "$RELEASE_KEYS/release.pub"
+         --recovery-key "$RELEASE_KEYS/recovery.pub" --app-id "$RELEASE_APP_ID")
+
+  # The seed signs with exactly the key this release is expected to be signed with: checked now,
+  # with `xek` as it stands, so that a wrong or stale secret costs a compilation and not the
+  # stubs' build as well. (release.sh makes this check itself where it has an `xek` to make it
+  # with; here, this is the first one there is.)
+  if [[ -n "$SIGNING_SEED" ]]; then
+    ./etc/shared sync-deps.sh
+    ./mill xek.cli.assembly
+    JAR="$PWD/out/xek/cli/assembly.dest/out.jar"
+    XEK_SIGN_SEED="$SIGNING_SEED" xek public-key --key-env XEK_SIGN_SEED --out "$WORK/derived.pub" \
+      >/dev/null || fail "could not derive the public key of the signing seed"
+    cmp -s "$WORK/derived.pub" "$RELEASE_SIGNING_KEY" ||
+      fail "UPGRADE_SIGNING_SEED is not the seed of $RELEASE_SIGNING_KEY; the secret is wrong or stale"
+    echo "client-assemble: the signing seed is the seed of $RELEASE_SIGNING_KEY"
+    SIGNED=1
+  else
+    echo "client-assemble: keyed, but there is no seed, so nothing is signed"
+  fi
+elif [[ -n "$SIGNING_SEED" ]]; then
+  fail "a signing seed was given, but RELEASE_KEYS names no keys"
+fi
 
 ./etc/ci/client-build.sh "$WORK/client"
 
@@ -76,9 +130,37 @@ else
   ./etc/ci/client-fetch.sh "$COMMAND_STUBS" "$REPO" "$WORK/command-client"
   WRAP="$WORK/command-client"
 fi
-./mill xek.cli.bootstrap build --polyglot --client "$WRAP" "$JAR" "$WORK/xek"
-./mill xek.cli.bootstrap build --platform "$PLATFORMS" --client "$WRAP" "$JAR" "$WORK/xek"
+./mill xek.cli.bootstrap build --polyglot --client "$WRAP" "${KEYED[@]}" "$JAR" "$WORK/xek"
+./mill xek.cli.bootstrap build --platform "$PLATFORMS" --client "$WRAP" "${KEYED[@]}" "$JAR" "$WORK/xek"
 cp "$WORK/xek" "$WORK/xek.cmd"
+
+# Each native executable is signed in place, and then must verify, as this application and with
+# this build id, under the key it was signed with and under the latest release's copy of that
+# key, which is what the copies installed now will check it against. This comes before the
+# installers and the checksums, so the digests they carry are the signed files'. The polyglot
+# `xek` is not signed, and need not be: a signature is what lets an executable be staged as an
+# upgrade, and only a native one ever is; the executable a polyglot file unpacks embeds the
+# keys, and so upgrades like any other.
+verifies() {
+  local build
+  build=$(xek verify --public-key "$2" --app-id "$RELEASE_APP_ID" --in "$1") || return 1
+  [[ "$build" == "$RELEASE_BUILD_ID" ]]
+}
+
+if [[ -n "$SIGNED" ]]; then
+  FOREIGN=()
+  [[ ! -f "$RELEASE_KEYS/signing.pub" ]] || FOREIGN=(--foreign-key)
+  for f in "$WORK"/xek-*; do
+    XEK_SIGN_SEED="$SIGNING_SEED" xek sign --key-env XEK_SIGN_SEED "${FOREIGN[@]}" \
+      --in "$f" --out "$f.signed" >/dev/null || fail "signing $(basename "$f") failed"
+    mv -f "$f.signed" "$f"
+    verifies "$f" "$RELEASE_SIGNING_KEY" ||
+      fail "$(basename "$f") does not verify under $RELEASE_SIGNING_KEY"
+    [[ -z "${RELEASE_PREVIOUS_KEY:-}" ]] || verifies "$f" "$RELEASE_PREVIOUS_KEY" ||
+      fail "$(basename "$f") does not verify under the latest release's key"
+  done
+  echo "client-assemble: signed every executable as $RELEASE_APP_ID, build $RELEASE_BUILD_ID, and verified each"
+fi
 
 # The installers served from https://propensive.dev/xek (and xek.ps1), which redirect to the
 # latest release's `install.sh` and `install.ps1`: each downloads the native `xek-<platform>`

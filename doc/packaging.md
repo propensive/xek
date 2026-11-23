@@ -113,7 +113,7 @@ xek sign --key release.seed --in mytool --out mytool.signed
 xek inspect mytool.signed                      # its platform, record, Java options and signature
 ```
 
-`xek --help` lists the subcommands, `xek build --help` the options of one, and `xek '{admin}' install` installs its tab-completions.
+`xek --help` lists the subcommands, `xek build --help` the options of one, and `xek '{admin}' install` installs its tab-completions. `xek upgrade` stages the newest release of `xek` itself, which its launcher verifies and swaps in the next time it runs.
 
 `--shrink` builds from the JAR's closed world rather than the whole of it: the classes its
 `Main-Class` and its `META-INF/services` implementations reach, with those compiled by the

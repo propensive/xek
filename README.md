@@ -53,6 +53,7 @@ xek build --shrink app.jar                     # …from only the classes app.ja
 xek build --shrink --keep 'app.plugins.**' app.jar  # …and those which only reflection does
 xek installer --url https://example.com/app/1.0 app-*  # install.sh and install.ps1 for a release
 xek inspect app                                # what ./app was built with, and whether it is signed
+xek upgrade                                    # stage the newest release of xek itself
 ```
 
 Every command line begins with a subcommand: `build`; `inspect`, which prints what an executable
@@ -75,7 +76,13 @@ part of a name and `**` for any number of packages; a build which would leave so
 referring to something removed is refused. The shrunk JAR keeps the original's manifest, but not
 its signature, nor its TASTy. Shrinking a large JAR takes a minute or so. `xek install` installs
 tab-completions for `xek` into each shell present, and its manpage (`--force` overwrites one
-already installed).
+already installed). `xek upgrade` replaces `xek` with its newest release, as the `upgrade` of every
+tool built with it does: it downloads that release's executable for this platform, checks its
+digest, and stages it; the launcher verifies its signature against the keys in the `xek` that is
+running and swaps it in when `xek` next runs, which says what was done. A released `xek` looks for
+a newer release once a day, and offers `upgrade` in tab-completion while there is one. It exits
+with 9 when there is nothing newer and 10 when a newer release could not be staged; an `xek`
+built without keys says how to reinstall it instead.
 
 ## What's here
 

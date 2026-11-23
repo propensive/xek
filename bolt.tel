@@ -362,3 +362,21 @@ project x xek
         source src/packager/xek.Packager.scala
     error 2 assembly
       summary  an error of the core's, whose code follows: ↯/x.3.2/x.2.1.1.37
+
+  subdivision 4 upgrade
+    summary  `xek upgrade`, which stages the newest release of the `xek` command itself
+    error 1 upgrade-not-applied
+      summary  the launcher did not apply the upgrade which was staged, for the reason given
+      source src/cli/xek.SelfUpgrade.scala
+    error 2 no-key
+      summary  a newer release is available, but this executable has no key to verify it with
+      source src/cli/xek.SelfUpgrade.scala
+    error 3 no-executable
+      summary  the newer release has no executable for this platform
+      source src/cli/xek.SelfUpgrade.scala
+    error 4 download-failed
+      summary  the download failed, or did not have the digest the release promised
+      source src/cli/xek.SelfUpgrade.scala
+    error 5 not-staged
+      summary  the upgrade could not be staged
+      source src/cli/xek.SelfUpgrade.scala
