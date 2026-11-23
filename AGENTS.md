@@ -103,7 +103,7 @@ The whole flow, and the scripts, are documented in the README of
 
 Each error XEK reports is named by a [bolt code](https://github.com/propensive/bolt), such as
 `↯/x.1.8` or `↯/x.2.1.1.37`, shown in brackets before its message. The record of what each
-means is `x.tel` in the `bolt` repository.
+means is [`bolt.tel`](bolt.tel), which the index in the `bolt` repository names.
 
 - `↯/x.1.N` is the launcher's (`src/client`): each message it prints to stderr begins with its
   code, written into the string.
@@ -116,7 +116,7 @@ means is `x.tel` in the `bolt` repository.
 ### Rules
 
 - A new error takes the **next free number** for its fault (or, in the launcher, the next
-  error number), wherever in the source it is; add it to `x.tel` in the same change.
-- **Never reuse or renumber.** When an error is removed its number is retired in `x.tel`, and
+  error number), wherever in the source it is; add it to `bolt.tel` in the same change.
+- **Never reuse or renumber.** When an error is removed its number is retired in `bolt.tel`, and
   an error whose message is reworded, or which moves to another file, keeps its number.
 - The numbers in the source are not in order, and need not be.
